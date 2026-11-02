@@ -1,0 +1,5 @@
+.venv/
+*.duckdb
+*.duckdb.wal
+*.ducklake
+logs/
