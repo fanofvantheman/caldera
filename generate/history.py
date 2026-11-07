@@ -52,7 +52,7 @@ def generate_demand(materials: list[Material], weeks: list[Week], rng: random.Ra
                 years = (w.fiscal_year - first_fy) + (w.fiscal_week - 1) / 52
                 lifecycle = 1.0
                 if m.lifecycle_status == "launching":
-                    lifecycle = 0.0 if w.fiscal_year < first_fy + 3 else min(1.0, 0.25 + 0.05 * w.fiscal_week)
+                    lifecycle = 0.0                                               # not yet launched: the plan's layer 7 carries it
                 if m.lifecycle_status == "delisting" and w.fiscal_year >= first_fy + 3:
                     lifecycle = max(0.0, 1.0 - 0.04 * w.fiscal_week)
                 seq = (w.fiscal_year - first_fy) * 53 + w.fiscal_week
@@ -87,9 +87,10 @@ def generate_prices(materials: list[Material], rng: random.Random) -> list[dict]
         for pl in PRICE_LISTS:
             if pl == "PL_CONTRACT" and m.branded != "private_label":
                 continue
-            if pl != "PL_CONTRACT" and m.branded == "private_label":
+            if pl not in ("PL_CONTRACT", "PL_GROCERY") and m.branded == "private_label":
                 continue
-            p0 = round(base * LIST_FACTOR[pl], 2)
+            factor = LIST_FACTOR["PL_CONTRACT"] if m.branded == "private_label" else LIST_FACTOR[pl]   # private label is contract-priced on any list
+            p0 = round(base * factor, 2)
             rows.append({"price_list": pl, "material_code": m.material_code, "currency": "AUD" if pl != "PL_EXPORT" else "USD",
                          "price_per_case": p0 if pl != "PL_EXPORT" else round(p0 * 0.66, 2), "valid_from": "2023-07-03", "valid_to": "2025-09-28", "event": ""})
             inc = 1.045 if pl != "PL_CONTRACT" else 1.025

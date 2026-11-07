@@ -41,3 +41,17 @@ jobs:
           assert c.sql("select bool_and(reaches_root) from dims.dim_material_hierarchy").fetchone()[0]
           assert c.sql("select count(*) from dims.dim_period where is_current_period").fetchone()[0] == 1
           EOF
+      - name: Verify — the demand plan and its financialisation
+        run: |
+          uv run python - <<'EOF'
+          import duckdb
+          c = duckdb.connect('data/caldera.duckdb', read_only=True)
+          show = lambda title, sql: (print(title), [print("  ", r) for r in c.sql(sql).fetchall()])
+          show("stack by version and layer (k cases, k$ net):", "select version_id, layer_no, layer_name, round(sum(cases)/1e3,1) kcases, round(sum(net_sales)/1e3) knet from plan.demand_financialised group by all order by 1,2")
+          show("latest view by period, decomposed (k cases):", "select period, round(sum(cases)/1e3,1) total, round(sum(l1_baseline)/1e3,1) l1, round(sum(l2_adjustment)/1e3,1) l2, round(sum(l4_distribution)/1e3,1) l4, round(sum(l6_promotions)/1e3,1) l6, round(sum(l7_innovation)/1e3,1) l7, round(sum(l8_exit)/1e3,1) l8 from plan.unconstrained_demand_period where version_id like 'LV-%' group by 1 order by 1")
+          show("gross to net, latest view (k$):", "select band, measure, round(sum(amount)/1e3) from plan.gross_to_net where version_id like 'LV-%' group by all order by min(case band when 'gross' then 0 when 'on_invoice' then 1 when 'volume_terms' then 2 when 'promotion' then 3 when 'service' then 4 when 'payment' then 5 when 'compliance' then 6 else 7 end), 2")
+          show("gap to the business plan by account (k cases plan / reference, k$ net gap):", "select account_code, round(sum(plan_cases)/1e3), round(sum(reference_cases)/1e3), round(sum(net_sales_gap)/1e3) from plan.gap_to_reference group by 1 order by 1")
+          show("one event traced through the grid:", "select line_source, effect_type, week_id, round(sum(cases)) from plan.demand_stack where line_source = (select min(event_id) from plan.promo_event) group by all order by 3,2")
+          assert c.sql("select count(*) from plan.layer_entry e where not exists (select 1 from plan.demand_stack s where s.line_source = e.entry_id)").fetchone()[0] == 0, "an entry spread to nothing"
+          assert c.sql("select count(*) from plan.demand_financialised where not priced").fetchone()[0] == 0
+          EOF

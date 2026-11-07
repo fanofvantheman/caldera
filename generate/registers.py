@@ -140,8 +140,11 @@ def assumptions() -> list[dict]:
         "TINPLATE_IDX":("Tinplate price index (FY2027P01 = 100)", "index", 100.0),
         "RESIN_IDX":   ("PP resin price index (FY2027P01 = 100)", "index", 100.0),
         "SUGAR_IDX":   ("Sugar price index (FY2027P01 = 100)", "index", 100.0),
+        "RETURNS_RATE":("Returns and ullage, share of invoice value (history rate)", "pct", 0.004),
+        "CLAIMS_RATE": ("Shortage and damage claims, share of invoice value (history rate)", "pct", 0.003),
     }
-    for code, (name, kind, value) in series.items():
-        rows.append({"assumption_code": code, "assumption_name": name, "kind": kind, "version_id": "BP-FY2027",
-                     "period": "", "value": value, "owner": "finance.manager@caldera", "note": "flat across the horizon in the business plan"})
+    for version_id, note in (("BP-FY2027", "flat across the horizon in the business plan"), ("LV-2027P04", "carried from the business plan; no change this cycle")):
+        for code, (name, kind, value) in series.items():
+            rows.append({"assumption_code": code, "assumption_name": name, "kind": kind, "version_id": version_id,
+                         "period": "", "value": value, "owner": "finance.manager@caldera", "note": note})
     return rows

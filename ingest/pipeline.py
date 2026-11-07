@@ -47,7 +47,12 @@ HISTORY = {
     "shipments": ("cases", "tonnes"),
     "price_list": ("price_per_case",),
 }
-INTEGER = {"fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
+PLAN = {
+    "layer_entry": ("layer_no", "value"),
+    "reg_promo_event": ("uplift_pct", "dip_pct", "tpr_per_case", "scan_funding_per_case", "fixed_fee"),
+    "reg_terms": ("rate",),
+}
+INTEGER = {"layer_no", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days"}
 
 
@@ -90,10 +95,11 @@ def main() -> None:
         p = root / "reference" / f"{name}.csv"
         if p.exists() and p.stat().st_size > 0:
             resources.append(_resource(p, name, numeric))
-    for name, numeric in HISTORY.items():
-        p = root / "history" / f"{name}.csv"
-        if p.exists() and p.stat().st_size > 0:
-            resources.append(_resource(p, name, numeric))
+    for sub, group in (("history", HISTORY), ("plan", PLAN)):
+        for name, numeric in group.items():
+            p = root / sub / f"{name}.csv"
+            if p.exists() and p.stat().st_size > 0:
+                resources.append(_resource(p, name, numeric))
     info = pipeline.run(resources)
     print(info)
 
