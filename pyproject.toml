@@ -1,0 +1,13 @@
+[project]
+name = "caldera-demo"
+version = "0.1.0"
+description = "Caldera planning demo — drivers in, plan out, every number traceable to the inputs that made it (DuckDB, dlt, SQLMesh)"
+requires-python = ">=3.12"
+dependencies = [
+    "sqlmesh[duckdb]",
+    "dlt[duckdb]",
+    "duckdb",
+]
+
+[tool.uv]
+package = false

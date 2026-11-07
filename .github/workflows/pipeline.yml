@@ -1,0 +1,43 @@
+name: pipeline
+
+# The end-to-end trigger: generate → ingest → plan. Actions runs and never commits — this repository is a
+# projection. A fresh runner regenerates the synthetic client from the recipe, loads it, evaluates every model
+# and every check, and prints what the room would read.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --frozen
+      - name: Generate the synthetic client
+        run: uv run python -m generate
+      - name: Load the landing (dlt → bronze)
+        run: uv run python -m ingest.pipeline
+      - name: Plan and apply (every model, every check)
+        run: uv run sqlmesh plan prod --auto-apply --no-prompts
+      - name: Verify — structures, calendar, roles, history
+        run: |
+          uv run python - <<'EOF'
+          import duckdb
+          c = duckdb.connect('data/caldera.duckdb', read_only=True)
+          show = lambda title, sql: (print(title), [print("  ", r) for r in c.sql(sql).fetchall()])
+          show("calendar:", "select fiscal_year, count(*) weeks_n, count(distinct period) periods_n from dims.dim_week group by 1 order by 1")
+          show("period position:", "select period, period_state from dims.dim_period where is_current_period or is_latest_closed order by period")
+          show("hierarchies reach root:", """select 'material' d, bool_and(reaches_root) ok from dims.dim_material_hierarchy
+                                             union all select 'customer', bool_and(reaches_root) from dims.dim_customer_hierarchy
+                                             union all select 'location', bool_and(reaches_root) from dims.dim_location_hierarchy
+                                             union all select 'organisation', bool_and(reaches_root) from dims.dim_organisation_hierarchy""")
+          show("entitlements by principal:", "select principal, count(distinct action) actions from dims.effective_entitlements group by 1 order by 1")
+          show("history by fiscal year (k cases):", "select fiscal_year, round(sum(cases)/1e3) from history.shipments_period group by 1 order by 1")
+          assert c.sql("select bool_and(reaches_root) from dims.dim_material_hierarchy").fetchone()[0]
+          assert c.sql("select count(*) from dims.dim_period where is_current_period").fetchone()[0] == 1
+          EOF

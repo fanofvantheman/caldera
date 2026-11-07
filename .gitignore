@@ -2,4 +2,17 @@
 *.duckdb
 *.duckdb.wal
 *.ducklake
+ducklake/
+data/generated/
+data/landing/
+data/holding/
+data/receipts/
+data/.dlt/
+*.parquet
 logs/
+.sqlmesh/
+.rill/
+rill/tmp/
+rill/.rill/
+__pycache__/
+.cache/

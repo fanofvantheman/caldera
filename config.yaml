@@ -1,0 +1,22 @@
+# SQLMesh project configuration — the calculation layer of the demo.
+# A local DuckDB file is the warehouse; "runs anywhere Python runs" is performed, not claimed.
+gateways:
+  local:
+    connection:
+      type: duckdb
+      database: data/caldera.duckdb
+    state_connection:
+      type: duckdb
+      database: data/sqlmesh_state.duckdb
+
+default_gateway: local
+
+model_defaults:
+  dialect: duckdb
+  start: 2023-07-01
+
+variables:
+  # The fiscal year the plan is written for; history runs up to the latest closed period before it.
+  plan_fiscal_year: 2027
+  # Trading calendar variant declared on the version (4-4-5 | 4-5-4 | 5-4-4).
+  calendar_variant: "4-4-5"
