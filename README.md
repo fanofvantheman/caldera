@@ -12,6 +12,7 @@ uv sync
 uv run python -m generate            # the synthetic client, from its recipe, under data/generated/
 uv run python -m ingest.pipeline     # load the landing into bronze (DuckDB file at data/caldera.duckdb)
 uv run sqlmesh plan prod --auto-apply --no-prompts   # every model, every check
+uv run python -m face                # the planning face → http://localhost:8010 (--no-reload for the room)
 ```
 
 GitHub Actions runs the same three steps on every push and prints what the room would read.
@@ -29,7 +30,20 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   versions, roles, capacity register and planning assumptions; `plan.py` what the people typed — layer entries on
   each version, the promotions calendar, the terms register. Deterministic from a seed; output is regenerated
   every run and never committed.
-- `ingest/pipeline.py` — dlt: one resource per file into `bronze`, replaced whole on every load.
+- `ingest/pipeline.py` — dlt: one resource per file into `bronze`, replaced whole on every load. A plan table is fed by
+  the generated file and then every file the face has placed under `data/landing/plan/<table>/`, in file order —
+  file order is time order; the face is the landing's only writer.
+- `face/` — the planning face: the demand plan by material and period with the layers beneath, the entries on a
+  version (a withdrawal is a later row that names the entry; the entry stays, struck through), a new entry placed as a
+  file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the
+  reason offered on the layer — flagged, not refused), the revenue bridge and the gap to the reference version, the
+  promotions and terms registers, the versions, and the run — the same two commands the schedule runs, started by
+  whoever holds `run.plan`, the log kept. Every act writes a receipt under `data/receipts/`. What a page shows is what
+  the last run said: an entry placed is in the plan after the next run, and a withdrawal of an entry the warehouse has
+  not yet seen is refused, honestly, until it has.
+  The face's pages and checks are here; its chrome, session, landing writer, receipts, roles, run and warehouse access
+  are the **chassis** (`99_core_clones/chassis-*.whl`, a dependency in `pyproject.toml`) — the part of a face that does
+  not know which method it carries, shared with the other builds. `99_core_clones/chassis_usage.md` says how it is used.
 - `config.yaml` + `models/` — the SQLMesh project:
   - `dims/` the calendar (weeks, periods with relative position), versions, the four structures as hierarchy
     bridges (material, customer, location, organisation), the bill of materials, routes, lanes, the capacity

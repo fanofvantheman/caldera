@@ -15,11 +15,10 @@ Run:  uv run python -m ingest.pipeline [--root data/generated] [--db data/calder
 from __future__ import annotations
 
 import argparse
-import csv
 from pathlib import Path
-from typing import Iterator
 
 import dlt
+from chassis.ingest import log_resource
 
 # file stem → numeric columns (the file is text; the door casts)
 REFERENCE = {
@@ -57,37 +56,8 @@ PLAN = {
     "reg_promo_event": ("uplift_pct", "dip_pct", "tpr_per_case", "scan_funding_per_case", "fixed_fee"),
     "reg_terms": ("rate",),
 }
-INTEGER = {"layer_no", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
-           "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days"}
-
-
-def _rows(path: Path, numeric: tuple[str, ...]) -> Iterator[dict]:
-    with path.open(newline="", encoding="utf-8") as f:
-        for i, row in enumerate(csv.DictReader(f), start=2):
-            out = {k: (v if v != "" else None) for k, v in row.items()}
-            for col in numeric:
-                if out.get(col) is not None:
-                    out[col] = int(float(out[col])) if col in INTEGER else float(out[col])
-            out["source_file"] = path.name
-            out["file_row_number"] = i
-            yield out
-
-
-def _columns(path: Path, numeric: tuple[str, ...]) -> dict:
-    """Declare every header column: the contract is the header, not whichever columns happened to carry data."""
-    with path.open(newline="", encoding="utf-8") as f:
-        header = next(csv.reader(f))
-    cols = {h: {"data_type": ("bigint" if h in INTEGER else "double") if h in numeric else "text", "nullable": True} for h in header}
-    cols["source_file"] = {"data_type": "text"}
-    cols["file_row_number"] = {"data_type": "bigint"}
-    return cols
-
-
-def _resource(path: Path, name: str, numeric: tuple[str, ...], more: list[Path] = ()):
-    def rows():
-        for p in (path, *more):
-            yield from _rows(p, numeric)
-    return dlt.resource(rows(), name=name, write_disposition="replace", columns=_columns(path, numeric))
+INTEGER = frozenset({"layer_no", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
+           "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days"})
 
 
 def main() -> None:
@@ -104,13 +74,13 @@ def main() -> None:
     for name, numeric in REFERENCE.items():
         p = root / "reference" / f"{name}.csv"
         if p.exists() and p.stat().st_size > 0:
-            resources.append(_resource(p, name, numeric))
+            resources.append(log_resource(p, [], name, numeric, INTEGER))
     for sub, group in (("history", HISTORY), ("plan", PLAN)):
         for name, numeric in group.items():
             p = root / sub / f"{name}.csv"
             placed = sorted((landing / sub / name).glob("*.csv")) if (landing / sub / name).is_dir() else []   # file order is time order
             if p.exists() and p.stat().st_size > 0:
-                resources.append(_resource(p, name, numeric, placed))
+                resources.append(log_resource(p, placed, name, numeric, INTEGER))
     info = pipeline.run(resources)
     print(info)
 
