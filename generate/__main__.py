@@ -15,7 +15,7 @@ from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIA
                          PROMO_GROUPS, ACCOUNTS, SHIP_TOS, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
 from .history import generate_demand, generate_prices
 from .registers import versions, period_control, roles, capacity_register, assumptions
-from .plan import business_plan_entries, latest_view_entries, promo_events, terms_register
+from .plan import business_plan_entries, latest_view_entries, promo_events, terms_register, reason_codes
 from .emit import emit_all, dataclass_rows
 
 FIRST_FY, LAST_FY, PLAN_FY = 2024, 2028, 2027
@@ -58,6 +58,7 @@ def main() -> None:
         "dim_cost_centre": [{"cost_centre_code": c[0], "cost_centre_name": c[1], "parent_code": c[2], "kind": c[3]} for c in COST_CENTRES],
         "reg_capacity_machine": capacity_register(weeks),
         "reg_assumption": assumptions(),
+        "ref_reason_code": reason_codes(),
     }
     defs, acts, asg = roles()
     tables["ctl_role_definition"], tables["ctl_role_action"], tables["ctl_role_assignment"] = defs, acts, asg

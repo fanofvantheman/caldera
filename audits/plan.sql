@@ -10,6 +10,15 @@ AUDIT (name layer_entry_by_owner);
 /* blocking: only the layer's owner enters it — an override is a layer, never an edit of someone else's */
 SELECT entry_id, layer_no, entered_by FROM @this_model WHERE NOT entered_by_owner;
 
+AUDIT (name layer_entry_withdraw_by_owner);
+/* blocking: a withdrawal is the owner's act too — a row that tries to take out someone else's entry is refused, and
+   the entry stands */
+SELECT entry_id, layer_no, withdrawn_by FROM @this_model WHERE withdrawn AND NOT withdrawn_by_owner;
+
+AUDIT (name layer_entry_reason_known, blocking false);
+/* warn: a reason the vocabulary does not have cannot be read for bias */
+SELECT entry_id, reason_code FROM @this_model WHERE NOT reason_known;
+
 AUDIT (name layer_entry_vocabulary);
 SELECT entry_id FROM @this_model
 WHERE layer_no NOT BETWEEN 1 AND 9 OR value_kind NOT IN ('cases', 'rate_on_baseline')

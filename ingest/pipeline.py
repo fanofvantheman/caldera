@@ -5,6 +5,10 @@ One resource per file. Every resource is `write_disposition="replace"`: bronze i
 landing, truncated whole on every load and holding only what is on file, stamped with where it
 came from (source file, file row). History is owned downstream by the models.
 
+Two sources feed a plan table: the generated file (what was loaded from the client's systems) and
+every file the face has since placed under data/landing/<sub>/<table>/ — appended in file order,
+which is time order. The face is the landing's only writer.
+
 Run:  uv run python -m ingest.pipeline [--root data/generated] [--db data/caldera.duckdb]
 """
 
@@ -39,6 +43,7 @@ REFERENCE = {
     "dim_cost_centre": (),
     "reg_capacity_machine": ("shifts", "working_days", "available_hours", "planned_downtime_hours", "efficiency_assumption"),
     "reg_assumption": ("value",),
+    "ref_reason_code": (),
     "ctl_role_definition": (),
     "ctl_role_action": (),
     "ctl_role_assignment": (),
@@ -78,16 +83,21 @@ def _columns(path: Path, numeric: tuple[str, ...]) -> dict:
     return cols
 
 
-def _resource(path: Path, name: str, numeric: tuple[str, ...]):
-    return dlt.resource(_rows(path, numeric), name=name, write_disposition="replace", columns=_columns(path, numeric))
+def _resource(path: Path, name: str, numeric: tuple[str, ...], more: list[Path] = ()):
+    def rows():
+        for p in (path, *more):
+            yield from _rows(p, numeric)
+    return dlt.resource(rows(), name=name, write_disposition="replace", columns=_columns(path, numeric))
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default="data/generated")
     ap.add_argument("--db", default="data/caldera.duckdb")
+    ap.add_argument("--landing", default="data/landing", help="what the face has written since the load: appended to the same tables")
     args = ap.parse_args()
     root = Path(args.root)
+    landing = Path(args.landing)
     pipeline = dlt.pipeline(pipeline_name="caldera_bronze", destination=dlt.destinations.duckdb(args.db),
                             dataset_name="bronze", pipelines_dir="data/.dlt")
     resources = []
@@ -98,8 +108,9 @@ def main() -> None:
     for sub, group in (("history", HISTORY), ("plan", PLAN)):
         for name, numeric in group.items():
             p = root / sub / f"{name}.csv"
+            placed = sorted((landing / sub / name).glob("*.csv")) if (landing / sub / name).is_dir() else []   # file order is time order
             if p.exists() and p.stat().st_size > 0:
-                resources.append(_resource(p, name, numeric))
+                resources.append(_resource(p, name, numeric, placed))
     info = pipeline.run(resources)
     print(info)
 

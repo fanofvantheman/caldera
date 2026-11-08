@@ -20,24 +20,33 @@ from .structures import Material, ACCOUNTS, SHIP_TOS, account_ranges, CATEGORIES
 
 TREND = {"declining": -0.045, "growing": 0.09, "flat": 0.005}
 
+# reason code → (description, layers it is offered on)
 REASON_CODES = {
-    "MARKET_INTEL": "Market intelligence from the account team",
-    "CATEGORY_DECLINE": "Category decline steeper than the fitted trend",
-    "RANGE_REVIEW": "Range review outcome",
-    "NEW_LISTING": "New listing with a ranging date",
-    "DELISTING": "Listing withdrawn",
-    "LAUNCH": "Launch volume typed in by marketing",
-    "CANNIBALISATION": "Volume the launch takes from a neighbour",
-    "EXIT_RUN_OUT": "Discontinuation run-out",
-    "BUDGET": "Business plan contribution",
+    "MARKET_INTEL":     ("Market intelligence from the account team",        "2"),
+    "CATEGORY_DECLINE": ("Category decline steeper than the fitted trend",   "2"),
+    "CATEGORY_GROWTH":  ("Category growth stronger than the fitted trend",   "2"),
+    "ONE_OFF":          ("Known one-off: a tender, a fill, a disruption",     "2"),
+    "RANGE_REVIEW":     ("Range review outcome",                             "2,4"),
+    "SHAPING":          ("Demand shaped toward what can be made",            "2"),
+    "NEW_LISTING":      ("New listing with a ranging date",                  "4"),
+    "DELISTING":        ("Listing withdrawn",                                "4"),
+    "POD_CHANGE":       ("Points of distribution gained or lost",            "4"),
+    "LAUNCH":           ("Launch volume typed in by marketing",              "7"),
+    "CANNIBALISATION":  ("Volume the launch takes from a neighbour",         "7"),
+    "EXIT_RUN_OUT":     ("Discontinuation run-out",                          "8"),
+    "BUDGET":           ("Business plan contribution",                       "1,7"),
 }
+
+
+def reason_codes() -> list[dict]:
+    return [{"reason_code": c, "description": d, "layers": l} for c, (d, l) in REASON_CODES.items()]
 
 
 def _entry(version: str, layer: int, by: str, on: str, reason: str, effect: str,
            mat: str, cust: str, p_from: str, p_to: str, kind: str, value: float, spread: str, note: str = "") -> dict:
-    return {"version_id": version, "layer_no": layer, "entered_by": by, "entered_on": on, "reason_code": reason,
-            "effect_type": effect, "scope_material": mat, "scope_customer": cust, "period_from": p_from, "period_to": p_to,
-            "value_kind": kind, "value": value, "spread_rule": spread, "note": note}
+    return {"action": "enter", "withdraws": "", "version_id": version, "layer_no": layer, "entered_by": by, "entered_on": on,
+            "reason_code": reason, "effect_type": effect, "scope_material": mat, "scope_customer": cust, "period_from": p_from,
+            "period_to": p_to, "value_kind": kind, "value": value, "spread_rule": spread, "note": note}
 
 
 def business_plan_entries(materials: list[Material], shipments: list[dict], plan_fy: int) -> list[dict]:
