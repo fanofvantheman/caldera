@@ -23,11 +23,16 @@ roles = WarehouseRoles(q)
 session = Session(default=default_holder("layer.1.enter", roles.actions_held))
 
 SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.demand", who="select", nav=[
-    ("plan", "Plan", [("demand", "Demand plan", "plan.demand", {}), ("entries", "Entries", "plan.entries", {}),
-                      ("new", "New entry", "plan.entry_new", {}), ("money", "Revenue bridge", "plan.money", {})]),
-    ("registers", "Registers", [("events", "Promotions", "plan.events", {}), ("terms", "Terms", "plan.terms", {}),
-                                ("versions", "Versions", "plan.versions", {})]),
-    ("run", "Run", [("run", "Run and health", "plan.run", {})]),
+    # the areas are the process; the components of each sit beneath it
+    ("demand", "Demand", [("demand", "Demand plan", "plan.demand", {}), ("entries", "Entries", "plan.entries", {}),
+                          ("new", "New entry", "plan.entry_new", {}), ("events", "Promotions", "plan.events", {}),
+                          ("terms", "Terms", "plan.terms", {}), ("money", "Revenue bridge", "plan.money", {})]),
+    ("supply", "Supply", [("supply", "Supply plan", "plan.rung", {"slug": "supply"}), ("capacity", "Capacity", "plan.rung", {"slug": "capacity"}),
+                          ("inventory", "Inventory", "plan.rung", {"slug": "inventory"})]),
+    ("innovation", "Innovation", [("launches", "Launches", "plan.launches", {}), ("exits", "Exits", "plan.exits", {})]),
+    ("reconciliation", "Reconciliation", [("gap", "Gap to reference", "plan.gap", {}), ("scenarios", "Scenarios", "plan.rung", {"slug": "scenarios"})]),
+    ("management", "Management", [("versions", "Versions", "plan.versions", {}), ("review", "Management review", "plan.rung", {"slug": "review"})]),
+    ("admin", "Admin", [("run", "Run and health", "plan.run", {})]),
 ])
 
 # the entry file's contract — every column the landing writes; the generator writes the same

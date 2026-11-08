@@ -10,7 +10,7 @@ from .structures import LINES, COST_CENTRES
 def versions(weeks: list[Week], plan_fy: int, latest_closed: str) -> list[dict]:
     """Every forward view is a version, named by the cycle that produced it, with a horizon.
     ACTUAL is the closed history; BP is the business plan for the year; LV-<period> the latest view
-    produced by a cycle; scenarios hang off the version they were read against."""
+    produced by a cycle, rolling 36 periods from the period after the one it closed; scenarios hang off the version they were read against."""
     return [
         {"version_id": "ACTUAL", "version_kind": "actual", "cycle": "", "fiscal_year": "", "horizon_start": weeks[0].period,
          "horizon_end": latest_closed, "calendar_variant": "4-4-5", "standard_version": "STD-FY2027", "reference_version": "",
@@ -19,7 +19,7 @@ def versions(weeks: list[Week], plan_fy: int, latest_closed: str) -> list[dict]:
          "horizon_start": f"{plan_fy}P01", "horizon_end": f"{plan_fy}P12", "calendar_variant": "4-4-5", "standard_version": "STD-FY2027",
          "reference_version": "", "status": "frozen", "owner": "finance", "named_on": "2026-06-15"},
         {"version_id": f"LV-{latest_closed}", "version_kind": "latest_view", "cycle": f"IBP {latest_closed}", "fiscal_year": plan_fy,
-         "horizon_start": f"{plan_fy}P05", "horizon_end": f"{plan_fy + 1}P04", "calendar_variant": "4-4-5", "standard_version": "STD-FY2027",
+         "horizon_start": f"{plan_fy}P05", "horizon_end": f"{plan_fy + 3}P04", "calendar_variant": "4-4-5", "standard_version": "STD-FY2027",
          "reference_version": f"BP-FY{plan_fy}", "status": "open", "owner": "finance", "named_on": "2026-11-02"},
     ]
 

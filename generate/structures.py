@@ -210,45 +210,45 @@ def build_bom(materials: list[Material]) -> list[dict]:
 
 # (account_code, name, channel, sub_channel, tier, route_to_market, state, price_list, payment_terms_days, settlement_disc_pct, collaborative, scan)
 ACCOUNTS = [
-    ("WOW",   "Woolworths Supermarkets",   "grocery",     "major chains",  "key account", "direct",       "NSW", "PL_GROCERY",     45, 0.0, "Y", "Y"),
-    ("COL",   "Coles Supermarkets",        "grocery",     "major chains",  "key account", "direct",       "VIC", "PL_GROCERY",     45, 0.0, "Y", "Y"),
-    ("MET",   "Metcash (IGA)",             "grocery",     "independents",  "national",    "via wholesaler","NSW", "PL_WHOLESALE",  30, 1.5, "N", "N"),
-    ("ALD",   "Aldi Stores",               "discount",    "",              "national",    "direct",       "NSW", "PL_CONTRACT",    30, 0.0, "N", "N"),
-    ("CST",   "Costco Wholesale",          "wholesale",   "club",          "regional",    "direct",       "VIC", "PL_GROCERY",     30, 0.0, "N", "N"),
-    ("BID",   "Bidfood Foodservice",       "foodservice", "distributor",   "national",    "via distributor","VIC","PL_FOODSERVICE", 30, 0.0, "N", "N"),
+    ("WAR",   "Warners Supermarkets",   "grocery",     "major chains",  "key account", "direct",       "NSW", "PL_GROCERY",     45, 0.0, "Y", "Y"),
+    ("CAR",   "Carters Supermarkets",        "grocery",     "major chains",  "key account", "direct",       "VIC", "PL_GROCERY",     45, 0.0, "Y", "Y"),
+    ("MER",   "Merritt Independents",             "grocery",     "independents",  "national",    "via wholesaler","NSW", "PL_WHOLESALE",  30, 1.5, "N", "N"),
+    ("ALS",   "Alders Stores",               "discount",    "",              "national",    "direct",       "NSW", "PL_CONTRACT",    30, 0.0, "N", "N"),
+    ("CRS",   "Crestway Wholesale",          "wholesale",   "club",          "regional",    "direct",       "VIC", "PL_GROCERY",     30, 0.0, "N", "N"),
+    ("BRD",   "Bradfield Foodservice",       "foodservice", "distributor",   "national",    "via distributor","VIC","PL_FOODSERVICE", 30, 0.0, "N", "N"),
     ("EXPJ",  "Nihon Foods Import Co.",    "export",      "importer",      "regional",    "via importer", "JP",  "PL_EXPORT",      60, 0.0, "N", "N"),
 ]
 
 # (ship_to_code, account_code, name, state, serving_node, stores_served)
 SHIP_TOS = [
-    ("WOW-NSW", "WOW", "Woolworths DC Minchinbury",    "NSW", "MEL", 380),
-    ("WOW-VIC", "WOW", "Woolworths DC Melbourne",      "VIC", "MEL", 300),
-    ("WOW-QLD", "WOW", "Woolworths DC Brisbane",       "QLD", "BNE", 260),
-    ("WOW-WA",  "WOW", "Woolworths DC Perth",          "WA",  "MEL", 120),
-    ("COL-NSW", "COL", "Coles DC Eastern Creek",       "NSW", "MEL", 300),
-    ("COL-VIC", "COL", "Coles DC Truganina",           "VIC", "MEL", 260),
-    ("COL-QLD", "COL", "Coles DC Brisbane",            "QLD", "BNE", 200),
-    ("MET-VIC", "MET", "Metcash DC Laverton",          "VIC", "MEL", 450),
-    ("MET-NSW", "MET", "Metcash DC Huntingwood",       "NSW", "MEL", 500),
-    ("ALD-VIC", "ALD", "Aldi DC Derrimut",             "VIC", "MEL", 180),
-    ("ALD-NSW", "ALD", "Aldi DC Minchinbury",          "NSW", "MEL", 200),
-    ("CST-VIC", "CST", "Costco Docklands",             "VIC", "MEL", 4),
-    ("BID-VIC", "BID", "Bidfood DC Melbourne",         "VIC", "MEL", 0),
+    ("WAR-NSW", "WAR", "Warners DC Minchinbury",    "NSW", "MEL", 380),
+    ("WAR-VIC", "WAR", "Warners DC Melbourne",      "VIC", "MEL", 300),
+    ("WAR-QLD", "WAR", "Warners DC Brisbane",       "QLD", "BNE", 260),
+    ("WAR-WA",  "WAR", "Warners DC Perth",          "WA",  "MEL", 120),
+    ("CAR-NSW", "CAR", "Carters DC Eastern Creek",       "NSW", "MEL", 300),
+    ("CAR-VIC", "CAR", "Carters DC Truganina",           "VIC", "MEL", 260),
+    ("CAR-QLD", "CAR", "Carters DC Brisbane",            "QLD", "BNE", 200),
+    ("MER-VIC", "MER", "Merritt DC Laverton",          "VIC", "MEL", 450),
+    ("MER-NSW", "MER", "Merritt DC Huntingwood",       "NSW", "MEL", 500),
+    ("ALS-VIC", "ALS", "Alders DC Derrimut",             "VIC", "MEL", 180),
+    ("ALS-NSW", "ALS", "Alders DC Minchinbury",          "NSW", "MEL", 200),
+    ("CRS-VIC", "CRS", "Crestway Docklands",             "VIC", "MEL", 4),
+    ("BRD-VIC", "BRD", "Bradfield DC Melbourne",         "VIC", "MEL", 0),
     ("EXPJ-POR","EXPJ","Port of Yokohama (FOB Melbourne)", "JP", "MEL", 0),
 ]
 
 # which products an account ranges (private label only to its owner; export a short list)
 def account_ranges(acct: str, m: Material) -> bool:
     if m.branded == "private_label":
-        return {"PL_PEACH": "WOW", "PL_PEAR": "COL", "PL_CUP": "ALD", "PL_TOM": "ALD"}.get(m.product_code) == acct or \
-               (m.product_code in ("PL_PEACH", "PL_TOM") and acct == "COL")
-    if acct == "ALD":
+        return {"PL_PEACH": "WAR", "PL_PEAR": "CAR", "PL_CUP": "ALS", "PL_TOM": "ALS"}.get(m.product_code) == acct or \
+               (m.product_code in ("PL_PEACH", "PL_TOM") and acct == "CAR")
+    if acct == "ALS":
         return False
     if acct == "EXPJ":
         return m.category_code == "SNACK_CUPS" or m.product_code == "PEACH_SL"
-    if acct == "BID":
+    if acct == "BRD":
         return m.format_code in ("CAN_825", "CAN_410", "CAN_400T") and m.category_code != "SPREADS"
-    if acct == "CST":
+    if acct == "CRS":
         return "12x" in m.format_code or m.format_code == "CAN_825"
     return True
 
@@ -290,20 +290,20 @@ LINES = [
 LANES = [
     ("SHP", "MEL",     "node",    "road linehaul", 1, 38.0),
     ("SHP", "BNE",     "node",    "road linehaul", 3, 95.0),
-    ("MEL", "WOW-VIC", "ship_to", "road local",    1, 22.0),
-    ("MEL", "COL-VIC", "ship_to", "road local",    1, 22.0),
-    ("MEL", "MET-VIC", "ship_to", "road local",    1, 22.0),
-    ("MEL", "ALD-VIC", "ship_to", "road local",    1, 22.0),
-    ("MEL", "CST-VIC", "ship_to", "road local",    1, 24.0),
-    ("MEL", "BID-VIC", "ship_to", "road local",    1, 24.0),
-    ("MEL", "WOW-NSW", "ship_to", "road interstate", 2, 48.0),
-    ("MEL", "COL-NSW", "ship_to", "road interstate", 2, 48.0),
-    ("MEL", "MET-NSW", "ship_to", "road interstate", 2, 48.0),
-    ("MEL", "ALD-NSW", "ship_to", "road interstate", 2, 48.0),
-    ("MEL", "WOW-WA",  "ship_to", "rail interstate", 6, 110.0),
+    ("MEL", "WAR-VIC", "ship_to", "road local",    1, 22.0),
+    ("MEL", "CAR-VIC", "ship_to", "road local",    1, 22.0),
+    ("MEL", "MER-VIC", "ship_to", "road local",    1, 22.0),
+    ("MEL", "ALS-VIC", "ship_to", "road local",    1, 22.0),
+    ("MEL", "CRS-VIC", "ship_to", "road local",    1, 24.0),
+    ("MEL", "BRD-VIC", "ship_to", "road local",    1, 24.0),
+    ("MEL", "WAR-NSW", "ship_to", "road interstate", 2, 48.0),
+    ("MEL", "CAR-NSW", "ship_to", "road interstate", 2, 48.0),
+    ("MEL", "MER-NSW", "ship_to", "road interstate", 2, 48.0),
+    ("MEL", "ALS-NSW", "ship_to", "road interstate", 2, 48.0),
+    ("MEL", "WAR-WA",  "ship_to", "rail interstate", 6, 110.0),
     ("MEL", "EXPJ-POR","ship_to", "sea container",   18, 60.0),
-    ("BNE", "WOW-QLD", "ship_to", "road local",    1, 24.0),
-    ("BNE", "COL-QLD", "ship_to", "road local",    1, 24.0),
+    ("BNE", "WAR-QLD", "ship_to", "road local",    1, 24.0),
+    ("BNE", "CAR-QLD", "ship_to", "road local",    1, 24.0),
 ]
 
 # ---------------------------------------------------------------------------------------------

@@ -55,15 +55,22 @@ def _busy(title: str, e: Busy) -> str:
 
 # ---- the demand plan ----
 DEMAND = VERSION_PICKER + """
-<h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material and period{% if account %} · {{ account }}{% endif %}</small></h1>
-<table><thead><tr><th>Material</th>{% for p in d.periods %}<th class="n">{{ p }}</th>{% endfor %}<th class="n">Total</th></tr></thead><tbody>
-{% for r in d.rows %}<tr><td>{{ r.material }}</td>{% for c in r.cells %}<td class="n">{{ c|n }}</td>{% endfor %}<td class="n">{{ r.total|n }}</td></tr>{% endfor %}
-<tr class="total"><td>Total</td>{% for t in d.totals %}<td class="n">{{ t|n }}</td>{% endfor %}<td class="n">{{ d.grand|n }}</td></tr>
+<h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material{% if account %} · {{ account }}{% endif %} · {{ d.n_actual }} closed periods as actuals, then the plan · totals by fiscal year with comparatives</small></h1>
+<div class="wide"><table class="plan"><thead>
+<tr><th rowspan="2" class="sticky">Material</th><th colspan="{{ d.periods|length }}" style="text-align:center">Periods</th>
+{% for c in d.comps %}<th colspan="{{ 1 + (1 if c.py else 0) + (1 if c.ref else 0) }}" style="text-align:center;border-left:1px solid var(--rule)">FY{{ c.fy }}</th>{% endfor %}<th class="n" rowspan="2">Horizon</th></tr>
+<tr>{% for pp in d.periods %}<th class="n {{ 'actual' if d.source_of[pp] == 'actual' }}" title="{{ pp }}{{ ' · actual' if d.source_of[pp] == 'actual' }}">{{ pp[2:4] }}·{{ pp[5:] }}</th>{% endfor %}
+{% for c in d.comps %}<th class="n" style="border-left:1px solid var(--rule)">Total</th>{% if c.py %}<th class="n" title="same periods, prior fiscal year: shipments where closed, else this view">PY</th>{% endif %}{% if c.ref %}<th class="n" title="{{ d.ref_id }}">{{ d.ref_id }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
+{% for r in d.rows + [d.totals] %}<tr class="{{ 'total' if r.material == 'Total' }}"><td class="sticky">{{ r.material }}</td>{% for c in r.cells %}<td class="n {{ 'actual' if d.source_of[d.periods[loop.index0]] == 'actual' }}">{{ c|n }}</td>{% endfor %}
+{% for b in r.blocks %}<td class="n" style="border-left:1px solid var(--rule);font-weight:500">{{ b.total|n }}</td>{% if d.comps[loop.index0].py %}<td class="n muted">{{ b.py|n }}</td>{% endif %}{% if d.comps[loop.index0].ref %}<td class="n muted">{{ b.ref|n }}</td>{% endif %}{% endfor %}<td class="n" style="font-weight:600">{{ r.total|n }}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="hint">Shaded periods are closed and read from shipments; the rest is the plan. PY is the same periods a year earlier — shipments where that year is closed, otherwise this view; {{ d.ref_id }} is the reference version where its horizon overlaps.</p>
+<h2>Plan by layer and fiscal year</h2>
+<table><thead><tr><th>Fiscal year</th><th class="n">1 Baseline</th><th class="n">2 Adjustment</th><th class="n">4 Distribution</th><th class="n">6 Promotions</th><th class="n">7 Innovation</th><th class="n">8 Exit</th><th class="n">Plan</th></tr></thead><tbody>
+{% for r in layers %}<tr><td>FY{{ r.fiscal_year }}</td><td class="n">{{ r.l1|n }}</td><td class="n">{{ r.l2|n }}</td><td class="n">{{ r.l4|n }}</td><td class="n">{{ r.l6|n }}</td><td class="n">{{ r.l7|n }}</td><td class="n">{{ r.l8|n }}</td><td class="n">{{ r.cases|n }}</td></tr>{% endfor %}
 </tbody></table>
-<h2>By layer</h2>
-<table><thead><tr><th>Period</th><th class="n">1 Baseline</th><th class="n">2 Adjustment</th><th class="n">4 Distribution</th><th class="n">6 Promotions</th><th class="n">7 Innovation</th><th class="n">8 Exit</th><th class="n">Total</th></tr></thead><tbody>
-{% for r in d.by_layer %}<tr><td>{{ r.period }}</td><td class="n">{{ r.l1|n }}</td><td class="n">{{ r.l2|n }}</td><td class="n">{{ r.l4|n }}</td><td class="n">{{ r.l6|n }}</td><td class="n">{{ r.l7|n }}</td><td class="n">{{ r.l8|n }}</td><td class="n">{{ r.cases|n }}</td></tr>{% endfor %}
-</tbody></table>"""
+<style>.wide{overflow-x:auto;margin:0 -1rem;padding:0 1rem}table.plan{width:max-content;min-width:100%;font-size:.82rem}table.plan th,table.plan td{padding:.35rem .5rem}
+table.plan .actual{background:var(--soft)}table.plan .sticky{position:sticky;left:0;background:var(--panel);z-index:1}table.plan th.sticky{z-index:2;background:var(--soft)}</style>"""
 
 
 @plan.get("/")
@@ -73,15 +80,15 @@ def demand():
         accounts = reads.accounts()
         extra = ('<label>account<select name="account" onchange="this.form.submit()"><option value="">all</option>'
                  + "".join(f'<option value="{a["account_code"]}" {"selected" if a["account_code"] == account else ""}>{a["account_code"]}</option>' for a in accounts) + "</select></label>")
-        return _page(DEMAND, title="Demand plan", active="demand", versions=reads.versions(), version=version, account=account,
-                     d=reads.demand(version, account), extra=extra)
+        return _page(DEMAND, title="Demand plan", active="demand", width="100%", versions=reads.versions(), version=version, account=account,
+                     d=reads.demand(version, account), layers=reads.by_layer(version, account), extra=extra)
     except Busy as e:
         return _busy("Demand plan", e)
 
 
 # ---- entries ----
 ENTRIES_PAGE = VERSION_PICKER + """
-<h1>Entries<small>{{ version }} · what the people typed, one row per contribution to a layer</small></h1>
+<h1>{{ title }}<small>{{ version }} · {{ lede }}</small></h1>
 <table><thead><tr><th>Layer</th><th>Entry</th><th>By</th><th>On</th><th>Reason</th><th>Material</th><th>Customer</th><th>Window</th><th class="n">Value</th><th>Spread</th><th>Note</th><th></th></tr></thead><tbody>
 {% for e in rows %}<tr class="{{ 'off' if e.withdrawn and e.withdrawn_by_owner }}">
 <td>{{ e.layer_no }}</td><td><code>{{ e.entry_id }}</code>{% if not e.entered_by_owner %} <span class="state">refused</span>{% endif %}{% if e.withdrawn and not e.withdrawn_by_owner %} <span class="state">withdrawal refused</span>{% endif %}</td>
@@ -93,21 +100,43 @@ ENTRIES_PAGE = VERSION_PICKER + """
 </tbody></table>"""
 
 
+def _entries(title: str, active: str, layers_fixed: list[int] | None = None, lede: str | None = None):
+    version = _version(); layer = request.args.get("layer") or ""
+    show = request.args.get("withdrawn") == "1"
+    v = reads.version(version) or {}
+    wanted = layers_fixed if layers_fixed else ([int(layer)] if layer else None)
+    rows = [{**e, "version_status": v.get("status")} for e in reads.entries(version, wanted, show)]
+    who = _who()
+    may_withdraw = {l["layer_no"] for l in reads.layers() if roles.may(who, f"layer.{l['layer_no']}.withdraw")}
+    layer_pick = "" if layers_fixed else ('<label>layer<select name="layer" onchange="this.form.submit()"><option value="">all</option>'
+        + "".join(f'<option value="{l["layer_no"]}" {"selected" if str(l["layer_no"]) == layer else ""}>{l["layer_no"]} {l["layer_name"]}</option>' for l in reads.layers()) + "</select></label>")
+    extra = layer_pick + f'<label>withdrawn<select name="withdrawn" onchange="this.form.submit()"><option value="0">hidden</option><option value="1" {"selected" if show else ""}>shown</option></select></label>'
+    return _page(ENTRIES_PAGE, title=title, active=active, versions=reads.versions(), version=version, rows=rows, may_withdraw=may_withdraw, extra=extra,
+                 lede=lede or "what the people typed, one row per contribution to a layer")
+
+
 @plan.get("/entries")
 def entries():
     try:
-        version = _version(); layer = request.args.get("layer") or ""
-        show = request.args.get("withdrawn") == "1"
-        v = reads.version(version) or {}
-        rows = [{**e, "version_status": v.get("status")} for e in reads.entries(version, int(layer) if layer else None, show)]
-        who = _who()
-        may_withdraw = {l["layer_no"] for l in reads.layers() if roles.may(who, f"layer.{l['layer_no']}.withdraw")}
-        extra = ('<label>layer<select name="layer" onchange="this.form.submit()"><option value="">all</option>'
-                 + "".join(f'<option value="{l["layer_no"]}" {"selected" if str(l["layer_no"]) == layer else ""}>{l["layer_no"]} {l["layer_name"]}</option>' for l in reads.layers())
-                 + f'</select></label><label>withdrawn<select name="withdrawn" onchange="this.form.submit()"><option value="0">hidden</option><option value="1" {"selected" if show else ""}>shown</option></select></label>')
-        return _page(ENTRIES_PAGE, title="Entries", active="entries", versions=reads.versions(), version=version, rows=rows, may_withdraw=may_withdraw, extra=extra)
+        return _entries("Entries", "entries")
     except Busy as e:
         return _busy("Entries", e)
+
+
+@plan.get("/launches")
+def launches():
+    try:
+        return _entries("Launches", "launches", [7], "the innovation layer: launch volume typed in by marketing, cannibalisation as its own line")
+    except Busy as e:
+        return _busy("Launches", e)
+
+
+@plan.get("/exits")
+def exits():
+    try:
+        return _entries("Exits", "exits", [8], "the lifecycle exit layer: run-out and discontinuation")
+    except Busy as e:
+        return _busy("Exits", e)
 
 
 @plan.post("/withdraw")
@@ -220,6 +249,45 @@ def money():
         return _page(MONEY, title="Revenue bridge", active="money", versions=reads.versions(), version=version, b=reads.bridge(version), extra="")
     except Busy as e:
         return _busy("Revenue bridge", e)
+
+
+# ---- reconciliation: the gap to the reference version ----
+GAP = VERSION_PICKER + """
+<h1>Gap to reference<small>{{ version }} against {{ g.reference }} · the difference the cycle exists to close</small></h1>
+{% if not g.reference %}<p class="lede">This version names no reference.</p>{% else %}
+<h2>By period</h2>
+<table><thead><tr><th>Period</th><th class="n">Plan cases</th><th class="n">Reference cases</th><th class="n">Gap</th><th class="n">Plan net sales</th><th class="n">Reference net sales</th><th class="n">Gap</th></tr></thead><tbody>
+{% for r in g.by_period %}<tr><td>{{ r.period }}</td><td class="n">{{ r.plan_cases|n }}</td><td class="n">{{ r.reference_cases|n }}</td><td class="n">{{ r.cases_gap|n }}</td><td class="n">{{ r.plan_net_sales|n }}</td><td class="n">{{ r.reference_net_sales|n }}</td><td class="n">{{ r.net_sales_gap|n }}</td></tr>{% endfor %}
+</tbody></table>
+<h2>By material and account<span class="count">largest shortfall first</span></h2>
+<table><thead><tr><th>Material</th><th>Account</th><th class="n">Plan cases</th><th class="n">Reference cases</th><th class="n">Gap</th><th class="n">Plan net sales</th><th class="n">Reference net sales</th><th class="n">Gap</th></tr></thead><tbody>
+{% for r in g.by_material %}<tr><td>{{ r.standard_material }}</td><td>{{ r.account_code }}</td><td class="n">{{ r.plan_cases|n }}</td><td class="n">{{ r.reference_cases|n }}</td><td class="n">{{ r.cases_gap|n }}</td><td class="n">{{ r.plan_net_sales|n }}</td><td class="n">{{ r.reference_net_sales|n }}</td><td class="n">{{ r.net_sales_gap|n }}</td></tr>{% endfor %}
+</tbody></table>{% endif %}"""
+
+
+@plan.get("/gap")
+def gap():
+    try:
+        version = _version()
+        return _page(GAP, title="Gap to reference", active="gap", versions=reads.versions(), version=version, g=reads.gap(version), extra="")
+    except Busy as e:
+        return _busy("Gap to reference", e)
+
+
+# ---- the rungs named but not yet built ----
+RUNGS = {
+    "supply": ("Supply plan", "Unconstrained demand met from stock, production and purchases by week and node; the rough-cut against the lines; what cannot be made and the shaping that answers it."),
+    "capacity": ("Capacity", "The machine, labour and storage registers against the load the supply plan puts on them; planned downtime and the unplanned downtime a deferred overhaul raises."),
+    "inventory": ("Inventory", "Projected stock by node and week against policy; weeks of cover; the working capital the plan ties up."),
+    "scenarios": ("Scenarios", "A named set of deltas read against a version; promoted into the latest view by decision, or dropped."),
+    "review": ("Management review", "The one set of numbers the business runs on: plan against reference, the decisions taken, the assumptions in force."),
+}
+
+
+@plan.get("/rung/<slug>")
+def rung(slug: str):
+    title, says = RUNGS.get(slug, ("Not here", "No such page."))
+    return _page(f"<h1>{title}<small>named, not yet built</small></h1><p class='lede'>{says}</p>", title=title, active=slug)
 
 
 # ---- registers ----

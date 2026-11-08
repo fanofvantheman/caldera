@@ -18,7 +18,7 @@ from .registers import versions, period_control, roles, capacity_register, assum
 from .plan import business_plan_entries, latest_view_entries, promo_events, terms_register, reason_codes
 from .emit import emit_all, dataclass_rows
 
-FIRST_FY, LAST_FY, PLAN_FY = 2024, 2028, 2027
+FIRST_FY, LAST_FY, PLAN_FY = 2024, 2030, 2027   # the latest view rolls 36 periods from the cycle
 LATEST_CLOSED = "2027P04"          # the last closed period: October 2026
 
 

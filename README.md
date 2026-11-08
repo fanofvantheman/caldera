@@ -33,11 +33,14 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
 - `ingest/pipeline.py` — dlt: one resource per file into `bronze`, replaced whole on every load. A plan table is fed by
   the generated file and then every file the face has placed under `data/landing/plan/<table>/`, in file order —
   file order is time order; the face is the landing's only writer.
-- `face/` — the planning face: the demand plan by material and period with the layers beneath, the entries on a
+- `face/` — the planning face, navigated as the process (Demand, Supply, Innovation, Reconciliation, Management, Admin) with
+  each area's components beneath it: the demand plan — every period across, closed periods as actuals, then each fiscal
+  year's total beside the same periods a year earlier and the reference version — the entries on a
   version (a withdrawal is a later row that names the entry; the entry stays, struck through), a new entry placed as a
   file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the
-  reason offered on the layer — flagged, not refused), the revenue bridge and the gap to the reference version, the
-  promotions and terms registers, the versions, and the run — the same two commands the schedule runs, started by
+  reason offered on the layer — flagged, not refused), the revenue bridge, the gap to the reference version by period and by material, launches and exits as the
+  innovation layers' entries, the promotions and terms registers, the versions, the rungs named but not yet built
+  (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
   whoever holds `run.plan`, the log kept. Every act writes a receipt under `data/receipts/`. What a page shows is what
   the last run said: an entry placed is in the plan after the next run, and a withdrawal of an entry the warehouse has
   not yet seen is refused, honestly, until it has.

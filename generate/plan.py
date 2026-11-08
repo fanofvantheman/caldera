@@ -69,7 +69,7 @@ def business_plan_entries(materials: list[Material], shipments: list[dict], plan
                            mat, acct, f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases", value, "history_shape"))
     # the budget assumed the adult cups launch from P05 at the two majors; it has since slipped to P07
     for p in range(5, 13):
-        for acct in ("WOW", "COL"):
+        for acct in ("WAR", "CAR"):
             rows.append(_entry(f"BP-FY{plan_fy}", 7, "demand.planner@caldera", "2026-06-10", "LAUNCH", "primary",
                                "CUP_ADULT-CUP_2x170", acct, f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
                                min(1000 + 250 * (p - 5), 2500), "catchment", "AOP launch assumption"))
@@ -83,28 +83,28 @@ def latest_view_entries(plan_fy: int, latest_closed: str) -> list[dict]:
     fy1 = plan_fy + 1
     rows = [
         # layer 2 — judgement at the slice the planner chose; near horizon in cases, far horizon as rates
-        _entry(v, 2, dp, on, "MARKET_INTEL", "primary", "SNACK_CUPS", "WOW", f"{plan_fy}P05", f"{plan_fy}P08", "rate_on_baseline", 0.06, "baseline_shape",
+        _entry(v, 2, dp, on, "MARKET_INTEL", "primary", "SNACK_CUPS", "WAR", f"{plan_fy}P05", f"{plan_fy}P08", "rate_on_baseline", 0.06, "baseline_shape",
                "Account team expects the cups reset to hold through summer"),
         *[_entry(v, 2, dp, on, "CATEGORY_DECLINE", "primary", prod, "ALL", f"{plan_fy}P09", f"{fy1}P04", "rate_on_baseline", -0.03, "baseline_shape",
                  "Scan data shows the category falling faster than the fitted trend; the exiting and delisted lines are left to their own layers")
           for prod in ("PEACH_SL", "PEAR_HV", "PL_PEACH", "PL_PEAR")],
-        _entry(v, 2, dp, on, "RANGE_REVIEW", "primary", "PG_REDGUM", "COL", f"{plan_fy}P06", f"{plan_fy}P06", "cases", 4000, "baseline_shape",
+        _entry(v, 2, dp, on, "RANGE_REVIEW", "primary", "PG_REDGUM", "CAR", f"{plan_fy}P06", f"{plan_fy}P06", "cases", 4000, "baseline_shape",
                "Pipeline fill for the Redgum shelf relay"),
         # layer 4 — distribution: one listing gained (no history, so catchment), one lost (a rate on what was there)
-        *[_entry(v, 4, kam, on, "NEW_LISTING", "primary", "CUP_PEAR-CUP_4x120", "MET", f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
-                 min(600 + 300 * (p - 6), 1500), "catchment", "Pear cups ranged at Metcash from P06") for p in range(6, 13)],
-        *[_entry(v, 4, kam, on, "NEW_LISTING", "primary", "CUP_PEAR-CUP_4x120", "MET", f"{fy1}P{p:02d}", f"{fy1}P{p:02d}", "cases", 1500, "catchment")
+        *[_entry(v, 4, kam, on, "NEW_LISTING", "primary", "CUP_PEAR-CUP_4x120", "MER", f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
+                 min(600 + 300 * (p - 6), 1500), "catchment", "Pear cups ranged at Merritt from P06") for p in range(6, 13)],
+        *[_entry(v, 4, kam, on, "NEW_LISTING", "primary", "CUP_PEAR-CUP_4x120", "MER", f"{fy1}P{p:02d}", f"{fy1}P{p:02d}", "cases", 1500, "catchment")
           for p in range(1, 5)],
-        _entry(v, 4, kam, on, "DELISTING", "primary", "FRUIT_SAL-CAN_825", "WOW", f"{plan_fy}P07", f"{fy1}P04", "rate_on_baseline", -1.0, "baseline_shape",
-               "825 g fruit salad delisted at Woolworths from P07"),
+        _entry(v, 4, kam, on, "DELISTING", "primary", "FRUIT_SAL-CAN_825", "WAR", f"{plan_fy}P07", f"{fy1}P04", "rate_on_baseline", -1.0, "baseline_shape",
+               "825 g fruit salad delisted at Warners from P07"),
         # layer 7 — innovation: the adult cups launch, typed in by marketing, now from P07; cannibalisation as its own line
         *[_entry(v, 7, pm, on, "LAUNCH", "primary", "CUP_ADULT-CUP_2x170", acct, f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
-                 min(800 + 400 * (p - 7), 3000), "catchment", "Launch ramp, both majors") for p in range(7, 13) for acct in ("WOW", "COL")],
+                 min(800 + 400 * (p - 7), 3000), "catchment", "Launch ramp, both majors") for p in range(7, 13) for acct in ("WAR", "CAR")],
         *[_entry(v, 7, pm, on, "LAUNCH", "primary", "CUP_ADULT-CUP_2x170", acct, f"{fy1}P{p:02d}", f"{fy1}P{p:02d}", "cases", 3000, "catchment")
-          for p in range(1, 5) for acct in ("WOW", "COL")],
-        _entry(v, 7, pm, on, "CANNIBALISATION", "cannibalisation", "CUP_PEAR-CUP_4x120", "WOW", f"{plan_fy}P07", f"{fy1}P04", "rate_on_baseline", -0.05, "baseline_shape",
+          for p in range(1, 5) for acct in ("WAR", "CAR")],
+        _entry(v, 7, pm, on, "CANNIBALISATION", "cannibalisation", "CUP_PEAR-CUP_4x120", "WAR", f"{plan_fy}P07", f"{fy1}P04", "rate_on_baseline", -0.05, "baseline_shape",
                "Adult cups take some pear-cup shoppers"),
-        _entry(v, 7, pm, on, "CANNIBALISATION", "cannibalisation", "CUP_PEAR-CUP_4x120", "COL", f"{plan_fy}P07", f"{fy1}P04", "rate_on_baseline", -0.05, "baseline_shape"),
+        _entry(v, 7, pm, on, "CANNIBALISATION", "cannibalisation", "CUP_PEAR-CUP_4x120", "CAR", f"{plan_fy}P07", f"{fy1}P04", "rate_on_baseline", -0.05, "baseline_shape"),
         # layer 8 — lifecycle exit: apricot halves run out over P08 and stop at P09
         _entry(v, 8, pm, on, "EXIT_RUN_OUT", "primary", "APRICOT_HV-CAN_410", "ALL", f"{plan_fy}P08", f"{plan_fy}P08", "rate_on_baseline", -0.5, "baseline_shape",
                "Run-out of remaining stock"),
@@ -124,18 +124,18 @@ def promo_events(weeks: list[Week], plan_fy: int, latest_closed: str, materials:
         return sum(per_kg[m.category_code] * {"premium": 1.25, "mainstream": 1.0, "value": 0.78}[m.price_tier] * m.case_net_kg for m in ms) / len(ms)
     period_start = {p["period"]: p["period_start"] for p in periods(weeks)}
     plan = [  # (account, promo group, period, offset days into the period, length days, mechanic, uplift, tpr % of list, catalogue)
-        ("WOW", "PG_VALLEY_410", f"{plan_fy}P05", 9, 14, "half_price", 1.10, 0.25, True),
-        ("COL", "PG_CUPS_4PK",   f"{plan_fy}P06", 2, 7,  "price_cut",  0.60, 0.18, False),
-        ("WOW", "PG_BEANS_SPAG", f"{plan_fy}P06", 16, 7, "multi_buy",  0.45, 0.12, False),
-        ("COL", "PG_VALLEY_410", f"{plan_fy}P07", 9, 14, "half_price", 1.00, 0.25, True),
-        ("MET", "PG_REDGUM",     f"{plan_fy}P08", 2, 14, "price_cut",  0.50, 0.15, True),
-        ("WOW", "PG_CUPS_4PK",   f"{plan_fy}P08", 16, 7, "price_cut",  0.70, 0.18, False),
-        ("COL", "PG_BEANS_SPAG", f"{plan_fy}P09", 9, 7,  "multi_buy",  0.45, 0.12, False),
-        ("WOW", "PG_REDGUM",     f"{plan_fy}P10", 2, 14, "price_cut",  0.55, 0.15, True),
-        ("WOW", "PG_VALLEY_410", f"{plan_fy}P11", 9, 14, "half_price", 1.10, 0.25, True),
-        ("COL", "PG_CUPS_4PK",   f"{plan_fy}P12", 16, 7, "price_cut",  0.60, 0.18, False),
-        ("COL", "PG_VALLEY_410", f"{plan_fy + 1}P02", 9, 14, "half_price", 1.00, 0.25, True),
-        ("WOW", "PG_CUPS_4PK",   f"{plan_fy + 1}P03", 2, 7,  "price_cut",  0.70, 0.18, False),
+        ("WAR", "PG_VALLEY_410", f"{plan_fy}P05", 9, 14, "half_price", 1.10, 0.25, True),
+        ("CAR", "PG_CUPS_4PK",   f"{plan_fy}P06", 2, 7,  "price_cut",  0.60, 0.18, False),
+        ("WAR", "PG_BEANS_SPAG", f"{plan_fy}P06", 16, 7, "multi_buy",  0.45, 0.12, False),
+        ("CAR", "PG_VALLEY_410", f"{plan_fy}P07", 9, 14, "half_price", 1.00, 0.25, True),
+        ("MER", "PG_REDGUM",     f"{plan_fy}P08", 2, 14, "price_cut",  0.50, 0.15, True),
+        ("WAR", "PG_CUPS_4PK",   f"{plan_fy}P08", 16, 7, "price_cut",  0.70, 0.18, False),
+        ("CAR", "PG_BEANS_SPAG", f"{plan_fy}P09", 9, 7,  "multi_buy",  0.45, 0.12, False),
+        ("WAR", "PG_REDGUM",     f"{plan_fy}P10", 2, 14, "price_cut",  0.55, 0.15, True),
+        ("WAR", "PG_VALLEY_410", f"{plan_fy}P11", 9, 14, "half_price", 1.10, 0.25, True),
+        ("CAR", "PG_CUPS_4PK",   f"{plan_fy}P12", 16, 7, "price_cut",  0.60, 0.18, False),
+        ("CAR", "PG_VALLEY_410", f"{plan_fy + 1}P02", 9, 14, "half_price", 1.00, 0.25, True),
+        ("WAR", "PG_CUPS_4PK",   f"{plan_fy + 1}P03", 2, 7,  "price_cut",  0.70, 0.18, False),
     ]
     scan_accounts = {a[0] for a in ACCOUNTS if a[11] == "Y"}
     rows = []
@@ -160,17 +160,17 @@ def terms_register() -> list[dict]:
                 "valid_from": "2026-06-29", "valid_to": "", "note": note}
     rows = []
     for acct, *_ in ACCOUNTS:
-        if acct in ("WOW", "COL"):
+        if acct in ("WAR", "CAR"):
             rows += [t(acct, "RR", "retro_rebate", "pct_of_invoice", 0.025, "off_invoice", "unconditional", "quarterly"),
                      t(acct, "VR", "volume_rebate", "pct_of_invoice", 0.015, "off_invoice", "volume", "annual_retro", "accrual rate; tier reached is a true-up"),
                      t(acct, "WA", "warehouse_allowance", "pct_of_invoice", 0.010, "off_invoice", "unconditional", "in_period")]
-        elif acct == "MET":
+        elif acct == "MER":
             rows += [t(acct, "SD", "standing_discount", "pct_of_list", 0.030, "on_invoice", "unconditional", "in_period"),
                      t(acct, "RR", "retro_rebate", "pct_of_invoice", 0.010, "off_invoice", "unconditional", "quarterly"),
                      t(acct, "ST", "settlement_discount", "pct_of_invoice", 0.015, "off_invoice", "payment", "in_period")]
-        elif acct == "CST":
+        elif acct == "CRS":
             rows += [t(acct, "SD", "standing_discount", "pct_of_list", 0.020, "on_invoice", "unconditional", "in_period")]
-        elif acct == "BID":
+        elif acct == "BRD":
             rows += [t(acct, "SD", "standing_discount", "pct_of_list", 0.040, "on_invoice", "unconditional", "in_period"),
                      t(acct, "RR", "retro_rebate", "pct_of_invoice", 0.010, "off_invoice", "unconditional", "quarterly")]
         # ALD: contract price, no instruments; EXPJ: FOB price, no instruments
