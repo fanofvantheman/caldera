@@ -32,7 +32,9 @@ def _page(body: str, **ctx) -> str:
         principals = roles.principals()
     except Busy:
         principals = []
-    return SHELL.page(body, who=_who() if principals else None, principals=principals, flash=session.flash(), **ctx)
+    who = _who() if principals else None
+    held = roles.actions_held(who) if who else set()
+    return SHELL.page(body, who=who, held=held, principals=principals, flash=session.flash(), **ctx)
 
 
 def _version() -> str | None:
@@ -51,6 +53,66 @@ VERSION_PICKER = """<form class="toolbar" method="get"><label>version<select nam
 
 def _busy(title: str, e: Busy) -> str:
     return _page(f"<h1>{title}</h1><p class='lede'>{e}</p>", title=title)
+
+
+# ---- the role's home: what the processes you reach expect of you ----
+HOME = """<h1>{{ who }}<small>what the processes you reach expect of you today</small></h1>
+{% for p in reach %}<h2>{{ p.label }}<span class="count">{{ p.says }}</span></h2>
+<div class="cards">{% for a in p.areas %}<div class="card"><b>{{ a.label }}</b>
+{% for line in a.lines %}<div class="small {{ 'muted' if not line.live }}">{{ line.says }}</div>{% endfor %}
+<div class="small" style="margin-top:.5rem">{% for s in a.sections %}<a href="{{ s.href }}">{{ s.label }}</a>{{ ' · ' if not loop.last }}{% endfor %}</div></div>{% endfor %}</div>{% endfor %}
+{% if not reach %}<p class="lede">Your roles reach no process in this product.</p>{% endif %}"""
+
+
+def _expected(area_key: str, who: str, held: set[str]) -> list[dict]:
+    """What an area expects of this person, as lines on their home card. Read from the last run; nothing invented."""
+    v = reads.default_version(); lines = []
+    def say(s: str, live: bool = True): lines.append({"says": s, "live": live})
+    try:
+        if area_key == "demand":
+            mine = [n for n in (1, 2, 4, 6) if f"layer.{n}.enter" in held]
+            if mine and v:
+                rows = reads.entries(v, mine, False)
+                say(f"{len(rows)} entries on {v} in your layers ({', '.join(map(str, mine))})")
+            elif v:
+                say(f"{v} is the open version; you read it")
+            pend = ENTRIES.pending()
+            if pend:
+                say(f"{len(pend)} file{'s' if len(pend) > 1 else ''} placed since the last run — not yet in the plan", False)
+        elif area_key == "innovation" and v:
+            mine = [n for n in (7, 8) if f"layer.{n}.enter" in held]
+            rows = reads.entries(v, mine or [7, 8], False)
+            say(f"{len(rows)} {'of your ' if mine else ''}launch and exit entries on {v}")
+        elif area_key == "reconciliation" and v:
+            g = reads.bridge(v)["gap"]
+            if g:
+                say(f"{v} reads {g['net_sales_gap']:,.0f} net sales against {g['reference_version']}")
+        elif area_key == "management":
+            vs = reads.versions()
+            say(", ".join(f"{x['version_id']} {x['status']}" for x in vs if x["version_kind"] != "actual"))
+        elif area_key == "run":
+            pend = ENTRIES.pending()
+            say(f"{len(pend)} file{'s' if len(pend) > 1 else ''} waiting for the next run" if pend else "the plan is current with the landing")
+            if session.run_log:
+                say("last run: " + ("completed" if "✗" not in session.run_log else "stopped"), "✗" not in session.run_log)
+        else:
+            say("named, not yet built", False)
+    except Busy as e:
+        say(str(e), False)
+    return lines
+
+
+@plan.get("/")
+def home():
+    try:
+        who = _who(); held = roles.actions_held(who)
+        reach = [{"label": p.label, "says": p.says,
+                  "areas": [{"label": a.label, "lines": _expected(a.key, who, held),
+                             "sections": [{"label": s.label, "href": url_for(s.endpoint, **s.args)} for s in secs]} for a, secs in areas]}
+                 for p, areas in SHELL.reach(held)]
+        return _page(HOME, title="Home", active=None, reach=reach)
+    except Busy as e:
+        return _busy("Home", e)
 
 
 # ---- the demand plan ----
@@ -73,7 +135,7 @@ DEMAND = VERSION_PICKER + """
 table.plan .actual{background:var(--soft)}table.plan .sticky{position:sticky;left:0;background:var(--panel);z-index:1}table.plan th.sticky{z-index:2;background:var(--soft)}</style>"""
 
 
-@plan.get("/")
+@plan.get("/demand")
 def demand():
     try:
         version = _version(); account = request.args.get("account") or None
@@ -276,6 +338,13 @@ def gap():
 
 # ---- the rungs named but not yet built ----
 RUNGS = {
+    "standard": ("Standard by plant", "The standard cost of every material at every plant for the version's standard year, derived from the routes, the BOM and the cost inputs; a new plant through to a new standard and the transition."),
+    "landed": ("Landed cost", "The distributor's standard: supplier price × FX + freight + duty by source; purchase price, FX and freight rate as the three variances."),
+    "pnl": ("P&L plan", "Every line of the commercial P&L by cause — volume, price, mix, promotion, cost — at standard, with the planned variances beneath."),
+    "balance": ("Balance sheet plan", "Every line rolled from opening actuals by one declared movement source; three identities run as a guard on every version."),
+    "capex": ("Capital", "Projects entered, approved and phased; the maintenance deferral that raises unplanned downtime into the capacity analysis."),
+    "cycle": ("Period control", "Periods opened and closed; the latest closed period that every version's baseline is read from."),
+    "proof": ("Proof", "The identities and reconciliations that let a number be trusted: stack to total, gross to net, plan to reference."),
     "supply": ("Supply plan", "Unconstrained demand met from stock, production and purchases by week and node; the rough-cut against the lines; what cannot be made and the shaping that answers it."),
     "capacity": ("Capacity", "The machine, labour and storage registers against the load the supply plan puts on them; planned downtime and the unplanned downtime a deferred overhaul raises."),
     "inventory": ("Inventory", "Projected stock by node and week against policy; weeks of cover; the working capital the plan ties up."),
@@ -340,7 +409,7 @@ RUN = """<h1>Run and health<small>load the landing, evaluate every model and eve
 
 
 def _may_run(who: str) -> bool:
-    return roles.may(who, "run.plan") or roles.may(who, "read.health")
+    return roles.may(who, "run.plan")
 
 
 @plan.get("/run")

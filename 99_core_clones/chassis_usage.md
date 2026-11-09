@@ -11,7 +11,7 @@ The wheel sits beside this file and is declared in `pyproject.toml`:
 dependencies = ["chassis", ...]
 
 [tool.uv.sources]
-chassis = { path = "99_core_clones/chassis-0.1.0-py3-none-any.whl" }
+chassis = { path = "99_core_clones/chassis-0.2.0-py3-none-any.whl" }
 ```
 
 `uv sync` installs it. A new wheel version: replace the file, bump the path, `uv lock && uv sync`.
@@ -31,7 +31,7 @@ chassis.configure(root=ROOT, db="data/caldera.duckdb", receipts="data/receipts",
 
 | Module | Use |
 |---|---|
-| `chassis.ui.Shell` | `Shell(brand, strapline, home, nav, who="select"|"label").page(body, title=, active=, who=, flash=, principals=)` — the page chrome and two-level navigation; `/static/face.css` is served by the app factory |
+| `chassis.ui.Shell` | `Shell(brand, strapline, home, processes, who="select"|"label")` — the product as a register of `Process` → `Area` → `Section(key, label, endpoint, args, verbs)`; `.page(body, title=, active=, who=, held=, flash=, principals=)` shows the person only the sections whose verbs they hold; `.reach(held)` is the same filter for a home page; `/static/face.css` is served by the app factory |
 | `chassis.session.Session` | who the face acts as, what it last said (`say` / `flash`), the last receipt, the run log; `default_holder(verb, actions_held)` picks the default principal |
 | `chassis.warehouse` | `q(sql, *params)`, `one`, `exists(relation)`; `Busy` when the file is held by a run or not yet built |
 | `chassis.roles.WarehouseRoles(q)` | `principals()`, `may(who, action, scope=None, as_at=None)`, `actions_held(who)`, `layers_enterable(who)` over `dims.effective_entitlements` |

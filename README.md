@@ -33,8 +33,11 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
 - `ingest/pipeline.py` — dlt: one resource per file into `bronze`, replaced whole on every load. A plan table is fed by
   the generated file and then every file the face has placed under `data/landing/plan/<table>/`, in file order —
   file order is time order; the face is the landing's only writer.
-- `face/` — the planning face, navigated as the process (Demand, Supply, Innovation, Reconciliation, Management, Admin) with
-  each area's components beneath it: the demand plan — every period across, closed periods as actuals, then each fiscal
+- `face/` — the planning face, organised around the person. The processes in play are a register (`face/__init__.py`
+  `PROCESSES`: integrated planning, financial planning, actuals, admin), each with its areas and pages and the verbs
+  that make a page relevant; a person sees the processes, areas and pages their roles reach, and their home page is
+  what those processes expect of them today — their entries awaiting the cycle, the gap to reference, the versions,
+  the files waiting for a run. Pages built so far: the demand plan — every period across, closed periods as actuals, then each fiscal
   year's total beside the same periods a year earlier and the reference version — the entries on a
   version (a withdrawal is a later row that names the entry; the entry stays, struck through), a new entry placed as a
   file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the
