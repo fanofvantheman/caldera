@@ -10,10 +10,10 @@ from flask import Blueprint, redirect, request, url_for
 
 from chassis import app as chassis_app, receipts
 from chassis.landing import LogLanding
-from chassis.run import Runner, health
+from chassis.run import Runner, attention, health
 from chassis.warehouse import Busy, q
 
-from . import ENTRY_COLUMNS, SHELL, roles, session
+from . import ENTRY_COLUMNS, HEALTH, SHELL, roles, session
 from . import reads
 
 plan = Blueprint("plan", __name__)
@@ -57,6 +57,11 @@ def _busy(title: str, e: Busy) -> str:
 
 # ---- the role's home: what the processes you reach expect of you ----
 HOME = """<h1>{{ who }}<small>what the processes you reach expect of you today</small></h1>
+<h2>My attention<span class="count">{{ mine|length }} item{{ '' if mine|length == 1 else 's' }} the last run routed to you</span></h2>
+{% if mine %}<table><thead><tr><th>Activity</th><th>Context</th><th>What to do</th><th>Status</th></tr></thead><tbody>
+{% for m in mine %}<tr><td>{{ m.item }}</td><td>{{ m.name }}</td><td class="small muted">{{ m.what_to_do }}</td><td><span class="severity">{{ m.severity }}</span></td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="muted">Nothing is waiting on you.</p>{% endif %}
+<h2>My planning<span class="count">the processes your roles reach</span></h2>
 {% for p in reach %}<h2>{{ p.label }}<span class="count">{{ p.says }}</span></h2>
 <div class="cards">{% for a in p.areas %}<div class="card"><b>{{ a.label }}</b>
 {% for line in a.lines %}<div class="small {{ 'muted' if not line.live }}">{{ line.says }}</div>{% endfor %}
@@ -102,6 +107,16 @@ def _expected(area_key: str, who: str, held: set[str]) -> list[dict]:
     return lines
 
 
+def _mine(who: str, held: set[str]) -> list[dict]:
+    """What the last run routed to this person, plus the one thing the face itself can see: files placed and not yet run."""
+    rows = [{"item": a["row"].get("item") or a["surface"], "name": a["name"], "what_to_do": a["what_to_do"], "severity": a["severity"]}
+            for a in attention(q, who, HEALTH)]
+    if "run.plan" in held:
+        for f in ENTRIES.pending():
+            rows.append({"item": f"{f.name} placed, not yet in the plan", "name": "landing", "what_to_do": "run the plan to take it in", "severity": "PENDING"})
+    return rows
+
+
 @plan.get("/")
 def home():
     try:
@@ -110,7 +125,7 @@ def home():
                   "areas": [{"label": a.label, "lines": _expected(a.key, who, held),
                              "sections": [{"label": s.label, "href": url_for(s.endpoint, **s.args)} for s in secs]} for a, secs in areas]}
                  for p, areas in SHELL.reach(held)]
-        return _page(HOME, title="Home", active=None, reach=reach)
+        return _page(HOME, title="Home", active=None, reach=reach, mine=_mine(who, held))
     except Busy as e:
         return _busy("Home", e)
 
@@ -416,7 +431,7 @@ def _may_run(who: str) -> bool:
 def run():
     who = _who() if _principals_ok() else ""
     try:
-        h = health(q, "gold.maintenance_run_health")
+        h = health(q, HEALTH)
     except Busy:
         h = []
     return _page(RUN, title="Run and health", active="run", may_run=bool(who) and _may_run(who), run_log=session.run_log,

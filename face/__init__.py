@@ -28,6 +28,7 @@ session = Session(default=default_holder("layer.1.enter", roles.actions_held))
 
 READ = ["read.plan"]
 ENTER = [f"layer.{n}.enter" for n in (1, 2, 4, 6, 7, 8, 9)]
+HEALTH = "plan.run_health"      # one row per worklist; every worklist row carries `whose`
 RUNG = "plan.rung"
 
 # ---- the processes in play: a register, not a menu ----
