@@ -46,6 +46,7 @@ def _n(x: float | None, d: int = 0) -> str:
 
 
 plan.add_app_template_filter(_n, "n")
+plan.add_app_template_filter(lambda x: f"{x:+,.0f}", "signed")
 
 VERSION_PICKER = """<form class="toolbar" method="get"><label>version<select name="version" onchange="this.form.submit()">
 {% for v in versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == version }}>{{ v.version_id }} · {{ v.status }}</option>{% endfor %}</select></label>{{ extra|safe }}</form>"""
@@ -133,12 +134,15 @@ def home():
 # ---- the demand plan ----
 DEMAND = VERSION_PICKER + """
 <h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material{% if account %} · {{ account }}{% endif %} · {{ d.n_actual }} closed periods as actuals, then the plan · totals by fiscal year with comparatives</small></h1>
-<div class="wide"><table class="plan"><thead>
+{% if editable %}<p class="hint">Cells are open: click one, type the total you want, Enter, give a reason. What is placed is an entry on layer {{ layer }} for the difference; the cell shows the run's number until the next run takes it in.</p>
+{% elif can_enter %}<p class="hint">Choose an account to open the cells for input.</p>{% endif %}
+<div class="wide"><table class="plan" {% if editable %}data-cells-post="{{ url_for('plan.cell') }}" data-cells-reasons="reasons"{% endif %}><thead>
 <tr><th rowspan="2" class="sticky">Material</th><th colspan="{{ d.periods|length }}" style="text-align:center">Periods</th>
 {% for c in d.comps %}<th colspan="{{ 1 + (1 if c.py else 0) + (1 if c.ref else 0) }}" style="text-align:center;border-left:1px solid var(--rule)">FY{{ c.fy }}</th>{% endfor %}<th class="n" rowspan="2">Horizon</th></tr>
 <tr>{% for pp in d.periods %}<th class="n {{ 'actual' if d.source_of[pp] == 'actual' }}" title="{{ pp }}{{ ' · actual' if d.source_of[pp] == 'actual' }}">{{ pp[2:4] }}·{{ pp[5:] }}</th>{% endfor %}
 {% for c in d.comps %}<th class="n" style="border-left:1px solid var(--rule)">Total</th>{% if c.py %}<th class="n" title="same periods, prior fiscal year: shipments where closed, else this view">PY</th>{% endif %}{% if c.ref %}<th class="n" title="{{ d.ref_id }}">{{ d.ref_id }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
-{% for r in d.rows + [d.totals] %}<tr class="{{ 'total' if r.material == 'Total' }}"><td class="sticky">{{ r.material }}</td>{% for c in r.cells %}<td class="n {{ 'actual' if d.source_of[d.periods[loop.index0]] == 'actual' }}">{{ c|n }}</td>{% endfor %}
+{% for r in d.rows + [d.totals] %}<tr class="{{ 'total' if r.material == 'Total' }}"><td class="sticky">{{ r.material }}</td>{% for c in r.cells %}{% set pp = d.periods[loop.index0] %}{% set key = r.material ~ '|' ~ pp %}
+<td class="n {{ 'actual' if d.source_of[pp] == 'actual' }} {{ 'has-pending' if key in pending }}" {% if editable and r.material != 'Total' and d.source_of[pp] != 'actual' %}data-cell='{"version": "{{ version }}", "layer": {{ layer }}, "material": "{{ r.material }}", "account": "{{ account }}", "period": "{{ pp }}"}' data-current="{{ c or 0 }}"{% endif %}>{{ c|n }}{% if key in pending %}<span class="pending" title="placed, not yet run">{{ pending[key]|signed }} pending</span>{% endif %}</td>{% endfor %}
 {% for b in r.blocks %}<td class="n" style="border-left:1px solid var(--rule);font-weight:500">{{ b.total|n }}</td>{% if d.comps[loop.index0].py %}<td class="n muted">{{ b.py|n }}</td>{% endif %}{% if d.comps[loop.index0].ref %}<td class="n muted">{{ b.ref|n }}</td>{% endif %}{% endfor %}<td class="n" style="font-weight:600">{{ r.total|n }}</td></tr>{% endfor %}
 </tbody></table></div>
 <p class="hint">Shaded periods are closed and read from shipments; the rest is the plan. PY is the same periods a year earlier — shipments where that year is closed, otherwise this view; {{ d.ref_id }} is the reference version where its horizon overlaps.</p>
@@ -146,19 +150,49 @@ DEMAND = VERSION_PICKER + """
 <table><thead><tr><th>Fiscal year</th><th class="n">1 Baseline</th><th class="n">2 Adjustment</th><th class="n">4 Distribution</th><th class="n">6 Promotions</th><th class="n">7 Innovation</th><th class="n">8 Exit</th><th class="n">Plan</th></tr></thead><tbody>
 {% for r in layers %}<tr><td>FY{{ r.fiscal_year }}</td><td class="n">{{ r.l1|n }}</td><td class="n">{{ r.l2|n }}</td><td class="n">{{ r.l4|n }}</td><td class="n">{{ r.l6|n }}</td><td class="n">{{ r.l7|n }}</td><td class="n">{{ r.l8|n }}</td><td class="n">{{ r.cases|n }}</td></tr>{% endfor %}
 </tbody></table>
+{% if editable %}<script type="application/json" id="reasons">{{ reasons_json|safe }}</script><script src="{{ url_for('static', filename='cells.js') }}"></script>{% endif %}
 <style>.wide{overflow-x:auto;margin:0 -1rem;padding:0 1rem}table.plan{width:max-content;min-width:100%;font-size:.82rem}table.plan th,table.plan td{padding:.35rem .5rem}
 table.plan .actual{background:var(--soft)}table.plan .sticky{position:sticky;left:0;background:var(--panel);z-index:1}table.plan th.sticky{z-index:2;background:var(--soft)}</style>"""
+
+
+def _pending_cells(version: str, account: str | None) -> dict[str, float]:
+    """Entries placed since the last run, as the grid would see them: material|period → cases, where the entry is a single
+    period in cases at exactly the grid's grain. Anything wider is in the plan after the run, not shown as a mark."""
+    out: dict[str, float] = {}
+    if not account:
+        return out
+    db_t = ENTRIES.pending()
+    names = {p.name for p in db_t}
+    for r in ENTRIES.rows():
+        if r["source_file"] in names and r["action"] == "enter" and r["version_id"] == version and r["scope_customer"] == account \
+                and r["period_from"] == r["period_to"] and r["value_kind"] == "cases":
+            k = f"{r['scope_material']}|{r['period_from']}"
+            out[k] = out.get(k, 0.0) + float(r["value"] or 0)
+    return out
 
 
 @plan.get("/demand")
 def demand():
     try:
-        version = _version(); account = request.args.get("account") or None
+        import json
+        who = _who(); version = _version(); account = request.args.get("account") or None
+        v = reads.version(version) or {}
+        enterable = [n for n in roles.layers_enterable(who) if n != 1]           # layer 1 is computed on an open version; a typed change is an adjustment
+        layer = int(request.args.get("layer") or (enterable[0] if enterable else 0))
+        can_enter = bool(enterable) and v.get("status") == "open"
+        editable = can_enter and bool(account) and layer in enterable
+        reasons = [{"code": r["reason_code"], "says": r["description"]} for r in reads.reasons() if str(layer) in r["layers"].split(",")] or \
+                  [{"code": r["reason_code"], "says": r["description"]} for r in reads.reasons()]
         accounts = reads.accounts()
         extra = ('<label>account<select name="account" onchange="this.form.submit()"><option value="">all</option>'
                  + "".join(f'<option value="{a["account_code"]}" {"selected" if a["account_code"] == account else ""}>{a["account_code"]}</option>' for a in accounts) + "</select></label>")
+        if can_enter:
+            names = {l["layer_no"]: l["layer_name"] for l in reads.layers()}
+            extra += ('<label>enter as layer<select name="layer" onchange="this.form.submit()">'
+                      + "".join(f'<option value="{n}" {"selected" if n == layer else ""}>{n} {names.get(n, "")}</option>' for n in enterable) + "</select></label>")
         return _page(DEMAND, title="Demand plan", active="demand", width="100%", versions=reads.versions(), version=version, account=account,
-                     d=reads.demand(version, account), layers=reads.by_layer(version, account), extra=extra)
+                     d=reads.demand(version, account), layers=reads.by_layer(version, account), extra=extra,
+                     editable=editable, can_enter=can_enter, layer=layer, reasons_json=json.dumps(reasons), pending=_pending_cells(version, account))
     except Busy as e:
         return _busy("Demand plan", e)
 
@@ -258,39 +292,50 @@ NEW = """<h1>New entry<small>a contribution to a layer on an open version — pl
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else '✕' }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
 
+def _enter(f: dict, who: str) -> tuple[dict, bool, str]:
+    """The plan's checks on a contribution, then the act: a file in the landing and a receipt. Shared by the form and
+    the cell — one act, two faces. Returns (receipt, placed, entry_id)."""
+    layer = int(f["layer_no"]); version = f["version_id"]
+    v = reads.version(version); hz = reads.horizon(version)
+    reason = next((r for r in reads.reasons() if r["reason_code"] == f["reason_code"]), None)
+    try:
+        value = float(f["value"])
+    except (ValueError, TypeError):
+        value = None
+    may = roles.may(who, f"layer.{layer}.enter")
+    ms, cs = reads.material_scope_resolves(f["scope_material"]), reads.customer_scope_resolves(f["scope_customer"])
+    win = f["period_from"] in hz and f["period_to"] in hz and f["period_from"] <= f["period_to"]
+    offered = bool(reason and str(layer) in reason["layers"].split(","))
+    checks = [
+        {"check": "version open", "ok": bool(v and v["status"] == "open"), "says": f"{version} is {v['status'] if v else 'unknown'}"},
+        {"check": "who may enter", "ok": may, "says": f"{who} holds layer {layer} enter" if may else f"{who} does not hold layer {layer} enter"},
+        {"check": "material scope resolves", "ok": ms, "says": f"{f['scope_material']} reaches leaf materials" if ms else f"{f['scope_material']} is not a node of the product structure or a promo group"},
+        {"check": "customer scope resolves", "ok": cs, "says": f"{f['scope_customer']} reaches ship-tos" if cs else f"{f['scope_customer']} is not a node of the customer structure"},
+        {"check": "window in horizon", "ok": win, "says": f"{f['period_from']} – {f['period_to']} within {v['horizon_start']} – {v['horizon_end']}" if v and win else "window outside the version's horizon or reversed"},
+        {"check": "reason offered on layer", "ok": offered, "flag": True,
+         "says": f"{f['reason_code']} is offered on layer {layer}" if offered else f"{f['reason_code']} is not a reason this layer usually gives — placed, flagged"},
+        {"check": "value is a number", "ok": value is not None and value != 0, "says": "a number" if value is not None and value != 0 else "not a number, or zero"},
+        {"check": "vocabulary", "ok": f["value_kind"] in KINDS and f["spread_rule"] in SPREADS and f["effect_type"] in EFFECTS, "says": "kind, spread and effect are known"},
+    ]
+    placed = receipts.judge(checks)
+    eid = f"LE-F-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+    if placed:
+        ENTRIES.place([{"entry_id": eid, "action": "enter", "withdraws": "", "version_id": version, "layer_no": layer, "entered_by": who,
+                        "entered_on": dt.date.today().isoformat(), "reason_code": f["reason_code"], "effect_type": f["effect_type"],
+                        "scope_material": f["scope_material"], "scope_customer": f["scope_customer"], "period_from": f["period_from"],
+                        "period_to": f["period_to"], "value_kind": f["value_kind"], "value": value, "spread_rule": f["spread_rule"], "note": f.get("note") or ""}], who)
+    return receipts.write("enter", who, eid, checks, placed), placed, eid
+
+
 @plan.route("/new", methods=["GET", "POST"])
 def entry_new():
     try:
         who = _who()
         if request.method == "POST":
-            f = request.form; layer = int(f["layer_no"]); version = f["version_id"]
-            v = reads.version(version); hz = reads.horizon(version)
-            reason = next((r for r in reads.reasons() if r["reason_code"] == f["reason_code"]), None)
-            try:
-                value = float(f["value"])
-            except ValueError:
-                value = None
-            checks = [
-                {"check": "version open", "ok": bool(v and v["status"] == "open"), "says": f"{version} is {v['status'] if v else 'unknown'}"},
-                {"check": "who may enter", "ok": roles.may(who, f"layer.{layer}.enter"), "says": f"{who} holds layer {layer} enter" if roles.may(who, f"layer.{layer}.enter") else f"{who} does not hold layer {layer} enter"},
-                {"check": "material scope resolves", "ok": reads.material_scope_resolves(f["scope_material"]), "says": f"{f['scope_material']} reaches leaf materials" if reads.material_scope_resolves(f["scope_material"]) else f"{f['scope_material']} is not a node of the product structure or a promo group"},
-                {"check": "customer scope resolves", "ok": reads.customer_scope_resolves(f["scope_customer"]), "says": f"{f['scope_customer']} reaches ship-tos" if reads.customer_scope_resolves(f["scope_customer"]) else f"{f['scope_customer']} is not a node of the customer structure"},
-                {"check": "window in horizon", "ok": f["period_from"] in hz and f["period_to"] in hz and f["period_from"] <= f["period_to"],
-                 "says": f"{f['period_from']} – {f['period_to']} within {v['horizon_start']} – {v['horizon_end']}" if v and f["period_from"] in hz and f["period_to"] in hz and f["period_from"] <= f["period_to"] else "window outside the version's horizon or reversed"},
-                {"check": "reason offered on layer", "ok": bool(reason and str(layer) in reason["layers"].split(",")), "flag": True,
-                 "says": f"{f['reason_code']} is offered on layer {layer}" if reason and str(layer) in reason["layers"].split(",") else f"{f['reason_code']} is not a reason this layer usually gives — placed, flagged"},
-                {"check": "value is a number", "ok": value is not None, "says": "a number" if value is not None else "not a number"},
-                {"check": "vocabulary", "ok": f["value_kind"] in KINDS and f["spread_rule"] in SPREADS and f["effect_type"] in EFFECTS, "says": "kind, spread and effect are known"},
-            ]
-            placed = receipts.judge(checks)
-            eid = f"LE-F-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
-            if placed:
-                ENTRIES.place([{"entry_id": eid, "action": "enter", "withdraws": "", "version_id": version, "layer_no": layer, "entered_by": who,
-                                "entered_on": dt.date.today().isoformat(), "reason_code": f["reason_code"], "effect_type": f["effect_type"],
-                                "scope_material": f["scope_material"], "scope_customer": f["scope_customer"], "period_from": f["period_from"],
-                                "period_to": f["period_to"], "value_kind": f["value_kind"], "value": value, "spread_rule": f["spread_rule"], "note": f.get("note", "")}], who)
-            session.last = receipts.write("enter", who, eid, checks, placed)
-            session.say(f"{eid} placed on {version} layer {layer} — it is in the plan after the next run" if placed else "entry refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+            f = request.form
+            session.last, placed, eid = _enter(f, who)
+            session.say(f"{eid} placed on {f['version_id']} layer {f['layer_no']} — it is in the plan after the next run" if placed
+                        else "entry refused: " + "; ".join(c["says"] for c in session.last["checks"] if not c["ok"]), placed)
             return redirect(url_for("plan.entry_new"))
         enterable = set(roles.layers_enterable(who))
         return _page(NEW, title="New entry", active="new", versions=reads.open_versions(),
@@ -299,6 +344,23 @@ def entry_new():
                      periods=reads.horizon(reads.default_version() or ""), last=session.last)
     except Busy as e:
         return _busy("New entry", e)
+
+
+@plan.post("/cell")
+def cell():
+    """A number typed into a plan cell. The cell is material × account × period on a version; what is placed is an entry
+    on the chosen layer for the difference between what was typed and what the run last showed — the cell is never
+    edited, the plan gains a contribution, and the next run shows the new number."""
+    b = request.get_json(force=True); who = _who()
+    delta = float(b["typed"]) - float(b.get("current") or 0)
+    f = {"version_id": b["version"], "layer_no": b["layer"], "reason_code": b["reason"], "effect_type": "primary", "scope_material": b["material"],
+         "scope_customer": b["account"], "period_from": b["period"], "period_to": b["period"], "value_kind": "cases", "value": delta,
+         "spread_rule": "baseline_shape", "note": b.get("note") or f"typed {float(b['typed']):,.0f} over {float(b.get('current') or 0):,.0f} in the grid"}
+    r, placed, eid = _enter(f, who)
+    session.last = r
+    says = (f"{eid}: {delta:+,.0f} cases on layer {b['layer']} for {b['material']} at {b['account']} in {b['period']} — in the plan after the next run" if placed
+            else "refused: " + "; ".join(c["says"] for c in r["checks"] if not c["ok"]))
+    return {"placed": placed, "says": says, "mark": f"{delta:+,.0f} pending", "entry_id": eid}
 
 
 # ---- the revenue bridge ----

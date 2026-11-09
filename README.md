@@ -41,7 +41,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   worklists under `models/worklists/` (entries refused, withdrawals refused, entries unresolved, reasons unknown,
   cells below zero), each row carrying `whose`, with `plan.run_health` as the row-per-worklist index the run page
   shows. Nothing on the home page is typed: a row exists because the run produced it. "Acting as" in the top bar opens the sign-in screen: every person, the roles they hold
-  and where, one click to act as them. Pages built so far: the demand plan — every period across, closed periods as actuals, then each fiscal
+  and where, one click to act as them. Pages built so far: the demand plan (with **inputs directly into cells**: choose an account and the layer you
+  enter as, click a plan cell, type the total you want, give a reason — what is placed is an entry on that layer for the
+  difference, at that material, account and period; the cell shows the run's number with the change marked pending until
+  the next run; actual cells and other people's layers never open) — every period across, closed periods as actuals, then each fiscal
   year's total beside the same periods a year earlier and the reference version — the entries on a
   version (a withdrawal is a later row that names the entry; the entry stays, struck through), a new entry placed as a
   file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the
