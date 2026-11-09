@@ -37,7 +37,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   `PROCESSES`: integrated planning, financial planning, actuals, admin), each with its areas and pages and the verbs
   that make a page relevant; a person sees the processes, areas and pages their roles reach, and their home page is
   what those processes expect of them today — their entries awaiting the cycle, the gap to reference, the versions,
-  the files waiting for a run. Pages built so far: the demand plan — every period across, closed periods as actuals, then each fiscal
+  the files waiting for a run. "Acting as" in the top bar opens the sign-in screen: every person, the roles they hold
+  and where, one click to act as them. Pages built so far: the demand plan — every period across, closed periods as actuals, then each fiscal
   year's total beside the same periods a year earlier and the reference version — the entries on a
   version (a withdrawal is a later row that names the entry; the entry stays, struck through), a new entry placed as a
   file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the
