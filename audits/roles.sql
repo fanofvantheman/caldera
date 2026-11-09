@@ -1,7 +1,8 @@
 AUDIT (name role_action_vocabulary);
 /* blocking: an action the plan does not have grants nothing and looks like it granted something */
 SELECT role_code, action FROM @this_model
-WHERE NOT (action SIMILAR TO 'layer\.[1-9]\.(enter|withdraw)'
+WHERE NOT (action SIMILAR TO 'layer\.[1-9]\.(enter|withdraw|submit|reopen)'
+        OR action SIMILAR TO 'demand\.(unit|plan)\.(submit|reopen)'
         OR action SIMILAR TO 'delta\.(supply|allocation|timing)\.enter'
         OR action = 'shaping.enter'
         OR action SIMILAR TO 'register\.[a-z_.]+\.maintain'

@@ -44,7 +44,15 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   and where, one click to act as them. Pages built so far: the demand plan (with **inputs directly into cells**: choose an account and the layer you
   enter as, click a plan cell, type the total you want, give a reason — what is placed is an entry on that layer for the
   difference, at that material, account and period; the cell shows the run's number with the change marked pending until
-  the next run; actual cells and other people's layers never open) — every period across, closed periods as actuals, then each fiscal
+  the next run; actual cells and other people's layers never open), and **submissions**: demand is planned by unit
+  (Westbrook, Carters, Merritt, other independents, Horeca — a level of the customer structure between account and ALL,
+  each with its own planner) and coordinated by the head of demand planning; a submission is an act row (submit or
+  reopen) on a subject (a layer, a unit's demand, the plan) at a node, never a flag; the run derives every state —
+  submitted, rolled up from beneath, ready, open, nothing — and the matrix page shows layers down, units across, the plan
+  at the end, with the acts a person may make where they hold the verb. Account-facing layers submit at the account and
+  roll to the unit; the planner's own layers submit at the unit; material-scoped layers submit once at the plan. A
+  submitted layer is closed at that scope: a cell or entry there is refused until reopened. States roll up, acts do not:
+  a holder may submit over open children, on record, and the gap stays visible ("submitted · 2 open beneath") — every period across, closed periods as actuals, then each fiscal
   year's total beside the same periods a year earlier and the reference version — the entries on a
   version (a withdrawal is a later row that names the entry; the entry stays, struck through), a new entry placed as a
   file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the

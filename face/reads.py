@@ -149,3 +149,30 @@ def events() -> list[dict]:
 
 def terms() -> list[dict]:
     return q("select * from plan.terms order by account_code, instrument_code")
+
+
+# ---- submissions ----
+def units() -> list[dict]:
+    return q("""select distinct h.ancestor_code as code, a.planning_unit_name as unit_name from dims.dim_customer_hierarchy h
+                join dims.dim_account a on a.planning_unit = h.ancestor_code where h.ancestor_level = 'planning_unit' order by 2""")
+
+
+def accounts_of(unit: str) -> list[dict]:
+    return q("""select descendant_code code from dims.dim_customer_hierarchy where ancestor_code = ? and descendant_level = 'account' order by 1""", unit)
+
+
+def submission_matrix(version_id: str) -> list[dict]:
+    return q("""select s.*, l.layer_name from plan.submission_state s left join plan.ref_layer l on 'layer:' || l.layer_no = s.subject
+                where s.version_id = ? order by case when s.subject = 'plan' then 2 when s.subject = 'unit' then 1 else 0 end, s.subject, s.node""", version_id)
+
+
+def submission_acts(version_id: str) -> list[dict]:
+    return q("select * from plan.submission where version_id = ? order by acted_on desc, source_file desc, file_row_number desc", version_id)
+
+
+def layer_closed_at(version_id: str, layer_no: int, scope_customer: str) -> dict | None:
+    """The submission, if any, that covers this scope for this layer — the node and who closed it."""
+    return one("""select s.scope_node, s.acted_by, s.acted_on from plan.submission s
+                  join dims.dim_customer_hierarchy h on h.ancestor_code = s.scope_node and h.descendant_code = ?
+                  where s.version_id = ? and s.subject = ? and s.state = 'submitted' and s.acted_by_holder order by h.depth limit 1""",
+               scope_customer, version_id, f"layer:{layer_no}")

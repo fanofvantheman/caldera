@@ -54,16 +54,20 @@ ROLE_DEFINITIONS = [
     ("COMMERCIAL_FINANCE",   "Commercial finance",        "Owns versions, assumptions, the standard, the schedule, the balance sheet and reconciliation at entry."),
     ("RECONCILIATION_OWNER", "Reconciliation owner",      "Enters allocation and timing deltas and records the decision as the named latest view."),
     ("EXECUTIVE",            "Executive",                 "Accepts the decision that resets the reference; approves the business plan and capital."),
+    ("HEAD_OF_DEMAND",       "Head of demand planning",   "Coordinates the demand plan: every unit's demand rolls to them; they alone submit the plan."),
     ("PLAN_READER",          "Plan reader",               "Reads the plan and its readings at a scope and nothing else."),
     ("AUDITOR",              "Auditor",                   "Reads everything, changes nothing."),
 ]
 
 ROLE_ACTIONS = {
-    "DEMAND_PLANNER":       ["layer.1.enter", "layer.2.enter", "layer.1.withdraw", "layer.2.withdraw", "read.plan", "read.reading", "read.drill", "read.health"],
-    "KEY_ACCOUNT_MANAGER":  ["layer.4.enter", "layer.9.enter", "layer.4.withdraw", "structure.customer.maintain", "mapping.accept", "mapping.alter", "read.plan", "read.reading", "read.drill"],
-    "TRADE_MARKETING":      ["layer.6.enter", "layer.6.withdraw", "register.promo_calendar.maintain", "mapping.accept", "mapping.alter", "read.plan", "read.reading", "read.drill"],
+    "DEMAND_PLANNER":       ["layer.1.enter", "layer.2.enter", "layer.1.withdraw", "layer.2.withdraw", "layer.1.submit", "layer.2.submit", "layer.1.reopen", "layer.2.reopen",
+                             "demand.unit.submit", "demand.unit.reopen", "read.plan", "read.reading", "read.drill", "read.health"],
+    "HEAD_OF_DEMAND":       ["layer.1.enter", "layer.2.enter", "layer.1.withdraw", "layer.2.withdraw", "layer.1.submit", "layer.2.submit", "layer.1.reopen", "layer.2.reopen",
+                             "demand.unit.submit", "demand.unit.reopen", "demand.plan.submit", "demand.plan.reopen", "read.plan", "read.reading", "read.drill", "read.health"],
+    "KEY_ACCOUNT_MANAGER":  ["layer.4.enter", "layer.9.enter", "layer.4.withdraw", "layer.4.submit", "layer.4.reopen", "structure.customer.maintain", "mapping.accept", "mapping.alter", "read.plan", "read.reading", "read.drill"],
+    "TRADE_MARKETING":      ["layer.6.enter", "layer.6.withdraw", "layer.6.submit", "layer.6.reopen", "register.promo_calendar.maintain", "mapping.accept", "mapping.alter", "read.plan", "read.reading", "read.drill"],
     "SALES_FINANCE":        ["register.terms.maintain", "register.price_list.maintain", "mapping.accept", "mapping.alter", "read.plan", "read.reading", "read.drill"],
-    "PORTFOLIO_MARKETING":  ["layer.7.enter", "layer.8.enter", "layer.7.withdraw", "layer.8.withdraw", "structure.material.maintain", "mapping.accept", "mapping.alter", "read.plan", "read.reading", "read.drill"],
+    "PORTFOLIO_MARKETING":  ["layer.7.enter", "layer.8.enter", "layer.7.withdraw", "layer.8.withdraw", "layer.7.submit", "layer.8.submit", "layer.7.reopen", "layer.8.reopen", "structure.material.maintain", "mapping.accept", "mapping.alter", "read.plan", "read.reading", "read.drill"],
     "SUPPLY_PLANNER":       ["delta.supply.enter", "register.capacity.machine.maintain", "register.capacity.labour.maintain", "register.capacity.storage.maintain", "register.routes.maintain", "register.downtime.maintain", "structure.material.maintain", "structure.location.maintain", "bom.version.release", "run.plan", "read.plan", "read.reading", "read.drill", "read.health"],
     "MATERIALS_PLANNER":    ["register.supply_plan.maintain", "register.supplier_price_list.maintain", "register.freight_contract.maintain", "read.plan", "read.reading", "read.drill"],
     "NETWORK_PLANNER":      ["register.sourcing.maintain", "register.service_level.maintain", "register.capacity.logistics.maintain", "structure.location.maintain", "read.plan", "read.reading", "read.drill"],
@@ -77,12 +81,19 @@ ROLE_ACTIONS = {
     "AUDITOR":              ["read.plan", "read.reading", "read.drill", "read.health", "read.proof"],
 }
 
-# principal, role, scope dimension, scope node — the entry collapse: four people, several roles each
+# principal, role, scope dimension, scope node — demand is planned by unit; one head coordinates; account managers at their majors
 ROLE_ASSIGNMENTS = [
-    ("demand.planner@caldera",  "DEMAND_PLANNER",       "material",     "ALL"),
-    ("demand.planner@caldera",  "KEY_ACCOUNT_MANAGER",  "customer",     "ALL"),
-    ("demand.planner@caldera",  "TRADE_MARKETING",      "customer",     "ALL"),
-    ("demand.planner@caldera",  "PORTFOLIO_MARKETING",  "material",     "ALL"),
+    ("head.demand@caldera",         "HEAD_OF_DEMAND",       "customer",     "ALL"),
+    ("planner.westbrook@caldera",   "DEMAND_PLANNER",       "customer",     "PU_WES"),
+    ("planner.carters@caldera",     "DEMAND_PLANNER",       "customer",     "PU_CAR"),
+    ("planner.merritt@caldera",     "DEMAND_PLANNER",       "customer",     "PU_MER"),
+    ("planner.independents@caldera","DEMAND_PLANNER",       "customer",     "PU_IND"),
+    ("planner.horeca@caldera",      "DEMAND_PLANNER",       "customer",     "PU_HOR"),
+    ("kam.westbrook@caldera",       "KEY_ACCOUNT_MANAGER",  "customer",     "WES"),
+    ("kam.carters@caldera",         "KEY_ACCOUNT_MANAGER",  "customer",     "CAR"),
+    ("kam.merritt@caldera",         "KEY_ACCOUNT_MANAGER",  "customer",     "MER"),
+    ("trade.marketing@caldera",     "TRADE_MARKETING",      "customer",     "ALL"),
+    ("portfolio.marketing@caldera", "PORTFOLIO_MARKETING",  "material",     "ALL"),
     ("supply.planner@caldera",  "SUPPLY_PLANNER",       "location",     "SHP"),
     ("supply.planner@caldera",  "MATERIALS_PLANNER",    "material",     "ALL"),
     ("supply.planner@caldera",  "NETWORK_PLANNER",      "location",     "ALL"),

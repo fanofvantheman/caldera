@@ -19,6 +19,10 @@ AUDIT (name layer_entry_reason_known, blocking false);
 /* warn: a reason the vocabulary does not have cannot be read for bias */
 SELECT entry_id, reason_code FROM @this_model WHERE NOT reason_known;
 
+AUDIT (name layer_entry_after_submission, blocking false);
+/* verdict: the layer was submitted at a scope covering this entry before it was made — held out until a reopen */
+SELECT entry_id, layer_no, scope_customer, entered_on FROM @this_model WHERE after_submission AND NOT (withdrawn AND withdrawn_by_owner);
+
 AUDIT (name layer_entry_vocabulary);
 SELECT entry_id FROM @this_model
 WHERE layer_no NOT BETWEEN 1 AND 9 OR value_kind NOT IN ('cases', 'rate_on_baseline')

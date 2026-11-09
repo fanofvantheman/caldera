@@ -65,12 +65,12 @@ def business_plan_entries(materials: list[Material], shipments: list[dict], plan
         value = round(cases * (1 + trend[mat]) * 1.03 / 10) * 10
         if value <= 0:
             continue
-        rows.append(_entry(f"BP-FY{plan_fy}", 1, "demand.planner@caldera", "2026-06-10", "BUDGET", "primary",
+        rows.append(_entry(f"BP-FY{plan_fy}", 1, "head.demand@caldera", "2026-06-10", "BUDGET", "primary",
                            mat, acct, f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases", value, "history_shape"))
     # the budget assumed the adult cups launch from P05 at the two majors; it has since slipped to P07
     for p in range(5, 13):
         for acct in ("WES", "CAR"):
-            rows.append(_entry(f"BP-FY{plan_fy}", 7, "demand.planner@caldera", "2026-06-10", "LAUNCH", "primary",
+            rows.append(_entry(f"BP-FY{plan_fy}", 7, "portfolio.marketing@caldera", "2026-06-10", "LAUNCH", "primary",
                                "CUP_ADULT-CUP_2x170", acct, f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
                                min(1000 + 250 * (p - 5), 2500), "catchment", "AOP launch assumption"))
     return rows
@@ -78,24 +78,26 @@ def business_plan_entries(materials: list[Material], shipments: list[dict], plan
 
 def latest_view_entries(plan_fy: int, latest_closed: str) -> list[dict]:
     v = f"LV-{latest_closed}"
-    dp, kam, pm = "demand.planner@caldera", "demand.planner@caldera", "demand.planner@caldera"
+    dp, pm = "head.demand@caldera", "portfolio.marketing@caldera"
+    kam_of = {"WES": "kam.westbrook@caldera", "CAR": "kam.carters@caldera", "MER": "kam.merritt@caldera"}
+    planner_of = {"WES": "planner.westbrook@caldera", "CAR": "planner.carters@caldera"}
     on = "2026-11-03"
     fy1 = plan_fy + 1
     rows = [
         # layer 2 — judgement at the slice the planner chose; near horizon in cases, far horizon as rates
-        _entry(v, 2, dp, on, "MARKET_INTEL", "primary", "SNACK_CUPS", "WES", f"{plan_fy}P05", f"{plan_fy}P08", "rate_on_baseline", 0.06, "baseline_shape",
+        _entry(v, 2, planner_of["WES"], on, "MARKET_INTEL", "primary", "SNACK_CUPS", "WES", f"{plan_fy}P05", f"{plan_fy}P08", "rate_on_baseline", 0.06, "baseline_shape",
                "Account team expects the cups reset to hold through summer"),
         *[_entry(v, 2, dp, on, "CATEGORY_DECLINE", "primary", prod, "ALL", f"{plan_fy}P09", f"{fy1}P04", "rate_on_baseline", -0.03, "baseline_shape",
                  "Scan data shows the category falling faster than the fitted trend; the exiting and delisted lines are left to their own layers")
           for prod in ("PEACH_SL", "PEAR_HV", "PL_PEACH", "PL_PEAR")],
-        _entry(v, 2, dp, on, "RANGE_REVIEW", "primary", "PG_REDGUM", "CAR", f"{plan_fy}P06", f"{plan_fy}P06", "cases", 4000, "baseline_shape",
+        _entry(v, 2, planner_of["CAR"], on, "RANGE_REVIEW", "primary", "PG_REDGUM", "CAR", f"{plan_fy}P06", f"{plan_fy}P06", "cases", 4000, "baseline_shape",
                "Pipeline fill for the Redgum shelf relay"),
         # layer 4 — distribution: one listing gained (no history, so catchment), one lost (a rate on what was there)
-        *[_entry(v, 4, kam, on, "NEW_LISTING", "primary", "CUP_PEAR-CUP_4x120", "MER", f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
+        *[_entry(v, 4, kam_of["MER"], on, "NEW_LISTING", "primary", "CUP_PEAR-CUP_4x120", "MER", f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
                  min(600 + 300 * (p - 6), 1500), "catchment", "Pear cups ranged at Merritt from P06") for p in range(6, 13)],
-        *[_entry(v, 4, kam, on, "NEW_LISTING", "primary", "CUP_PEAR-CUP_4x120", "MER", f"{fy1}P{p:02d}", f"{fy1}P{p:02d}", "cases", 1500, "catchment")
+        *[_entry(v, 4, kam_of["MER"], on, "NEW_LISTING", "primary", "CUP_PEAR-CUP_4x120", "MER", f"{fy1}P{p:02d}", f"{fy1}P{p:02d}", "cases", 1500, "catchment")
           for p in range(1, 5)],
-        _entry(v, 4, kam, on, "DELISTING", "primary", "FRUIT_SAL-CAN_825", "WES", f"{plan_fy}P07", f"{fy1}P04", "rate_on_baseline", -1.0, "baseline_shape",
+        _entry(v, 4, kam_of["WES"], on, "DELISTING", "primary", "FRUIT_SAL-CAN_825", "WES", f"{plan_fy}P07", f"{fy1}P04", "rate_on_baseline", -1.0, "baseline_shape",
                "825 g fruit salad delisted at Westbrook from P07"),
         # layer 7 — innovation: the adult cups launch, typed in by marketing, now from P07; cannibalisation as its own line
         *[_entry(v, 7, pm, on, "LAUNCH", "primary", "CUP_ADULT-CUP_2x170", acct, f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
@@ -146,7 +148,7 @@ def promo_events(weeks: list[Week], plan_fy: int, latest_closed: str, materials:
                      "window_start": start.isoformat(), "window_end": end.isoformat(), "mechanic": mech,
                      "uplift_pct": uplift, "dip_pct": 0.15, "tpr_per_case": round(avg_list(grp) * tpr_pct, 2),
                      "scan_funding_per_case": 1.50 if acct in scan_accounts else 0.0,
-                     "fixed_fee": 15000.0 if catalogue else 0.0, "status": "agreed", "owner": "demand.planner@caldera",
+                     "fixed_fee": 15000.0 if catalogue else 0.0, "status": "agreed", "owner": "trade.marketing@caldera",
                      "baseline_version": v})
     return rows
 
@@ -175,3 +177,25 @@ def terms_register() -> list[dict]:
                      t(acct, "RR", "retro_rebate", "pct_of_invoice", 0.010, "off_invoice", "unconditional", "quarterly")]
         # ALD: contract price, no instruments; EXPJ: FOB price, no instruments
     return rows
+
+
+def submissions(latest_closed: str) -> list[dict]:
+    """The submission acts on file for the open cycle: who declared what complete, where, when. A submission is an act
+    row, never a flag; the run derives every state from the latest act per subject and node. Seeded so the demo opens
+    mid-cycle: Carters is closed through to its unit; Westbrook's contributors are in but its planner is still working;
+    Merritt's account manager has not submitted; the smaller units have nothing to submit yet."""
+    v = f"LV-{latest_closed}"
+    acts = [
+        # subject, node, by, on, note
+        ("layer:4", "CAR",    "kam.carters@caldera",         "2026-11-04", "Range review outcomes in; Redgum relay volumes agreed with the buyer"),
+        ("layer:6", "CAR",    "trade.marketing@caldera",     "2026-11-05", "Calendar agreed to P12"),
+        ("layer:7", "ALL",    "portfolio.marketing@caldera", "2026-11-06", "Adult cups ramp as slipped to P07; cannibalisation held at 5%"),
+        ("layer:8", "ALL",    "portfolio.marketing@caldera", "2026-11-06", "Apricot halves run-out over P08, exit P09"),
+        ("layer:1", "PU_CAR", "planner.carters@caldera",     "2026-11-07", ""),
+        ("layer:2", "PU_CAR", "planner.carters@caldera",     "2026-11-07", "No further adjustment this cycle"),
+        ("unit",    "PU_CAR", "planner.carters@caldera",     "2026-11-07", "Carters demand complete for 2027P04 cycle"),
+        ("layer:4", "WES",    "kam.westbrook@caldera",       "2026-11-05", "825 g fruit salad delisting confirmed from P07"),
+        ("layer:6", "WES",    "trade.marketing@caldera",     "2026-11-06", "Two half-price events still provisional with the buyer; submitted as planned"),
+    ]
+    return [{"submission_id": f"SB-{i:04d}", "action": "submit", "version_id": v, "subject": subj, "scope_node": node,
+             "submitted_by": by, "submitted_on": on, "note": note} for i, (subj, node, by, on, note) in enumerate(acts, start=1)]

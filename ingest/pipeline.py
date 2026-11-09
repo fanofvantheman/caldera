@@ -55,6 +55,7 @@ PLAN = {
     "layer_entry": ("layer_no", "value"),
     "reg_promo_event": ("uplift_pct", "dip_pct", "tpr_per_case", "scan_funding_per_case", "fixed_fee"),
     "reg_terms": ("rate",),
+    "reg_submission": (),
 }
 INTEGER = frozenset({"layer_no", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days"})

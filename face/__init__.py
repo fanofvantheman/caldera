@@ -37,6 +37,7 @@ PROCESSES = [
         Area("demand", "Demand", [
             Section("demand", "Demand plan", "plan.demand", verbs=READ),
             Section("entries", "Entries", "plan.entries", verbs=READ),
+            Section("submissions", "Submissions", "plan.submissions", verbs=READ),
             Section("new", "New entry", "plan.entry_new", verbs=ENTER),
             Section("events", "Promotions", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
             Section("terms", "Terms", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill"]),
@@ -87,5 +88,6 @@ PROCESSES = [
 SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home", who="select", processes=PROCESSES)
 
 # the entry file's contract — every column the landing writes; the generator writes the same
+SUBMISSION_COLUMNS = ["submission_id", "action", "version_id", "subject", "scope_node", "submitted_by", "submitted_on", "note"]
 ENTRY_COLUMNS = ["entry_id", "action", "withdraws", "version_id", "layer_no", "entered_by", "entered_on", "reason_code", "effect_type",
                  "scope_material", "scope_customer", "period_from", "period_to", "value_kind", "value", "spread_rule", "note"]

@@ -13,11 +13,12 @@ from chassis.landing import LogLanding
 from chassis.run import Runner, attention, health
 from chassis.warehouse import Busy, q
 
-from . import ENTRY_COLUMNS, HEALTH, SHELL, roles, session
+from . import ENTRY_COLUMNS, HEALTH, SHELL, SUBMISSION_COLUMNS, roles, session
 from . import reads
 
 plan = Blueprint("plan", __name__)
 ENTRIES = LogLanding("plan", "layer_entry", ENTRY_COLUMNS)
+SUBMISSIONS = LogLanding("plan", "reg_submission", SUBMISSION_COLUMNS)
 SPREADS = ["baseline_shape", "history_shape", "catchment"]
 KINDS = ["cases", "rate_on_baseline"]
 EFFECTS = ["primary", "cannibalisation"]
@@ -306,7 +307,10 @@ def _enter(f: dict, who: str) -> tuple[dict, bool, str]:
     ms, cs = reads.material_scope_resolves(f["scope_material"]), reads.customer_scope_resolves(f["scope_customer"])
     win = f["period_from"] in hz and f["period_to"] in hz and f["period_from"] <= f["period_to"]
     offered = bool(reason and str(layer) in reason["layers"].split(","))
+    closed = reads.layer_closed_at(version, layer, f["scope_customer"]) if cs else None
     checks = [
+        {"check": "layer open at scope", "ok": closed is None,
+         "says": f"layer {layer} is open at {f['scope_customer']}" if closed is None else f"layer {layer} was submitted at {closed['scope_node']} by {closed['acted_by']} on {closed['acted_on']} — closed until reopened"},
         {"check": "version open", "ok": bool(v and v["status"] == "open"), "says": f"{version} is {v['status'] if v else 'unknown'}"},
         {"check": "who may enter", "ok": may, "says": f"{who} holds layer {layer} enter" if may else f"{who} does not hold layer {layer} enter"},
         {"check": "material scope resolves", "ok": ms, "says": f"{f['scope_material']} reaches leaf materials" if ms else f"{f['scope_material']} is not a node of the product structure or a promo group"},
@@ -361,6 +365,110 @@ def cell():
     says = (f"{eid}: {delta:+,.0f} cases on layer {b['layer']} for {b['material']} at {b['account']} in {b['period']} — in the plan after the next run" if placed
             else "refused: " + "; ".join(c["says"] for c in r["checks"] if not c["ok"]))
     return {"placed": placed, "says": says, "mark": f"{delta:+,.0f} pending", "entry_id": eid}
+
+
+# ---- submissions: the matrix, and the acts ----
+SUBMISSIONS_PAGE = VERSION_PICKER + """
+<h1>Submissions<small>{{ version }} · who has declared what complete, where — every state derived by the run from the acts and the entries</small></h1>
+<table class="matrix"><thead><tr><th>Subject</th>{% for u in units %}<th class="stage">{{ u.unit_name }}</th>{% endfor %}<th class="stage">Demand plan</th></tr></thead><tbody>
+{% for row in rows %}<tr><td>{{ row.label }}</td>{% for cell in row.cells %}<td class="stage {{ 'can' if cell.can }}" title="{{ cell.title }}">
+<span class="state {{ cell.state }} {{ 'gap' if 'beneath' in cell.show }}">{{ cell.show }}</span>{% if cell.can %}<form class="inline" method="post" action="{{ url_for('plan.submit') }}">
+<input type="hidden" name="version" value="{{ version }}"><input type="hidden" name="subject" value="{{ row.subject }}"><input type="hidden" name="node" value="{{ cell.node }}">
+<input type="hidden" name="act" value="{{ cell.can }}"><button class="act">{{ cell.can }}</button></form>{% endif %}
+{% if cell.by %}<div class="small muted">{{ cell.by.split('@')[0] }} · {{ cell.on }}</div>{% endif %}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table>
+<p class="hint">Filled: submitted here. Outlined: rolled up from beneath, or ready for the holder's act. Dashed: open — something beneath is not in. Layers scoped on material submit once, at the plan.</p>
+{% if unit %}<h2>{{ unit_name }} by account<span class="count">the account-facing layers</span></h2>
+<table class="matrix"><thead><tr><th>Layer</th>{% for a in accounts %}<th class="stage">{{ a.code }}</th>{% endfor %}</tr></thead><tbody>
+{% for row in acct_rows %}<tr><td>{{ row.label }}</td>{% for cell in row.cells %}<td class="stage" title="{{ cell.title }}"><span class="state {{ cell.state }}">{{ cell.show }}</span>{% if cell.can %}<form class="inline" method="post" action="{{ url_for('plan.submit') }}">
+<input type="hidden" name="version" value="{{ version }}"><input type="hidden" name="subject" value="{{ row.subject }}"><input type="hidden" name="node" value="{{ cell.node }}">
+<input type="hidden" name="act" value="{{ cell.can }}"><button class="act">{{ cell.can }}</button></form>{% endif %}{% if cell.by %}<div class="small muted">{{ cell.by.split('@')[0] }} · {{ cell.on }}</div>{% endif %}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table>{% endif %}
+<h2>Acts on file<span class="count">latest per subject and node</span></h2>
+<table><thead><tr><th>Subject</th><th>Node</th><th>State</th><th>By</th><th>On</th><th>Note</th></tr></thead><tbody>
+{% for a in acts %}<tr class="{{ '' if a.acted_by_holder else 'off' }}"><td>{{ a.subject }}</td><td>{{ a.scope_node }}</td><td><span class="state {{ a.state }}">{{ a.state }}</span>{% if not a.acted_by_holder %} <span class="state">refused</span>{% endif %}</td><td>{{ a.acted_by }}</td><td>{{ a.acted_on }}</td><td class="small">{{ a.note or '' }}</td></tr>{% endfor %}
+</tbody></table>
+{% if pending %}<p class="hint">{{ pending|length }} act{{ '' if pending|length == 1 else 's' }} placed since the last run — the matrix shows them after the run.</p>{% endif %}
+<style>table.matrix td.stage{vertical-align:top}.state.submitted{background:var(--ink);color:var(--paper)}.state.rolled_up,.state.ready{background:var(--panel)}
+.state.open{border-style:dashed}.state.submitted.gap{background:var(--panel);color:var(--ink);border-style:dashed;border-width:2px}.state.nothing,.state.n\/a{color:var(--faint);border-color:var(--faint)}.state.reopened{border-style:double}</style>"""
+
+SUBJECT_ORDER = ["layer:4", "layer:6", "layer:7", "layer:8", "layer:1", "layer:2", "unit", "plan"]
+
+
+def _can_act(who: str, subject: str, node: str, state: str) -> str | None:
+    """Which act this person may make here: submit when open, ready or rolled up; reopen when submitted. None if neither."""
+    verb = f"layer.{subject[6:]}" if subject.startswith("layer:") else f"demand.{subject}"
+    if state in ("open", "ready", "rolled_up") and roles.may(who, f"{verb}.submit", node, dimension="customer"):
+        return "submit"
+    if state == "submitted" and roles.may(who, f"{verb}.reopen", node, dimension="customer"):
+        return "reopen"
+    return None
+
+
+def _label(subject: str, layer_name: str | None) -> str:
+    return {"unit": "Unit demand", "plan": "Demand plan"}.get(subject) or f"Layer {subject[6:]} {layer_name or ''}"
+
+
+def _cell(who: str, st: dict | None) -> dict:
+    if st is None:
+        return {"state": "n/a", "show": "—", "node": "", "can": None, "title": "", "by": None, "on": None}
+    show = {"n/a": "—", "nothing": "nothing", "rolled_up": "rolled up"}.get(st["state"], st["state"])
+    if st["state"] == "submitted" and st.get("open_below"):
+        show = f"submitted · {st['open_below']} open beneath"
+    return {"state": st["state"].replace("/", "\\/"), "show": show, "node": st["node"], "can": _can_act(who, st["subject"], st["node"], st["state"]) if st["state"] != "n/a" else None,
+            "title": f"{st['subject']} at {st['node']}: {st['state']}" + (f" · holders: {st['whose']}" if st.get("whose") else ""), "by": st.get("acted_by"), "on": st.get("acted_on")}
+
+
+@plan.get("/submissions")
+def submissions():
+    try:
+        who = _who(); version = _version(); unit = request.args.get("unit") or None
+        units = reads.units(); matrix = reads.submission_matrix(version)
+        by = {(r["subject"], r["node"]): r for r in matrix}
+        names = {f"layer:{l['layer_no']}": l["layer_name"] for l in reads.layers()}
+        subjects = [sj for sj in SUBJECT_ORDER if any(k[0] == sj for k in by)]
+        rows = []
+        for sj in subjects:
+            cells = [_cell(who, by.get((sj, u["code"]))) for u in units] + [_cell(who, by.get((sj, "ALL")) if sj != "unit" else None)]
+            rows.append({"subject": sj, "label": _label(sj, names.get(sj)), "cells": cells})
+        acct_rows, accounts, unit_name = [], [], None
+        if unit:
+            accounts = reads.accounts_of(unit); unit_name = next((u["unit_name"] for u in units if u["code"] == unit), unit)
+            for sj in subjects:
+                if by.get((sj, accounts[0]["code"]), {}).get("state", "n/a") != "n/a" if accounts else False:
+                    acct_rows.append({"subject": sj, "label": _label(sj, names.get(sj)), "cells": [_cell(who, by.get((sj, a["code"]))) for a in accounts]})
+        extra = ('<label>unit by account<select name="unit" onchange="this.form.submit()"><option value="">none</option>'
+                 + "".join(f'<option value="{u["code"]}" {"selected" if u["code"] == unit else ""}>{u["unit_name"]}</option>' for u in units) + "</select></label>")
+        return _page(SUBMISSIONS_PAGE, title="Submissions", active="submissions", versions=reads.versions(), version=version, units=units, rows=rows,
+                     unit=unit, unit_name=unit_name, accounts=accounts, acct_rows=acct_rows, acts=reads.submission_acts(version), extra=extra, pending=SUBMISSIONS.pending())
+    except Busy as e:
+        return _busy("Submissions", e)
+
+
+@plan.post("/submit")
+def submit():
+    f = request.form; who = _who(); version, subject, node, act = f["version"], f["subject"], f["node"], f["act"]
+    v = reads.version(version)
+    st = next((r for r in reads.submission_matrix(version) if r["subject"] == subject and r["node"] == node), None)
+    verb = (f"layer.{subject[6:]}" if subject.startswith("layer:") else f"demand.{subject}") + f".{act}"
+    holds = roles.may(who, verb, node, dimension="customer")
+    fits = bool(st) and ((act == "submit" and st["state"] in ("open", "ready", "rolled_up")) or (act == "reopen" and st["state"] == "submitted"))
+    over_open = act == "submit" and bool(st) and st["state"] == "open"
+    checks = [
+        {"check": "version open", "ok": bool(v and v["status"] == "open"), "says": f"{version} is {v['status'] if v else 'unknown'}"},
+        {"check": "who holds the verb here", "ok": holds, "says": f"{who} holds {verb} at {node}" if holds else f"{who} does not hold {verb} at {node}"},
+        {"check": "act fits the state", "ok": fits, "says": f"{subject} at {node} is {st['state'] if st else 'unknown'}"},
+        {"check": "submitting over open children", "ok": not over_open, "flag": True,
+         "says": "something beneath is still open — submitted over it, on record" if over_open else "nothing open beneath"},
+    ]
+    placed = receipts.judge(checks)
+    sid = f"SB-F-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+    if placed:
+        SUBMISSIONS.place([{"submission_id": sid, "action": act, "version_id": version, "subject": subject, "scope_node": node, "submitted_by": who,
+                            "submitted_on": dt.date.today().isoformat(), "note": f.get("note", "")}], who)
+    session.last = receipts.write(act, who, f"{subject}@{node}", checks, placed)
+    session.say(f"{act} of {subject} at {node} placed — the matrix shows it after the next run" if placed else f"{act} refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+    return redirect(url_for("plan.submissions", version=version))
 
 
 # ---- the revenue bridge ----

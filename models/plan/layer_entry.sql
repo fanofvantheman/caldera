@@ -4,7 +4,7 @@
    corrected here. */
 MODEL (name plan.layer_entry, kind FULL, grain (entry_id),
        audits (layer_entry_version_known, layer_entry_scope_resolves, layer_entry_by_owner, layer_entry_withdraw_by_owner,
-               layer_entry_reason_known, layer_entry_vocabulary, layer_entry_window_in_horizon));
+               layer_entry_reason_known, layer_entry_vocabulary, layer_entry_window_in_horizon, layer_entry_after_submission));
 WITH withdrawals AS (
   SELECT w.withdraws::TEXT AS entry_id, w.entered_by::TEXT AS withdrawn_by, w.entered_on::DATE AS withdrawn_on, NULLIF(w.note::TEXT, '') AS withdrawal_note,
          w.layer_no::INT AS layer_no
@@ -19,6 +19,9 @@ SELECT e.entry_id::TEXT AS entry_id, e.version_id::TEXT AS version_id, e.layer_n
        wd.entry_id IS NOT NULL AS withdrawn, wd.withdrawn_by, wd.withdrawn_on, wd.withdrawal_note,
        wd.entry_id IS NULL OR EXISTS (SELECT 1 FROM dims.effective_entitlements x WHERE x.principal = wd.withdrawn_by AND x.action = 'layer.' || e.layer_no::TEXT || '.withdraw') AS withdrawn_by_owner,
        r.reason_code IS NOT NULL AS reason_known,
+       EXISTS (SELECT 1 FROM plan.submission s JOIN dims.dim_customer_hierarchy h ON h.ancestor_code = s.scope_node AND h.descendant_code = e.scope_customer
+               WHERE s.version_id = e.version_id AND s.subject = 'layer:' || e.layer_no::TEXT AND s.state = 'submitted' AND s.acted_by_holder
+                 AND s.acted_on < e.entered_on::DATE) AS after_submission,
        v.version_id IS NOT NULL AS version_known,
        EXISTS (SELECT 1 FROM dims.dim_material_hierarchy h WHERE h.ancestor_code = e.scope_material AND h.descendant_is_leaf)
          OR EXISTS (SELECT 1 FROM dims.ref_promo_group g WHERE g.promo_group_code = e.scope_material) AS material_scope_resolves,

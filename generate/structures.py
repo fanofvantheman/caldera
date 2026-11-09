@@ -220,6 +220,18 @@ ACCOUNTS = [
 ]
 
 # (ship_to_code, account_code, name, state, serving_node, stores_served)
+# planning units: who plans the demand — a level between account and ALL on the customer structure. Export is not yet
+# significant enough to need its own planner and mostly plans itself (it takes what the domestic plan does not); it sits
+# with the other independents.
+PLANNING_UNITS = [
+    ("PU_WES", "Westbrook",          ["WES"]),
+    ("PU_CAR", "Carters",            ["CAR"]),
+    ("PU_MER", "Merritt",            ["MER"]),
+    ("PU_IND", "Other independents", ["ALS", "CRS", "EXPJ"]),
+    ("PU_HOR", "Horeca",             ["BRD"]),
+]
+UNIT_OF = {a: (u, n) for u, n, accts in PLANNING_UNITS for a in accts}
+
 SHIP_TOS = [
     ("WES-NSW", "WES", "Westbrook DC Minchinbury",    "NSW", "MEL", 380),
     ("WES-VIC", "WES", "Westbrook DC Melbourne",      "VIC", "MEL", 300),

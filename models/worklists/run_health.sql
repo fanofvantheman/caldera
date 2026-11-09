@@ -14,4 +14,8 @@ FROM (
          'give a reason the vocabulary has, or add the reason to the register' FROM plan.worklist_reason_unknown
   UNION ALL SELECT 'cells below zero', 'plan.worklist_stack_negative', 'WARN', COUNT(*),
          'an exit or dip larger than the baseline: trim the entry or accept the zero' FROM plan.worklist_stack_negative
+  UNION ALL SELECT 'submissions open', 'plan.worklist_open_submissions', 'ACTION', COUNT(*),
+         'submit what is yours when it is complete; a unit submits when its layers are in; the plan when its units are' FROM plan.worklist_open_submissions
+  UNION ALL SELECT 'entries after submission', 'plan.worklist_entry_after_submission', 'VERDICT', COUNT(*),
+         'the layer is closed at that scope: the holder reopens it, or the entry waits for the next cycle' FROM plan.worklist_entry_after_submission
 ) w CROSS JOIN readers r
