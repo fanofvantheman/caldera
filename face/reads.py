@@ -297,3 +297,13 @@ def ladder(version_id: str) -> list[dict]:
     return [{"key": k, "label": lab, "says": say, "done": by.get(k, {}).get("done", 0), "total": by.get(k, {}).get("total", 0)}
             for k, lab, say in (("inputs", "Inputs in", "account layers at their accounts"), ("build", "Plans built", "planners' layers at their units"),
                                 ("units", "Units submitted", "each unit's planner"), ("plan", "Plan submitted", "to the business"))]
+
+
+def account_of_ship_to(ship_to: str) -> str | None:
+    r = one("select account_code from dims.dim_ship_to where ship_to_code = ?", ship_to)
+    return r["account_code"] if r else None
+
+
+def unit_of_account(account: str) -> str | None:
+    r = one("select planning_unit from dims.dim_account where account_code = ?", account)
+    return r["planning_unit"] if r else None

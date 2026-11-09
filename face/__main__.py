@@ -70,7 +70,7 @@ def _busy(title: str, e: Busy) -> str:
 HOME = """<h1>{{ who }}<small>what the processes you reach expect of you today</small></h1>
 <h2 id="attention">My attention<span class="count">{{ mine|length }} item{{ '' if mine|length == 1 else 's' }} the last run routed to you</span></h2>
 {% if mine %}<table><thead><tr><th>Activity</th><th>Context</th><th>What to do</th><th>Status</th></tr></thead><tbody>
-{% for m in mine %}<tr><td>{{ m.item }}</td><td>{{ m.name }}</td><td class="small muted">{{ m.what_to_do }}</td><td><span class="severity">{{ m.severity }}</span></td></tr>{% endfor %}
+{% for m in mine %}<tr><td>{% if m.href %}<a href="{{ m.href }}">{{ m.item }}</a>{% else %}{{ m.item }}{% endif %}</td><td>{{ m.name }}</td><td class="small muted">{{ m.what_to_do }}</td><td><span class="severity">{{ m.severity }}</span></td></tr>{% endfor %}
 </tbody></table>{% else %}<p class="muted">Nothing is waiting on you.</p>{% endif %}
 <h2 id="planning">My planning<span class="count">the processes your roles reach</span></h2>
 {% for p in reach %}<h2>{{ p.label }}<span class="count">{{ p.says }}</span></h2>
@@ -118,13 +118,33 @@ def _expected(area_key: str, who: str, held: set[str]) -> list[dict]:
     return lines
 
 
+def _where(surface: str, r: dict) -> str | None:
+    """Where the work behind a worklist row is: the page that shows it, opened at the row's scope. Routed on what the
+    row carries — an entry goes to the entries page at its layer, a cell to the demand grid at its account, a
+    submission to the matrix at its unit. A row with nothing to go to gets no link."""
+    v = r.get("version_id")
+    try:
+        if r.get("entry_id"):
+            return url_for("plan.entries", version=v, layer=r.get("layer_no") or "", withdrawn=1) + f"#{r['entry_id']}"
+        if r.get("ship_to_code"):
+            acct = reads.account_of_ship_to(r["ship_to_code"])
+            return url_for("plan.demand", version=v, account=acct) if acct else url_for("plan.demand", version=v)
+        if r.get("subject"):
+            node = r.get("node"); lvl = r.get("level")
+            unit = node if lvl == "planning_unit" else (reads.unit_of_account(node) if lvl == "account" else None)
+            return url_for("plan.submissions", version=v, unit=unit) if unit else url_for("plan.submissions", version=v)
+    except Exception:
+        return None
+    return None
+
+
 def _mine(who: str, held: set[str]) -> list[dict]:
     """What the last run routed to this person, plus the one thing the face itself can see: files placed and not yet run."""
-    rows = [{"item": a["row"].get("item") or a["surface"], "name": a["name"], "what_to_do": a["what_to_do"], "severity": a["severity"]}
+    rows = [{"item": a["row"].get("item") or a["surface"], "name": a["name"], "what_to_do": a["what_to_do"], "severity": a["severity"], "href": _where(a["surface"], a["row"])}
             for a in attention(q, who, HEALTH)]
     if "run.plan" in held:
         for f in ENTRIES.pending():
-            rows.append({"item": f"{f.name} placed, not yet in the plan", "name": "landing", "what_to_do": "run the plan to take it in", "severity": "PENDING"})
+            rows.append({"item": f"{f.name} placed, not yet in the plan", "name": "landing", "what_to_do": "run the plan to take it in", "severity": "PENDING", "href": url_for("plan.run")})
     return rows
 
 
@@ -167,7 +187,11 @@ def _head(who: str, held: set[str]) -> str:
         else ("open: " + ", ".join(open_units) if open_units else "every unit in — ready to submit")
     actions = [{"label": s.label, "href": url_for(s.endpoint, **s.args), "says": a.label}
                for p, areas in SHELL.reach(held) if p.key == "ibp" for a, secs in areas for s in secs if s.key in ("demand", "submissions", "accuracy", "entries", "gap", "versions", "run")]
-    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", version=version, versions=reads.versions(), fy=fy, lag=lag,
+    links = {"demand": url_for("plan.demand", version=version), "money": url_for("plan.gap", version=version), "accuracy": url_for("plan.accuracy"),
+             "submissions": url_for("plan.submissions", version=version), "versions": url_for("plan.versions")}
+    for u in units:
+        u["href"] = url_for("plan.submissions", version=version, unit=u["code"])
+    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", links=links, version=version, versions=reads.versions(), fy=fy, lag=lag,
                  t=t, rev=rev, acc=acc, acc_of=acc_of, tree=tree, units=units, ladder=ladder, now=now, plan_cell=plan_cell, status_line=status_line,
                  series=(series := reads.demand_series(version, fy)), chart=dashboard.chart(series, fy), mine=_mine(who, held), actions=actions)
 
@@ -257,7 +281,7 @@ def demand():
 ENTRIES_PAGE = VERSION_PICKER + """
 <h1>{{ title }}<small>{{ version }} · {{ lede }}</small></h1>
 <table><thead><tr><th>Layer</th><th>Entry</th><th>By</th><th>On</th><th>Reason</th><th>Material</th><th>Customer</th><th>Window</th><th class="n">Value</th><th>Spread</th><th>Note</th><th></th></tr></thead><tbody>
-{% for e in rows %}<tr class="{{ 'off' if e.withdrawn and e.withdrawn_by_owner }}">
+{% for e in rows %}<tr id="{{ e.entry_id }}" class="{{ 'off' if e.withdrawn and e.withdrawn_by_owner }}">
 <td>{{ e.layer_no }}</td><td><code>{{ e.entry_id }}</code>{% if not e.entered_by_owner %} <span class="state">refused</span>{% endif %}{% if e.withdrawn and not e.withdrawn_by_owner %} <span class="state">withdrawal refused</span>{% endif %}</td>
 <td>{{ e.entered_by }}</td><td>{{ e.entered_on }}</td><td title="{{ e.reason_description or '' }}">{{ e.reason_code }}{% if not e.reason_known %} <span class="state">unknown</span>{% endif %}</td>
 <td>{{ e.scope_material }}</td><td>{{ e.scope_customer }}</td><td>{{ e.period_from }}{% if e.period_to != e.period_from %} – {{ e.period_to }}{% endif %}</td>
