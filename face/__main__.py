@@ -167,7 +167,7 @@ def _head(who: str, held: set[str]) -> str:
         else ("open: " + ", ".join(open_units) if open_units else "every unit in — ready to submit")
     actions = [{"label": s.label, "href": url_for(s.endpoint, **s.args), "says": a.label}
                for p, areas in SHELL.reach(held) if p.key == "ibp" for a, secs in areas for s in secs if s.key in ("demand", "submissions", "accuracy", "entries", "gap", "versions", "run")]
-    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="1400px", version=version, versions=reads.versions(), fy=fy, lag=lag,
+    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", version=version, versions=reads.versions(), fy=fy, lag=lag,
                  t=t, rev=rev, acc=acc, acc_of=acc_of, tree=tree, units=units, ladder=ladder, now=now, plan_cell=plan_cell, status_line=status_line,
                  series=(series := reads.demand_series(version, fy)), chart=dashboard.chart(series, fy), mine=_mine(who, held), actions=actions)
 

@@ -53,11 +53,12 @@ HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what
 <button class="primary">{{ 'Submit the demand plan' if plan_cell.can == 'submit' else 'Reopen the demand plan' }}</button><div class="hint">{{ plan_cell.title }}</div></form>
 {% elif plan_cell.show %}<div class="small"><span class="state {{ plan_cell.state }}">{{ plan_cell.show }}</span>{% if plan_cell.by %} <span class="muted">{{ plan_cell.by.split('@')[0] }} · {{ plan_cell.on }}</span>{% endif %}</div>{% endif %}</div>
 <style>.tiles{grid-template-columns:repeat(4,1fr)}.card.stat{margin:0}.card.stat b{font-size:1.75rem;margin:.3rem 0 .2rem}
-.grid2{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:1.2rem;align-items:start;margin:0 0 .5rem}.grid2>.card{margin:0}.grid2 h2{margin-top:1.2rem}
-.fig svg{display:block;width:100%;height:auto;margin-top:.6rem}.fighead{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}.fighead .legend{margin-left:auto}
+.grid2{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:1.4rem;align-items:start;margin:0 0 .5rem}
+@media (min-width:1900px){.grid2{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}.tiles{gap:1.4rem}h1{font-size:2.4rem}}.grid2>.card{margin:0}.grid2 h2{margin-top:1.2rem}
+.fig svg{display:block;width:100%;height:auto;max-height:420px;margin-top:.6rem}.fighead{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}.fighead .legend{margin-left:auto}
 .key{display:inline-flex;align-items:center;gap:.3rem}.sw{display:inline-block;width:1.1rem;height:0;border-top:2px solid var(--ink)}.sw.actual{border-top-width:4px}.sw.ref{border-top-style:dashed}.sw.py{border-top-color:var(--faint)}
 .fig{position:relative}.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.78rem;padding:.4rem .6rem;border-radius:var(--radius-s);line-height:1.4;white-space:nowrap}
-.card.list b .count{font-weight:400;margin-left:.6rem;font-size:.85rem;color:var(--muted)}.card.list{max-height:360px;overflow-y:auto}.rows{list-style:none;margin:.6rem 0 0;padding:0}.rows li{padding:.5rem 0;border-top:1px solid var(--rule);font-size:.9rem}
+.card.list b .count{font-weight:400;margin-left:.6rem;font-size:.85rem;color:var(--muted)}.card.list{max-height:460px;overflow-y:auto}.rows{list-style:none;margin:.6rem 0 0;padding:0}.rows li{padding:.5rem 0;border-top:1px solid var(--rule);font-size:.9rem}
 .acts{display:flex;flex-direction:column;gap:.4rem}.acts .button{display:block;text-decoration:none;padding:.55rem .9rem;border:1px solid var(--rule);border-radius:var(--radius-s);background:var(--panel);font-weight:500;font-size:.9rem}.acts .button:hover{background:var(--soft)}.acts .button small{display:block;font-weight:400;color:var(--muted);font-size:.78rem}
 .ladder{margin-top:1.4rem;display:flex;gap:2rem;align-items:center;flex-wrap:wrap}.ladder ol{list-style:none;display:flex;gap:1.4rem;margin:0;padding:0;flex:1 1 auto;flex-wrap:wrap}.ladder li{display:flex;gap:.6rem;align-items:center}
 .ladder li i{display:inline-block;width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);flex:0 0 auto;position:relative}.ladder li.done i{background:var(--ink);border-color:var(--ink)}
@@ -92,7 +93,7 @@ ACCURACY_PAGE = """<h1>Forecast accuracy<small>the plan judged as a forecast: wh
 <style>.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;align-items:start}""" + TREE_CSS + """</style>""" + TREE_JS
 
 
-def chart(series: dict, fy: int, width: int = 760, height: int = 250) -> str:
+def chart(series: dict, fy: int, width: int = 1100, height: int = 300) -> str:
     """Demand by period for one fiscal year as inline SVG: shipped (heavy, with a soft area), the view's plan continuing
     it, the reference dashed, the prior year faint — one axis, cases. The hover layer reads data-points."""
     periods = series["periods"]
