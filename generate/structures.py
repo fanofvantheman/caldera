@@ -210,7 +210,7 @@ def build_bom(materials: list[Material]) -> list[dict]:
 
 # (account_code, name, channel, sub_channel, tier, route_to_market, state, price_list, payment_terms_days, settlement_disc_pct, collaborative, scan)
 ACCOUNTS = [
-    ("WAR",   "Warners Supermarkets",   "grocery",     "major chains",  "key account", "direct",       "NSW", "PL_GROCERY",     45, 0.0, "Y", "Y"),
+    ("WES",   "Westbrook Supermarkets",   "grocery",     "major chains",  "key account", "direct",       "NSW", "PL_GROCERY",     45, 0.0, "Y", "Y"),
     ("CAR",   "Carters Supermarkets",        "grocery",     "major chains",  "key account", "direct",       "VIC", "PL_GROCERY",     45, 0.0, "Y", "Y"),
     ("MER",   "Merritt Independents",             "grocery",     "independents",  "national",    "via wholesaler","NSW", "PL_WHOLESALE",  30, 1.5, "N", "N"),
     ("ALS",   "Alders Stores",               "discount",    "",              "national",    "direct",       "NSW", "PL_CONTRACT",    30, 0.0, "N", "N"),
@@ -221,10 +221,10 @@ ACCOUNTS = [
 
 # (ship_to_code, account_code, name, state, serving_node, stores_served)
 SHIP_TOS = [
-    ("WAR-NSW", "WAR", "Warners DC Minchinbury",    "NSW", "MEL", 380),
-    ("WAR-VIC", "WAR", "Warners DC Melbourne",      "VIC", "MEL", 300),
-    ("WAR-QLD", "WAR", "Warners DC Brisbane",       "QLD", "BNE", 260),
-    ("WAR-WA",  "WAR", "Warners DC Perth",          "WA",  "MEL", 120),
+    ("WES-NSW", "WES", "Westbrook DC Minchinbury",    "NSW", "MEL", 380),
+    ("WES-VIC", "WES", "Westbrook DC Melbourne",      "VIC", "MEL", 300),
+    ("WES-QLD", "WES", "Westbrook DC Brisbane",       "QLD", "BNE", 260),
+    ("WES-WA",  "WES", "Westbrook DC Perth",          "WA",  "MEL", 120),
     ("CAR-NSW", "CAR", "Carters DC Eastern Creek",       "NSW", "MEL", 300),
     ("CAR-VIC", "CAR", "Carters DC Truganina",           "VIC", "MEL", 260),
     ("CAR-QLD", "CAR", "Carters DC Brisbane",            "QLD", "BNE", 200),
@@ -240,7 +240,7 @@ SHIP_TOS = [
 # which products an account ranges (private label only to its owner; export a short list)
 def account_ranges(acct: str, m: Material) -> bool:
     if m.branded == "private_label":
-        return {"PL_PEACH": "WAR", "PL_PEAR": "CAR", "PL_CUP": "ALS", "PL_TOM": "ALS"}.get(m.product_code) == acct or \
+        return {"PL_PEACH": "WES", "PL_PEAR": "CAR", "PL_CUP": "ALS", "PL_TOM": "ALS"}.get(m.product_code) == acct or \
                (m.product_code in ("PL_PEACH", "PL_TOM") and acct == "CAR")
     if acct == "ALS":
         return False
@@ -290,19 +290,19 @@ LINES = [
 LANES = [
     ("SHP", "MEL",     "node",    "road linehaul", 1, 38.0),
     ("SHP", "BNE",     "node",    "road linehaul", 3, 95.0),
-    ("MEL", "WAR-VIC", "ship_to", "road local",    1, 22.0),
+    ("MEL", "WES-VIC", "ship_to", "road local",    1, 22.0),
     ("MEL", "CAR-VIC", "ship_to", "road local",    1, 22.0),
     ("MEL", "MER-VIC", "ship_to", "road local",    1, 22.0),
     ("MEL", "ALS-VIC", "ship_to", "road local",    1, 22.0),
     ("MEL", "CRS-VIC", "ship_to", "road local",    1, 24.0),
     ("MEL", "BRD-VIC", "ship_to", "road local",    1, 24.0),
-    ("MEL", "WAR-NSW", "ship_to", "road interstate", 2, 48.0),
+    ("MEL", "WES-NSW", "ship_to", "road interstate", 2, 48.0),
     ("MEL", "CAR-NSW", "ship_to", "road interstate", 2, 48.0),
     ("MEL", "MER-NSW", "ship_to", "road interstate", 2, 48.0),
     ("MEL", "ALS-NSW", "ship_to", "road interstate", 2, 48.0),
-    ("MEL", "WAR-WA",  "ship_to", "rail interstate", 6, 110.0),
+    ("MEL", "WES-WA",  "ship_to", "rail interstate", 6, 110.0),
     ("MEL", "EXPJ-POR","ship_to", "sea container",   18, 60.0),
-    ("BNE", "WAR-QLD", "ship_to", "road local",    1, 24.0),
+    ("BNE", "WES-QLD", "ship_to", "road local",    1, 24.0),
     ("BNE", "CAR-QLD", "ship_to", "road local",    1, 24.0),
 ]
 

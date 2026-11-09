@@ -47,7 +47,7 @@ def generate_demand(materials: list[Material], weeks: list[Week], rng: random.Ra
             wk += rng.randint(8, 12)
         for s in eligible:
             share = weight[s[0]] / total_w
-            noise_sd = 0.12 if acct_of[s[0]] in ("WAR", "CAR") else 0.22
+            noise_sd = 0.12 if acct_of[s[0]] in ("WES", "CAR") else 0.22
             for w in weeks:
                 years = (w.fiscal_year - first_fy) + (w.fiscal_week - 1) / 52
                 lifecycle = 1.0
@@ -57,9 +57,9 @@ def generate_demand(materials: list[Material], weeks: list[Week], rng: random.Ra
                     lifecycle = max(0.0, 1.0 - 0.04 * w.fiscal_week)
                 seq = (w.fiscal_year - first_fy) * 53 + w.fiscal_week
                 promo = 1.0
-                if seq in promo_weeks and acct_of[s[0]] in ("WAR", "CAR", "MER"):
+                if seq in promo_weeks and acct_of[s[0]] in ("WES", "CAR", "MER"):
                     promo = 1.9
-                elif (seq - 1) in promo_weeks and acct_of[s[0]] in ("WAR", "CAR", "MER"):
+                elif (seq - 1) in promo_weeks and acct_of[s[0]] in ("WES", "CAR", "MER"):
                     promo = 0.85                                                  # post-promotion dip
                 base = m.base_cases_per_week * share * ((1 + trend) ** years) * _season(m.category_code, w.fiscal_week)
                 cases = base * lifecycle * promo * max(0.0, rng.gauss(1.0, noise_sd))
