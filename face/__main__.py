@@ -57,11 +57,11 @@ def _busy(title: str, e: Busy) -> str:
 
 # ---- the role's home: what the processes you reach expect of you ----
 HOME = """<h1>{{ who }}<small>what the processes you reach expect of you today</small></h1>
-<h2>My attention<span class="count">{{ mine|length }} item{{ '' if mine|length == 1 else 's' }} the last run routed to you</span></h2>
+<h2 id="attention">My attention<span class="count">{{ mine|length }} item{{ '' if mine|length == 1 else 's' }} the last run routed to you</span></h2>
 {% if mine %}<table><thead><tr><th>Activity</th><th>Context</th><th>What to do</th><th>Status</th></tr></thead><tbody>
 {% for m in mine %}<tr><td>{{ m.item }}</td><td>{{ m.name }}</td><td class="small muted">{{ m.what_to_do }}</td><td><span class="severity">{{ m.severity }}</span></td></tr>{% endfor %}
 </tbody></table>{% else %}<p class="muted">Nothing is waiting on you.</p>{% endif %}
-<h2>My planning<span class="count">the processes your roles reach</span></h2>
+<h2 id="planning">My planning<span class="count">the processes your roles reach</span></h2>
 {% for p in reach %}<h2>{{ p.label }}<span class="count">{{ p.says }}</span></h2>
 <div class="cards">{% for a in p.areas %}<div class="card"><b>{{ a.label }}</b>
 {% for line in a.lines %}<div class="small {{ 'muted' if not line.live }}">{{ line.says }}</div>{% endfor %}
