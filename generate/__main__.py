@@ -13,7 +13,7 @@ from pathlib import Path
 from . import calendar as cal
 from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIALS, CATEGORIES, PRODUCTS, FORMATS,
                          PROMO_GROUPS, ACCOUNTS, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
-from .history import generate_demand, generate_prices
+from .history import forecast_snapshots, generate_demand, generate_prices
 from .registers import versions, period_control, roles, capacity_register, assumptions
 from .plan import business_plan_entries, latest_view_entries, promo_events, terms_register, reason_codes, submissions
 from .emit import emit_all, dataclass_rows
@@ -65,7 +65,9 @@ def main() -> None:
     tables["ctl_role_definition"], tables["ctl_role_action"], tables["ctl_role_assignment"] = defs, acts, asg
 
     shipments = generate_demand(materials, history_weeks, rng, FIRST_FY)
-    history = {"shipments": shipments, "price_list": generate_prices(materials, rng)}
+    period_order = [p["period"] for p in cal.periods(weeks)]
+    history = {"shipments": shipments, "price_list": generate_prices(materials, rng),
+               "forecast_snapshot": forecast_snapshots(shipments, materials, period_order, LATEST_CLOSED, rng)}
     entries = business_plan_entries(materials, shipments, PLAN_FY) + latest_view_entries(PLAN_FY, LATEST_CLOSED)
     plan = {
         "layer_entry": [{"entry_id": f"LE-{i:05d}", **e} for i, e in enumerate(entries, start=1)],
@@ -76,7 +78,7 @@ def main() -> None:
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed)
     c = manifest["counts"]
     print(f"generated: {c['dim_material']} materials, {c['dim_ship_to']} ship-tos, {c['dim_week']} weeks, "
-          f"{c['shipments']} shipment rows, {c['price_list']} price rows, {c['ref_bom']} bom lines, {c['reg_capacity_machine']} capacity rows, "
+          f"{c['shipments']} shipment rows, {c['forecast_snapshot']} forecast snapshot rows, {c['price_list']} price rows, {c['ref_bom']} bom lines, {c['reg_capacity_machine']} capacity rows, "
           f"{c['layer_entry']} layer entries, {c['reg_promo_event']} promo events, {c['reg_terms']} terms")
 
 

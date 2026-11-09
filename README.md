@@ -26,7 +26,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
 - `pyproject.toml` + `uv.lock` — the environment (uv-managed, lockfile-pinned, nothing global).
 - `generate/` — the synthetic client. `structures.py` is what Caldera makes, sells to, operates and is organised as;
   `calendar.py` the 4-4-5 trading calendar (fiscal year July–June, every week in exactly one period);
-  `history.py` three years of shipments by material × ship-to × week and the price lists; `registers.py` the
+  `history.py` three years of shipments by material × ship-to × week, the price lists, and what each earlier cycle's
+  latest view said (the forecast snapshots accuracy is read from); `registers.py` the
   versions, roles, capacity register and planning assumptions; `plan.py` what the people typed — layer entries on
   each version, the promotions calendar, the terms register. Deterministic from a seed; output is regenerated
   every run and never committed.
@@ -40,7 +41,15 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   the files waiting for a run. Above that, **My attention**: every row the last run routed to the person — the
   worklists under `models/worklists/` (entries refused, withdrawals refused, entries unresolved, reasons unknown,
   cells below zero), each row carrying `whose`, with `plan.run_health` as the row-per-worklist index the run page
-  shows. Nothing on the home page is typed: a row exists because the run produced it. "Acting as" in the top bar opens the sign-in screen: every person, the roles they hold
+  shows. Nothing on the home page is typed: a row exists because the run produced it. Someone who submits the
+  demand plan gets the plan as a whole as their home page: the fiscal year's cases against last year's shipments, net
+  sales against the reference on the periods both value, **forecast accuracy** (the plan judged as a forecast: what the
+  cycle three periods before said against what shipped, over the last twelve closed periods, 1 − Σ|error| ÷ Σ shipped,
+  with bias) and how many units are in; the year by period with the reference dashed and last year faint; the plan by
+  category opening to products and materials — the material structure, with accuracy and bias at every node; the
+  units with their submission state; versions; the pages their roles reach; and the submission ladder across the
+  bottom (inputs in, plans built, units submitted, plan submitted, reference declared) with the one act at its end.
+  The **forecast accuracy** page under Demand reads the same judgement at every lag, by unit and by period. "Acting as" in the top bar opens the sign-in screen: every person, the roles they hold
   and where, one click to act as them. Pages built so far: the demand plan (with **inputs directly into cells**: choose an account and the layer you
   enter as, click a plan cell, type the total you want, give a reason — what is placed is an entry on that layer for the
   difference, at that material, account and period; the cell shows the run's number with the change marked pending until
@@ -69,14 +78,15 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   - `dims/` the calendar (weeks, periods with relative position), versions, the four structures as hierarchy
     bridges (material, customer, location, organisation), the bill of materials, routes, lanes, the capacity
     register, the assumptions register, roles and the entitlements derived from them
-  - `history/` shipments at week and period grain, price lists
+  - `history/` shipments at week and period grain, price lists, each earlier cycle's latest view at the plan's grain
   - `plan/` the demand plan and its money: the category trend and the history shape fitted from cleansed
     shipments; the layer entries as filed and resolved to the grid; layer 1 computed for the open version and
     entered for the frozen one; the promotions calendar's uplift and dip lines, day-weighted into the weeks a
     dated window touches; the stack (every layer line, keyed by version and source); the unconstrained demand plan
     at storage grain and at the review's grain with each layer beside the total; the list price and terms in force
     by week; every line valued through the gross-to-net (wide, and long with each deduction's attributes); the
-    revenue bridge by layer; the gap to the version's reference
+    revenue bridge by layer; the gap to the version's reference; the plan judged as a forecast (`forecast_accuracy`:
+    the snapshot `lag` periods before against shipments, at material × account × period, both structures beside)
 - `audits/` — the checks every model runs: every member reaches its root, every week in one period, exactly one
   open period, vocabularies, references resolve, one person does not both enter demand and enter the supply
   constraint; an entry is on a known version, resolves to leaves, and was entered by the layer's owner; every

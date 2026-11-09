@@ -38,6 +38,7 @@ PROCESSES = [
             Section("demand", "Demand plan", "plan.demand", verbs=READ),
             Section("entries", "Entries", "plan.entries", verbs=READ),
             Section("submissions", "Submissions", "plan.submissions", verbs=READ),
+            Section("accuracy", "Forecast accuracy", "plan.accuracy", verbs=READ),
             Section("new", "New entry", "plan.entry_new", verbs=ENTER),
             Section("events", "Promotions", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
             Section("terms", "Terms", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill"]),

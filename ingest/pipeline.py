@@ -50,6 +50,7 @@ REFERENCE = {
 HISTORY = {
     "shipments": ("cases", "tonnes"),
     "price_list": ("price_per_case",),
+    "forecast_snapshot": ("lag", "cases"),
 }
 PLAN = {
     "layer_entry": ("layer_no", "value"),
@@ -57,7 +58,7 @@ PLAN = {
     "reg_terms": ("rate",),
     "reg_submission": (),
 }
-INTEGER = frozenset({"layer_no", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
+INTEGER = frozenset({"layer_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days"})
 
 

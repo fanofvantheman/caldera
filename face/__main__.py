@@ -15,6 +15,7 @@ from chassis.warehouse import Busy, q
 
 from . import ENTRY_COLUMNS, HEALTH, SHELL, SUBMISSION_COLUMNS, roles, session
 from . import reads
+from . import dashboard
 
 plan = Blueprint("plan", __name__)
 ENTRIES = LogLanding("plan", "layer_entry", ENTRY_COLUMNS)
@@ -48,6 +49,14 @@ def _n(x: float | None, d: int = 0) -> str:
 
 plan.add_app_template_filter(_n, "n")
 plan.add_app_template_filter(lambda x: f"{x:+,.0f}", "signed")
+plan.add_app_template_filter(lambda x: "" if x is None else (f"{x / 1e6:,.2f}M" if abs(x) >= 1e6 else f"{x / 1e3:,.0f}k"), "k")
+plan.add_app_template_filter(lambda x: "" if x is None else f"${x / 1e6:,.1f}M", "m")
+plan.add_app_template_filter(lambda x: "" if x is None else f"{x:+.1%}", "pct")
+plan.add_app_template_filter(lambda x: "" if x is None else f"{x:.1%}", "pct1")
+plan.add_app_template_filter(lambda x: "" if x is None else f"{x:+.1%}", "pct1s")
+plan.add_app_template_filter(lambda x: "" if x is None else f"{x * 100:+.1f} pp", "pp")
+plan.add_app_template_filter(lambda x: "" if x is None else ("up" if x > 0.0005 else "down" if x < -0.0005 else "flat"), "dir")
+plan.add_app_template_filter(lambda x: "" if x is None else ("high" if x > 0.02 else "low" if x < -0.02 else ""), "hl")
 
 VERSION_PICKER = """<form class="toolbar" method="get"><label>version<select name="version" onchange="this.form.submit()">
 {% for v in versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == version }}>{{ v.version_id }} · {{ v.status }}</option>{% endfor %}</select></label>{{ extra|safe }}</form>"""
@@ -119,10 +128,56 @@ def _mine(who: str, held: set[str]) -> list[dict]:
     return rows
 
 
+def _d(a: float | None, b: float | None) -> float | None:
+    return None if not a or not b else a / b - 1
+
+
+def _head(who: str, held: set[str]) -> str:
+    """The home page of someone who submits the demand plan: the plan as a whole, read from the run — tiles, the year by
+    period, the tree by category, the units and their submissions, the ladder and the one act at its end."""
+    version = _version(); v = reads.version(version) or {}
+    fy = int(v.get("fiscal_year") or 0)
+    lag = 3
+    ps = reads.accuracy_periods(lag); last, prior = ps[-12:], ps[-24:-12]
+    acc = (reads.accuracy(lag, last) or [{}])[0]; acc_prior = (reads.accuracy(lag, prior) or [{}])[0]
+    acc["d"] = None if acc.get("accuracy") is None or acc_prior.get("accuracy") is None else acc["accuracy"] - acc_prior["accuracy"]
+    acc_of = {}
+    for c in reads.accuracy_tree(lag, last):
+        acc_of[c["category_code"]] = c
+        for pr in c["children"]:
+            acc_of[pr["product_code"]] = pr
+            for m in pr["children"]:
+                acc_of[m["standard_material"]] = m
+    tree = reads.demand_tree(version, fy)
+    for c in tree["categories"]:
+        for node in [c] + c["children"] + [m for pr in c["children"] for m in pr["children"]]:
+            node["py_d"] = _d(node["cases"], node["py"]); node["ref_d"] = _d(node["cases"], node["ref"])
+    t = {"cases": tree["total"]["cases"], "cases_d": _d(tree["total"]["cases"], tree["total"]["py"]), "ref_d": _d(tree["total"]["cases"], tree["total"]["ref"])}
+    rev = reads.revenue_fy(version, fy); rev["d"] = _d(rev["net_sales"], rev["ref_net_sales"])
+    units = reads.unit_status(version, fy)
+    for u in units:
+        u["d"] = _d(u["cases"], u["py"])
+        u["cell"] = _cell(who, {"subject": "unit", "node": u["code"], "state": u["state"] or "nothing", "open_below": u["open_below"], "acted_by": u["acted_by"], "acted_on": u["acted_on"]})
+    ladder = reads.ladder(version)
+    now = next((i for i, s in enumerate(ladder) if s["done"] < s["total"] or not s["total"]), len(ladder))
+    st = next((r for r in reads.submission_matrix(version) if r["subject"] == "plan" and r["node"] == "ALL"), None)
+    plan_cell = _cell(who, st)
+    open_units = [u["unit_name"] for u in units if u["state"] not in ("submitted", "rolled_up")]
+    status_line = ("plan submitted" + (f" · {st['open_below']} open beneath" if st and st.get("open_below") else "")) if st and st["state"] == "submitted" \
+        else ("open: " + ", ".join(open_units) if open_units else "every unit in — ready to submit")
+    actions = [{"label": s.label, "href": url_for(s.endpoint, **s.args), "says": a.label}
+               for p, areas in SHELL.reach(held) if p.key == "ibp" for a, secs in areas for s in secs if s.key in ("demand", "submissions", "accuracy", "entries", "gap", "versions", "run")]
+    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="1400px", version=version, versions=reads.versions(), fy=fy, lag=lag,
+                 t=t, rev=rev, acc=acc, acc_of=acc_of, tree=tree, units=units, ladder=ladder, now=now, plan_cell=plan_cell, status_line=status_line,
+                 series=(series := reads.demand_series(version, fy)), chart=dashboard.chart(series, fy), mine=_mine(who, held), actions=actions)
+
+
 @plan.get("/")
 def home():
     try:
         who = _who(); held = roles.actions_held(who)
+        if "demand.plan.submit" in held:
+            return _head(who, held)
         reach = [{"label": p.label, "says": p.says,
                   "areas": [{"label": a.label, "lines": _expected(a.key, who, held),
                              "sections": [{"label": s.label, "href": url_for(s.endpoint, **s.args)} for s in secs]} for a, secs in areas]}
@@ -390,7 +445,7 @@ SUBMISSIONS_PAGE = VERSION_PICKER + """
 </tbody></table>
 {% if pending %}<p class="hint">{{ pending|length }} act{{ '' if pending|length == 1 else 's' }} placed since the last run — the matrix shows them after the run.</p>{% endif %}
 <style>table.matrix td.stage{vertical-align:top}.state.submitted{background:var(--ink);color:var(--paper)}.state.rolled_up,.state.ready{background:var(--panel)}
-.state.open{border-style:dashed}.state.submitted.gap{background:var(--panel);color:var(--ink);border-style:dashed;border-width:2px}.state.nothing,.state.n\/a{color:var(--faint);border-color:var(--faint)}.state.reopened{border-style:double}</style>"""
+.state.open{border-style:dashed}.state.submitted.gap{background:var(--panel);color:var(--ink);border-style:dashed;border-width:2px}.state.nothing,.state.na{color:var(--faint);border-color:var(--faint)}.state.reopened{border-style:double}</style>"""
 
 SUBJECT_ORDER = ["layer:4", "layer:6", "layer:7", "layer:8", "layer:1", "layer:2", "unit", "plan"]
 
@@ -415,7 +470,7 @@ def _cell(who: str, st: dict | None) -> dict:
     show = {"n/a": "—", "nothing": "nothing", "rolled_up": "rolled up"}.get(st["state"], st["state"])
     if st["state"] == "submitted" and st.get("open_below"):
         show = f"submitted · {st['open_below']} open beneath"
-    return {"state": st["state"].replace("/", "\\/"), "show": show, "node": st["node"], "can": _can_act(who, st["subject"], st["node"], st["state"]) if st["state"] != "n/a" else None,
+    return {"state": st["state"].replace("/", ""), "show": show, "node": st["node"], "can": _can_act(who, st["subject"], st["node"], st["state"]) if st["state"] != "n/a" else None,
             "title": f"{st['subject']} at {st['node']}: {st['state']}" + (f" · holders: {st['whose']}" if st.get("whose") else ""), "by": st.get("acted_by"), "on": st.get("acted_on")}
 
 
@@ -577,6 +632,21 @@ def versions():
         return _page("<h1>Versions<small>named, owned, frozen or open — the plan is a stack of entries on a version</small></h1>" + _table(reads.versions(), cols), title="Versions", active="versions")
     except Busy as e:
         return _busy("Versions", e)
+
+
+# ---- forecast accuracy ----
+@plan.get("/accuracy")
+def accuracy():
+    try:
+        lag = int(request.args.get("lag") or 3)
+        lags = [r["lag"] for r in q("select distinct lag from plan.forecast_accuracy order by 1")]
+        ps = reads.accuracy_periods(lag)
+        last = (reads.accuracy(lag, ps[-12:]) or [{}])[0]; prior = (reads.accuracy(lag, ps[-24:-12]) or [{}])[0]
+        d = None if last.get("accuracy") is None or prior.get("accuracy") is None else last["accuracy"] - prior["accuracy"]
+        return _page(dashboard.ACCURACY_PAGE, title="Forecast accuracy", active="accuracy", lag=lag, lags=lags, last=last, prior=prior, d=d,
+                     tree=reads.accuracy_tree(lag, ps[-12:]), units=reads.accuracy(lag, ps[-12:], "planning_unit_name"), periods=reads.accuracy(lag, ps[-12:], "period"))
+    except Busy as e:
+        return _busy("Forecast accuracy", e)
 
 
 # ---- run ----

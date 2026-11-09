@@ -176,3 +176,124 @@ def layer_closed_at(version_id: str, layer_no: int, scope_customer: str) -> dict
                   join dims.dim_customer_hierarchy h on h.ancestor_code = s.scope_node and h.descendant_code = ?
                   where s.version_id = ? and s.subject = ? and s.state = 'submitted' and s.acted_by_holder order by h.depth limit 1""",
                scope_customer, version_id, f"layer:{layer_no}")
+
+
+# ---- the head of demand's dashboard and the accuracy page ----
+def _acc(rows: list[dict]) -> None:
+    """Accuracy and bias from summed errors, in place: 1 − Σ|e|/Σactual and Σe/Σactual; None where nothing shipped."""
+    for r in rows:
+        a = r.get("actual") or 0.0
+        r["accuracy"] = 1 - r["abs_error"] / a if a else None
+        r["bias"] = r["err"] / a if a else None
+
+
+def accuracy_periods(lag: int) -> list[str]:
+    return [r["period"] for r in q("select distinct period from plan.forecast_accuracy where lag = ? order by 1", lag)]
+
+
+def accuracy(lag: int, periods: list[str], by: str = "") -> list[dict]:
+    """Forecast accuracy over `periods` at `lag`, grouped by the columns in `by` (a comma list, or '' for one row)."""
+    if not periods:
+        return []
+    sel = f"{by}, " if by else ""
+    grp = f"group by {by} order by {by}" if by else ""
+    rows = q(f"""select {sel}sum(actual_cases) actual, sum(forecast_cases) forecast, sum(abs_error) abs_error, sum(error) as err
+                 from plan.forecast_accuracy where lag = ? and period in ({','.join('?' * len(periods))}) {grp}""", lag, *periods)
+    _acc(rows)
+    return rows
+
+
+def accuracy_tree(lag: int, periods: list[str]) -> list[dict]:
+    """Category → product → standard material, each with accuracy, bias and actual over the window."""
+    mats = accuracy(lag, periods, "category_code, category_name, product_code, product_name, standard_material, material_name")
+    prods = accuracy(lag, periods, "category_code, category_name, product_code, product_name")
+    cats = accuracy(lag, periods, "category_code, category_name")
+    for p in prods:
+        p["children"] = [m for m in mats if m["product_code"] == p["product_code"]]
+    for c in cats:
+        c["children"] = [p for p in prods if p["category_code"] == c["category_code"]]
+    return cats
+
+
+def demand_tree(version_id: str, fy: int) -> dict:
+    """The plan fiscal year by category → product → standard material: this view's total (closed periods as actuals, the
+    rest plan), the prior fiscal year's shipments, and the reference version's total where it has the year."""
+    v = version(version_id) or {}
+    ref_id = v.get("reference_version")
+    cur = q("""select m.category_code, m.category_name, m.product_code, m.product_name, d.standard_material, m.material_name, sum(d.cases) cases
+               from plan.demand_review d join dims.dim_material m on m.material_code = d.standard_material
+               where d.version_id = ? and d.fiscal_year = ? group by all""", version_id, fy)
+    py = {r["standard_material"]: r["cases"] for r in q("select standard_material, sum(cases) cases from history.shipments_period where fiscal_year = ? group by 1", fy - 1)}
+    ref = {r["standard_material"]: r["cases"] for r in q("select standard_material, sum(cases) cases from plan.unconstrained_demand_period where version_id = ? and fiscal_year = ? group by 1", ref_id, fy)} if ref_id else {}
+    for r in cur:
+        r["py"] = py.get(r["standard_material"], 0.0); r["ref"] = ref.get(r["standard_material"])
+    def roll(rows: list[dict], key: str, label: str) -> list[dict]:
+        out: dict[str, dict] = {}
+        for r in rows:
+            o = out.setdefault(r[key], {"code": r[key], "label": r[label], "cases": 0.0, "py": 0.0, "ref": 0.0 if ref else None, "children": []})
+            o["cases"] += r["cases"]; o["py"] += r["py"]
+            if ref: o["ref"] += r["ref"] or 0.0
+            o["children"].append(r)
+        return sorted(out.values(), key=lambda o: -o["cases"])
+    for r in cur:
+        r["code"], r["label"] = r["standard_material"], r["material_name"]; r["children"] = []
+    prods = roll(cur, "product_code", "product_name")
+    for p in prods:
+        p["category_code"] = p["children"][0]["category_code"]; p["category_name"] = p["children"][0]["category_name"]
+        p["children"].sort(key=lambda m: -m["cases"])
+    cats = roll(prods, "category_code", "category_name")
+    total = {"cases": sum(c["cases"] for c in cats), "py": sum(c["py"] for c in cats), "ref": (sum(c["ref"] for c in cats) if ref else None)}
+    return {"categories": cats, "total": total, "ref_id": ref_id, "fy": fy}
+
+
+def demand_series(version_id: str, fy: int) -> dict:
+    """The plan fiscal year by period: this view (actual where closed, plan after), the reference version, the prior year's
+    shipments — cases, one axis."""
+    v = version(version_id) or {}
+    cur = q("select period, source, sum(cases) cases from plan.demand_review where version_id = ? and fiscal_year = ? group by all order by 1", version_id, fy)
+    ref = q("select period, sum(cases) cases from plan.unconstrained_demand_period where version_id = ? and fiscal_year = ? group by 1 order by 1", v.get("reference_version"), fy) if v.get("reference_version") else []
+    py = q("select period, fiscal_year, sum(cases) cases from history.shipments_period where fiscal_year = ? group by all order by 1", fy - 1)
+    periods = [r["period"] for r in q("select period from dims.dim_period where fiscal_year = ? order by 1", fy)]
+    return {"periods": periods, "view": {r["period"]: (r["cases"], r["source"]) for r in cur},
+            "ref": {r["period"]: r["cases"] for r in ref}, "py": {f"{fy}P{r['period'][5:]}": r["cases"] for r in py}, "ref_id": v.get("reference_version")}
+
+
+def revenue_fy(version_id: str, fy: int) -> dict | None:
+    """Net sales this fiscal year against the reference, on the periods both versions value — the open view values only
+    the periods ahead of it, so a whole-year figure would not be a like-for-like reading."""
+    v = version(version_id) or {}
+    r = one("""select min(g.period) p_from, max(g.period) p_to, sum(g.plan_net_sales) net_sales, sum(g.reference_net_sales) ref_net_sales
+               from plan.gap_to_reference g join dims.dim_period p on p.period = g.period where g.version_id = ? and p.fiscal_year = ?""", version_id, fy)
+    return {"net_sales": r["net_sales"] if r else None, "ref_net_sales": r["ref_net_sales"] if r else None, "ref_id": v.get("reference_version"),
+            "p_from": r["p_from"] if r else None, "p_to": r["p_to"] if r else None}
+
+
+def unit_status(version_id: str, fy: int) -> list[dict]:
+    """One row per planning unit: its demand this fiscal year against the prior year, and the unit's submission state."""
+    return q("""select u.code, u.unit_name, s.state, s.open_below, s.acted_by, s.acted_on,
+                       (select sum(d.cases) from plan.demand_review d join dims.dim_account a on a.account_code = d.account_code
+                         where d.version_id = ? and d.fiscal_year = ? and a.planning_unit = u.code) cases,
+                       (select sum(h.cases) from history.shipments_period h join dims.dim_account a on a.account_code = h.account_code
+                         where h.fiscal_year = ? and a.planning_unit = u.code) py
+                from (select distinct h.ancestor_code as code, a.planning_unit_name as unit_name from dims.dim_customer_hierarchy h
+                      join dims.dim_account a on a.planning_unit = h.ancestor_code where h.ancestor_level = 'planning_unit') u
+                left join plan.submission_state s on s.version_id = ? and s.subject = 'unit' and s.node = u.code
+                order by cases desc nulls last""", version_id, fy, fy - 1, version_id)
+
+
+def ladder(version_id: str) -> list[dict]:
+    """The submission ladder as the run sees it: how many of each rung's subjects are in. Rungs: the account-facing layers at
+    their accounts, the planners' layers at their units, the units, the plan."""
+    rows = q("""select case when l.submits_at = 'account' then 'inputs' when l.submits_at = 'unit' then 'build' when s.subject = 'unit' then 'units' else 'plan' end rung,
+                       sum(case when s.state in ('submitted', 'rolled_up') then 1 else 0 end) done,
+                       sum(case when s.state in ('submitted', 'rolled_up', 'ready', 'open') then 1 else 0 end) total
+                from plan.submission_state s left join plan.ref_layer l on 'layer:' || l.layer_no = s.subject
+                where s.version_id = ? and s.state not in ('n/a', 'nothing')
+                  and ((l.submits_at = 'account' and s.node in (select descendant_code from dims.dim_customer_hierarchy where descendant_level = 'account'))
+                    or (l.submits_at = 'unit' and s.node in (select descendant_code from dims.dim_customer_hierarchy where descendant_level = 'planning_unit'))
+                    or (s.subject = 'unit') or (s.subject = 'plan' and s.node = 'ALL'))
+                group by 1""", version_id)
+    by = {r["rung"]: r for r in rows}
+    return [{"key": k, "label": lab, "says": say, "done": by.get(k, {}).get("done", 0), "total": by.get(k, {}).get("total", 0)}
+            for k, lab, say in (("inputs", "Inputs in", "account layers at their accounts"), ("build", "Plans built", "planners' layers at their units"),
+                                ("units", "Units submitted", "each unit's planner"), ("plan", "Plan submitted", "to the business"))]

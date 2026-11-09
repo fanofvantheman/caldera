@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import random
+from collections import defaultdict
 
 from .calendar import Week
 from .structures import Material, ACCOUNTS, SHIP_TOS, account_ranges, CATEGORIES
@@ -97,4 +98,34 @@ def generate_prices(materials: list[Material], rng: random.Random) -> list[dict]
             p1 = round(p0 * inc, 2)
             rows.append({"price_list": pl, "material_code": m.material_code, "currency": "AUD" if pl != "PL_EXPORT" else "USD",
                          "price_per_case": p1 if pl != "PL_EXPORT" else round(p1 * 0.66, 2), "valid_from": "2025-09-29", "valid_to": "", "event": "PI-2025-10 cost pass-through"})
+    return rows
+
+
+# What earlier cycles said: the latest view each IBP cycle produced, kept at the plan's grain for the periods it looked
+# into. Forecast accuracy is read from these against shipments — the plan judged as a forecast at lag 1, 2 and 3 periods.
+# Each category carries its own bias (declining categories are planned high, growing ones low: the usual story), and the
+# error widens with the lag and with the account's noise. Deterministic from the seed, like everything else here.
+CATEGORY_BIAS = {"CANNED_FRUIT": 0.055, "SNACK_CUPS": -0.06, "TOMATOES": 0.01, "BEANS_SPAG": 0.02, "SPREADS": -0.015}
+LAG_SD = {1: 0.06, 2: 0.10, 3: 0.14}
+
+
+def forecast_snapshots(shipments: list[dict], materials: list[Material], period_order: list[str], latest_closed: str,
+                       rng: random.Random, months: int = 24) -> list[dict]:
+    acct_sd = {s[1]: (0.5 if s[1] in ("WES", "CAR") else 1.0) for s in SHIP_TOS}
+    cat_of = {m.material_code: m.category_code for m in materials}
+    actual: dict[tuple[str, str, str], float] = defaultdict(float)
+    for r in shipments:
+        actual[(r["material_code"], r["account_code"], r["period"])] += r["cases"]
+    idx = period_order.index(latest_closed)
+    targets = period_order[idx - months + 1: idx + 1]
+    rows: list[dict] = []
+    for (mat, acct, per), cases in sorted(actual.items()):
+        if per not in targets:
+            continue
+        p = period_order.index(per)
+        for lag, sd in LAG_SD.items():
+            cycle = period_order[p - lag]
+            f = cases * (1 + CATEGORY_BIAS[cat_of[mat]] + rng.gauss(0.0, sd * acct_sd[acct]))
+            rows.append({"forecast_version": f"LV-{cycle}", "cycle_period": cycle, "lag": lag, "period": per,
+                         "material_code": mat, "account_code": acct, "cases": max(0, round(f / 5) * 5)})
     return rows
