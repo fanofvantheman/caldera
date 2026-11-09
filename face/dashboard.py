@@ -24,9 +24,11 @@ HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what
 <a class="card stat" href="{{ links.submissions }}"><span>Plan status</span><b>{{ ladder[2].done }} of {{ ladder[2].total }} units in</b><div class="small muted">{{ status_line }}</div></a>
 </div>
 <div class="grid2">
-<div class="card fig"><div class="fighead"><b>Demand by period</b><span class="legend">
+<div class="card fig"><div class="fighead"><b>Demand by period</b><span class="crumbs">{% for n in drill.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}<a class="switch" href="{{ drill.other }}">by {{ 'material' if drill.dim == 'customer' else 'customer' }}</a></span><span class="legend">
 <span class="key"><i class="sw actual"></i>shipped</span><span class="key"><i class="sw plan"></i>{{ version }}</span>{% if series.ref_id %}<span class="key"><i class="sw ref"></i>{{ series.ref_id }}</span>{% endif %}<span class="key"><i class="sw py"></i>FY{{ fy - 1 }}</span></span></div>
-{{ chart|safe }}<div class="tip" hidden></div></div>
+{{ chart|safe }}
+{% if drill.children %}<div class="multiples">{% for c in drill.children %}<a class="multiple" href="{{ c.href }}"><div class="mhead"><span>{{ c.label }}</span><span class="muted">{{ c.total|k }}</span></div>{{ c.chart|safe }}</a>{% endfor %}</div>
+<p class="hint">Each small chart is the level below; open one to make it the chart and see its own children. Same scale within a row is not promised — read the shape, then the number.</p>{% endif %}</div>
 <div class="card list" id="attention"><b>My attention<span class="count">{{ mine|length }} routed to you</span></b>
 {% if mine %}<ul class="rows">{% for m in mine %}<li><div>{% if m.href %}<a href="{{ m.href }}">{{ m.item }}</a>{% else %}{{ m.item }}{% endif %}</div><div class="small muted">{{ m.name }} · {{ m.what_to_do }}</div></li>{% endfor %}</ul>{% else %}<p class="muted small">Nothing is waiting on you.</p>{% endif %}</div>
 </div>
@@ -58,6 +60,10 @@ HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what
 @media (min-width:1900px){.grid2{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}.tiles{gap:1.4rem}h1{font-size:2.4rem}}.grid2>.card{margin:0}.grid2 h2{margin-top:1.2rem}
 .fig svg{display:block;width:100%;height:auto;max-height:420px;margin-top:.6rem}.fighead{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}.fighead .legend{margin-left:auto}
 .key{display:inline-flex;align-items:center;gap:.3rem}.sw{display:inline-block;width:1.1rem;height:0;border-top:2px solid var(--ink)}.sw.actual{border-top-width:4px}.sw.ref{border-top-style:dashed}.sw.py{border-top-color:var(--faint)}
+.crumbs{font-size:.85rem;color:var(--muted)}.crumbs a{text-decoration:none}.crumbs a:hover{text-decoration:underline}.crumbs b{color:var(--ink)}.crumbs .switch{margin-left:.9rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;padding:.1rem .6rem}
+.multiples{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.8rem;margin-top:1rem;border-top:1px solid var(--rule);padding-top:1rem}
+.multiple{display:block;text-decoration:none;color:inherit;border:1px solid var(--rule);border-radius:var(--radius-s);padding:.5rem .7rem .3rem}.multiple:hover{background:var(--hover);border-color:var(--faint)}
+.mhead{display:flex;justify-content:space-between;font-size:.82rem;font-weight:500;gap:.5rem}.multiple svg{max-height:120px}
 .fig{position:relative}.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.78rem;padding:.4rem .6rem;border-radius:var(--radius-s);line-height:1.4;white-space:nowrap}
 .card.list b .count{font-weight:400;margin-left:.6rem;font-size:.85rem;color:var(--muted)}.card.list{max-height:460px;overflow-y:auto}.rows{list-style:none;margin:.6rem 0 0;padding:0}.rows li{padding:.5rem 0;border-top:1px solid var(--rule);font-size:.9rem}
 .acts{display:flex;flex-direction:column;gap:.4rem}.acts .button{display:block;text-decoration:none;padding:.55rem .9rem;border:1px solid var(--rule);border-radius:var(--radius-s);background:var(--panel);font-weight:500;font-size:.9rem}.acts .button:hover{background:var(--soft)}.acts .button small{display:block;font-weight:400;color:var(--muted);font-size:.78rem}
@@ -94,13 +100,13 @@ ACCURACY_PAGE = """<h1>Forecast accuracy<small>the plan judged as a forecast: wh
 <style>.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;align-items:start}""" + TREE_CSS + """</style>""" + TREE_JS
 
 
-def chart(series: dict, fy: int, width: int = 1100, height: int = 300) -> str:
+def chart(series: dict, fy: int, width: int = 1100, height: int = 300, small: bool = False) -> str:
     """Demand by period for one fiscal year as inline SVG: shipped (heavy, with a soft area), the view's plan continuing
     it, the reference dashed, the prior year faint — one axis, cases. The hover layer reads data-points."""
     periods = series["periods"]
     if not periods:
         return ""
-    ml, mr, mt, mb = 54, 86, 12, 28
+    ml, mr, mt, mb = (6, 6, 6, 6) if small else (54, 86, 12, 28)
     pw, ph = width - ml - mr, height - mt - mb
     view = series["view"]; ref = series["ref"]; py = series["py"]
     vals = [v[0] for v in view.values()] + list(ref.values()) + list(py.values())
@@ -122,7 +128,20 @@ def chart(series: dict, fy: int, width: int = 1100, height: int = 300) -> str:
         ticks.append(t); t += step
     while len(ticks) > 5:
         ticks = ticks[::2]
-    out = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="demand by period, FY{fy}" data-points=\'{_points(periods, view, ref, py, X, Y, series)}\'>']
+    out = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="demand by period, FY{fy}"{"" if small else " data-points=" + chr(39) + _points(periods, view, ref, py, X, Y, series) + chr(39)}>']
+    if small:
+        if actual:
+            out.append(f'<path d="{path(actual)}{f" L{actual[-1][0]:.1f},{mt + ph} L{actual[0][0]:.1f},{mt + ph} Z"}" fill="var(--soft)"/>')
+        if pyp:
+            out.append(f'<path d="{path(pyp)}" fill="none" stroke="var(--faint)" stroke-width="1.2"/>')
+        if refp:
+            out.append(f'<path d="{path(refp)}" fill="none" stroke="var(--ink)" stroke-width="1" stroke-dasharray="3 3"/>')
+        if actual:
+            out.append(f'<path d="{path(actual)}" fill="none" stroke="var(--ink)" stroke-width="2.4" stroke-linejoin="round"/>')
+        if join:
+            out.append(f'<path d="{path(join)}" fill="none" stroke="var(--ink)" stroke-width="1.4" stroke-linejoin="round"/>')
+        out.append("</svg>")
+        return "".join(out)
     for tv in ticks:
         out.append(f'<line x1="{ml}" x2="{ml + pw}" y1="{Y(tv):.1f}" y2="{Y(tv):.1f}" stroke="var(--rule)"/>'
                    f'<text x="{ml - 8}" y="{Y(tv) + 4:.1f}" text-anchor="end" font-size="11" fill="var(--muted)">{tv / 1000:,.0f}k</text>')

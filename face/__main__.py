@@ -191,9 +191,24 @@ def _head(who: str, held: set[str]) -> str:
              "submissions": url_for("plan.submissions", version=version), "versions": url_for("plan.versions")}
     for u in units:
         u["href"] = url_for("plan.submissions", version=version, unit=u["code"])
-    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", links=links, version=version, versions=reads.versions(), fy=fy, lag=lag,
+    # the figure's drill: a node of one structure, its children as small multiples beneath
+    dim = request.args.get("dim") if request.args.get("dim") in ("customer", "material") else "customer"
+    node = request.args.get("node") or "ALL"
+    at = {"customer": node} if dim == "customer" else {"material": node}
+    series = reads.demand_series(version, fy, **at)
+    drill = {"dim": dim, "node": node, "label": reads.node_label(dim, node),
+             "path": [{**n, "href": url_for("plan.home", version=version, dim=dim, node=n["code"])} for n in reads.node_path(dim, node)],
+             "other": url_for("plan.home", version=version, dim=("material" if dim == "customer" else "customer")),
+             "children": []}
+    for ch in reads.node_children(dim, node):
+        cs = reads.demand_series(version, fy, **({"customer": ch["code"]} if dim == "customer" else {"material": ch["code"]}))
+        if cs["view"]:
+            drill["children"].append({**ch, "href": url_for("plan.home", version=version, dim=dim, node=ch["code"]), "total": cs["total"],
+                                      "chart": dashboard.chart(cs, fy, width=360, height=110, small=True)})
+    drill["children"].sort(key=lambda c: -c["total"])
+    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", links=links, drill=drill, version=version, versions=reads.versions(), fy=fy, lag=lag,
                  t=t, rev=rev, acc=acc, acc_of=acc_of, tree=tree, units=units, ladder=ladder, now=now, plan_cell=plan_cell, status_line=status_line,
-                 series=(series := reads.demand_series(version, fy)), chart=dashboard.chart(series, fy), mine=_mine(who, held), actions=actions)
+                 series=series, chart=dashboard.chart(series, fy), mine=_mine(who, held), actions=actions)
 
 
 @plan.get("/")

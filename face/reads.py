@@ -246,16 +246,54 @@ def demand_tree(version_id: str, fy: int) -> dict:
     return {"categories": cats, "total": total, "ref_id": ref_id, "fy": fy}
 
 
-def demand_series(version_id: str, fy: int) -> dict:
-    """The plan fiscal year by period: this view (actual where closed, plan after), the reference version, the prior year's
-    shipments — cases, one axis."""
+def _scope_sql(customer: str | None, material: str | None, acct_col: str, mat_col: str) -> tuple[str, list]:
+    """A where-clause fragment restricting to a customer node and/or a material node through the hierarchy bridges."""
+    sql, params = "", []
+    if customer and customer != "ALL":
+        sql += f" and {acct_col} in (select descendant_code from dims.dim_customer_hierarchy where ancestor_code = ? and descendant_level = 'account')"; params.append(customer)
+    if material and material != "ALL":
+        sql += f" and {mat_col} in (select descendant_code from dims.dim_material_hierarchy where ancestor_code = ? and descendant_is_leaf)"; params.append(material)
+    return sql, params
+
+
+def demand_series(version_id: str, fy: int, customer: str | None = None, material: str | None = None) -> dict:
+    """The plan fiscal year by period at a node of either structure: this view (actual where closed, plan after), the
+    reference version, the prior year's shipments — cases, one axis."""
     v = version(version_id) or {}
-    cur = q("select period, source, sum(cases) cases from plan.demand_review where version_id = ? and fiscal_year = ? group by all order by 1", version_id, fy)
-    ref = q("select period, sum(cases) cases from plan.unconstrained_demand_period where version_id = ? and fiscal_year = ? group by 1 order by 1", v.get("reference_version"), fy) if v.get("reference_version") else []
-    py = q("select period, fiscal_year, sum(cases) cases from history.shipments_period where fiscal_year = ? group by all order by 1", fy - 1)
+    w, wp = _scope_sql(customer, material, "account_code", "standard_material")
+    cur = q(f"select period, source, sum(cases) cases from plan.demand_review where version_id = ? and fiscal_year = ?{w} group by all order by 1", version_id, fy, *wp)
+    ref = q(f"select period, sum(cases) cases from plan.unconstrained_demand_period where version_id = ? and fiscal_year = ?{w} group by 1 order by 1", v.get("reference_version"), fy, *wp) if v.get("reference_version") else []
+    py = q(f"select period, fiscal_year, sum(cases) cases from history.shipments_period where fiscal_year = ?{w} group by all order by 1", fy - 1, *wp)
     periods = [r["period"] for r in q("select period from dims.dim_period where fiscal_year = ? order by 1", fy)]
     return {"periods": periods, "view": {r["period"]: (r["cases"], r["source"]) for r in cur},
-            "ref": {r["period"]: r["cases"] for r in ref}, "py": {f"{fy}P{r['period'][5:]}": r["cases"] for r in py}, "ref_id": v.get("reference_version")}
+            "ref": {r["period"]: r["cases"] for r in ref}, "py": {f"{fy}P{r['period'][5:]}": r["cases"] for r in py}, "ref_id": v.get("reference_version"),
+            "total": sum(r["cases"] for r in cur)}
+
+
+def node_label(dimension: str, node: str) -> str:
+    if node == "ALL":
+        return "All customers" if dimension == "customer" else "All materials"
+    if dimension == "customer":
+        r = one("select coalesce((select planning_unit_name from dims.dim_account where planning_unit = ? limit 1), (select account_name from dims.dim_account where account_code = ?), ?) as label", node, node, node)
+    else:
+        r = one("""select coalesce((select category_name from dims.dim_material where category_code = ? limit 1), (select product_name from dims.dim_material where product_code = ? limit 1),
+                          (select material_name from dims.dim_material where material_code = ?), ?) as label""", node, node, node, node)
+    return r["label"] if r else node
+
+
+def node_path(dimension: str, node: str) -> list[dict]:
+    """Root to node, each with its label — the breadcrumb of a drill."""
+    table = "dims.dim_customer_hierarchy" if dimension == "customer" else "dims.dim_material_hierarchy"
+    rows = q(f"select ancestor_code code, depth from {table} where descendant_code = ? order by depth desc", node)
+    return [{"code": r["code"], "label": node_label(dimension, r["code"])} for r in rows]
+
+
+def node_children(dimension: str, node: str) -> list[dict]:
+    """The next level down in the structure: units under all, accounts under a unit; categories, products, materials."""
+    table = "dims.dim_customer_hierarchy" if dimension == "customer" else "dims.dim_material_hierarchy"
+    stop = "and descendant_level <> 'ship_to'" if dimension == "customer" else "and descendant_code <> ancestor_code"
+    rows = q(f"select descendant_code code, descendant_level lvl from {table} where ancestor_code = ? and depth = 1 {stop} order by 1", node)
+    return [{"code": r["code"], "level": r["lvl"], "label": node_label(dimension, r["code"])} for r in rows]
 
 
 def revenue_fy(version_id: str, fy: int) -> dict | None:
