@@ -45,7 +45,9 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   demand plan gets the plan as a whole as their home page: the fiscal year's cases against last year's shipments, net
   sales against the reference on the periods both value, **forecast accuracy** (the plan judged as a forecast: what the
   cycle three periods before said against what shipped, over the last twelve closed periods, 1 − Σ|error| ÷ Σ shipped,
-  with bias) and how many units are in; the year by period with the reference dashed and last year faint; the plan by
+  with bias) and how many units are in; the year **per week** — by period (each period's total over its weeks, the week count in
+  the label) or by week, in cases or net sales, with the reference dashed and last year faint, because a 4-4-5 period
+  total steps every third point by the calendar alone and the trend only reads per week; the plan by
   category opening to products and materials — the material structure, with accuracy and bias at every node; the
   units with their submission state; versions; the pages their roles reach; and the submission ladder across the
   bottom (inputs in, plans built, units submitted, plan submitted, reference declared) with the one act at its end.

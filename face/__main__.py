@@ -192,21 +192,27 @@ def _head(who: str, held: set[str]) -> str:
     for u in units:
         u["href"] = url_for("plan.submissions", version=version, unit=u["code"])
     # the figure's drill: a node of one structure, its children as small multiples beneath
+    # read per week (the 4-4-5 calendar steps a period total every third period); the grain and measure travel with every link
     dim = request.args.get("dim") if request.args.get("dim") in ("customer", "material") else "customer"
     node = request.args.get("node") or "ALL"
+    grain = request.args.get("grain") if request.args.get("grain") in ("period", "week") else "period"
+    measure = request.args.get("measure") if request.args.get("measure") in ("cases", "net_sales") else "cases"
+    def L(**kw): return url_for("plan.home", **{"version": version, "dim": dim, "node": node, "grain": grain, "measure": measure, **kw})
     at = {"customer": node} if dim == "customer" else {"material": node}
-    series = reads.demand_series(version, fy, **at)
+    series = reads.demand_series(version, fy, grain=grain, measure=measure, **at)
     drill = {"dim": dim, "node": node, "label": reads.node_label(dim, node),
-             "path": [{**n, "href": url_for("plan.home", version=version, dim=dim, node=n["code"])} for n in reads.node_path(dim, node)],
-             "other": url_for("plan.home", version=version, dim=("material" if dim == "customer" else "customer")),
+             "path": [{**n, "href": L(node=n["code"])} for n in reads.node_path(dim, node)],
+             "other": L(dim=("material" if dim == "customer" else "customer"), node="ALL"),
              "children": []}
+    fig = {"grains": [{"label": g, "on": g == grain, "href": L(grain=g)} for g in ("period", "week")],
+           "measures": [{"label": lab, "on": m == measure, "href": L(measure=m)} for m, lab in (("cases", "cases"), ("net_sales", "net sales"))]}
     for ch in reads.node_children(dim, node):
-        cs = reads.demand_series(version, fy, **({"customer": ch["code"]} if dim == "customer" else {"material": ch["code"]}))
+        cs = reads.demand_series(version, fy, grain=grain, measure=measure, **({"customer": ch["code"]} if dim == "customer" else {"material": ch["code"]}))
         if cs["view"]:
-            drill["children"].append({**ch, "href": url_for("plan.home", version=version, dim=dim, node=ch["code"]), "total": cs["total"],
+            drill["children"].append({**ch, "href": L(node=ch["code"]), "total": cs["total"],
                                       "chart": dashboard.chart(cs, fy, width=360, height=110, small=True)})
     drill["children"].sort(key=lambda c: -c["total"])
-    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", links=links, drill=drill, version=version, versions=reads.versions(), fy=fy, lag=lag,
+    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", links=links, drill=drill, fig=fig, version=version, versions=reads.versions(), fy=fy, lag=lag,
                  t=t, rev=rev, acc=acc, acc_of=acc_of, tree=tree, units=units, ladder=ladder, now=now, plan_cell=plan_cell, status_line=status_line,
                  series=series, chart=dashboard.chart(series, fy), mine=_mine(who, held), actions=actions)
 

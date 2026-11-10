@@ -24,9 +24,10 @@ HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what
 <a class="card stat" href="{{ links.submissions }}"><span>Plan status</span><b>{{ ladder[2].done }} of {{ ladder[2].total }} units in</b><div class="small muted">{{ status_line }}</div></a>
 </div>
 <div class="grid2">
-<div class="card fig"><div class="fighead"><b>Demand by period</b><span class="crumbs">{% for n in drill.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}<a class="switch" href="{{ drill.other }}">by {{ 'material' if drill.dim == 'customer' else 'customer' }}</a></span><span class="legend">
-<span class="key"><i class="sw actual"></i>shipped</span><span class="key"><i class="sw plan"></i>{{ version }}</span>{% if series.ref_id %}<span class="key"><i class="sw ref"></i>{{ series.ref_id }}</span>{% endif %}<span class="key"><i class="sw py"></i>FY{{ fy - 1 }}</span></span></div>
+<div class="card fig"><div class="fighead"><b>{{ 'Net sales' if series.measure == 'net_sales' else 'Demand' }} per week</b><span class="crumbs">{% for n in drill.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}<a class="switch" href="{{ drill.other }}">by {{ 'material' if drill.dim == 'customer' else 'customer' }}</a><span class="seg">{% for g in fig.grains %}{% if g.on %}<b>{{ g.label }}</b>{% else %}<a href="{{ g.href }}">{{ g.label }}</a>{% endif %}{% endfor %}</span><span class="seg">{% for g in fig.measures %}{% if g.on %}<b>{{ g.label }}</b>{% else %}<a href="{{ g.href }}">{{ g.label }}</a>{% endif %}{% endfor %}</span></span><span class="legend">
+{% if series.measure == 'cases' %}<span class="key"><i class="sw actual"></i>shipped</span>{% endif %}<span class="key"><i class="sw plan"></i>{{ version }}</span>{% if series.ref_id %}<span class="key"><i class="sw ref"></i>{{ series.ref_id }}</span>{% endif %}{% if series.measure == 'cases' %}<span class="key"><i class="sw py"></i>FY{{ fy - 1 }}</span>{% endif %}</span></div>
 {{ chart|safe }}
+<p class="hint">Every point is a rate per week{% if series.grain == 'period' %} — the period's total over its weeks, the week count in the label — so a five-week period does not read as a step{% else %} — the weeks themselves, a rule at each period boundary{% endif %}. {% if series.measure == 'net_sales' %}Net sales is the plan's gross-to-net; shipments are not valued in history, so there is no shipped line.{% else %}Period totals are on the <a href="{{ links.demand }}">demand grid</a>.{% endif %}</p>
 {% if drill.children %}<div class="multiples">{% for c in drill.children %}<a class="multiple" href="{{ c.href }}"><div class="mhead"><span>{{ c.label }}</span><span class="muted">{{ c.total|k }}</span></div>{{ c.chart|safe }}</a>{% endfor %}</div>
 <p class="hint">Each small chart is the level below; open one to make it the chart and see its own children. Same scale within a row is not promised — read the shape, then the number.</p>{% endif %}</div>
 <div class="card list" id="attention"><b>My attention<span class="count">{{ mine|length }} routed to you</span></b>
@@ -60,7 +61,7 @@ HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what
 @media (min-width:1900px){.grid2{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}.tiles{gap:1.4rem}h1{font-size:2.4rem}}.grid2>.card{margin:0}.grid2 h2{margin-top:1.2rem}
 .fig svg{display:block;width:100%;height:auto;max-height:420px;margin-top:.6rem}.fighead{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}.fighead .legend{margin-left:auto}
 .key{display:inline-flex;align-items:center;gap:.3rem}.sw{display:inline-block;width:1.1rem;height:0;border-top:2px solid var(--ink)}.sw.actual{border-top-width:4px}.sw.ref{border-top-style:dashed}.sw.py{border-top-color:var(--faint)}
-.crumbs{font-size:.85rem;color:var(--muted)}.crumbs a{text-decoration:none}.crumbs a:hover{text-decoration:underline}.crumbs b{color:var(--ink)}.crumbs .switch{margin-left:.9rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;padding:.1rem .6rem}
+.crumbs{font-size:.85rem;color:var(--muted)}.crumbs a{text-decoration:none}.crumbs a:hover{text-decoration:underline}.crumbs b{color:var(--ink)}.crumbs .switch{margin-left:.9rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;padding:.1rem .6rem}.crumbs .seg{display:inline-flex;margin-left:.6rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;overflow:hidden}.crumbs .seg a,.crumbs .seg b{padding:.1rem .6rem}.crumbs .seg b{background:var(--ink);color:var(--paper);font-weight:500}.crumbs .seg a+a,.crumbs .seg b+a,.crumbs .seg a+b{border-left:1px solid var(--rule)}
 .multiples{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.8rem;margin-top:1rem;border-top:1px solid var(--rule);padding-top:1rem}
 .multiple{display:block;text-decoration:none;color:inherit;border:1px solid var(--rule);border-radius:var(--radius-s);padding:.5rem .7rem .3rem}.multiple:hover{background:var(--hover);border-color:var(--faint)}
 .mhead{display:flex;justify-content:space-between;font-size:.82rem;font-weight:500;gap:.5rem}.multiple svg{max-height:120px}
@@ -100,27 +101,36 @@ ACCURACY_PAGE = """<h1>Forecast accuracy<small>the plan judged as a forecast: wh
 <style>.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;align-items:start}""" + TREE_CSS + """</style>""" + TREE_JS
 
 
+def _fmt(v: float, big: float) -> str:
+    return f"{v / 1e6:,.1f}M" if big >= 1e6 else f"{v / 1000:,.0f}k"
+
+
 def chart(series: dict, fy: int, width: int = 1100, height: int = 300, small: bool = False) -> str:
-    """Demand by period for one fiscal year as inline SVG: shipped (heavy, with a soft area), the view's plan continuing
-    it, the reference dashed, the prior year faint — one axis, cases. The hover layer reads data-points."""
-    periods = series["periods"]
-    if not periods:
+    """The fiscal year as a rate per week, as inline SVG: shipped (heavy, with a soft area), the view's plan continuing
+    it, the reference dashed, the prior year faint — one axis. At period grain each point is the period's total over its
+    weeks, the week count in its label; at week grain the weeks themselves with a rule at every period boundary. Per week
+    because a period total on a 4-4-5 calendar steps every third period whatever the business did. Hover reads data-points."""
+    keys = series["keys"]
+    if not keys:
         return ""
-    ml, mr, mt, mb = (6, 6, 6, 6) if small else (54, 86, 12, 28)
+    ml, mr, mt, mb = (6, 6, 6, 6) if small else (54, 86, 16, 28)
     pw, ph = width - ml - mr, height - mt - mb
     view = series["view"]; ref = series["ref"]; py = series["py"]
-    vals = [v[0] for v in view.values()] + list(ref.values()) + list(py.values())
+    vals = [x["rate"] for d in (view, ref, py) for x in d.values() if x["rate"] is not None]
+    if not vals:
+        return ""
     lo, hi = min(vals), max(vals)
     pad = (hi - lo) * 0.25 or hi * 0.1
     y0, y1 = max(0.0, lo - pad), hi + pad
-    def X(i: int) -> float: return ml + pw * i / (len(periods) - 1)
+    ks = [k["k"] for k in keys]
+    def X(i: int) -> float: return ml + pw * i / max(1, len(ks) - 1)
     def Y(v: float) -> float: return mt + ph * (1 - (v - y0) / (y1 - y0))
     def path(pts: list[tuple[float, float]]) -> str: return " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}" for i, (x, y) in enumerate(pts))
-    actual = [(X(i), Y(view[p][0])) for i, p in enumerate(periods) if p in view and view[p][1] == "actual"]
-    planned = [(X(i), Y(view[p][0])) for i, p in enumerate(periods) if p in view and view[p][1] == "plan"]
+    actual = [(X(i), Y(view[k]["rate"])) for i, k in enumerate(ks) if k in view and view[k]["source"] == "actual"]
+    planned = [(X(i), Y(view[k]["rate"])) for i, k in enumerate(ks) if k in view and view[k]["source"] == "plan"]
     join = (actual[-1:] if actual else []) + planned
-    refp = [(X(i), Y(ref[p])) for i, p in enumerate(periods) if p in ref]
-    pyp = [(X(i), Y(py[p])) for i, p in enumerate(periods) if p in py]
+    refp = [(X(i), Y(ref[k]["rate"])) for i, k in enumerate(ks) if k in ref]
+    pyp = [(X(i), Y(py[k]["rate"])) for i, k in enumerate(ks) if k in py]
     # gridlines: four, at round numbers
     step = 10 ** max(0, len(str(int((y1 - y0) / 4))) - 1); step = max(step, 1)
     ticks = []; t = (int(y0 / step) + 1) * step
@@ -128,7 +138,8 @@ def chart(series: dict, fy: int, width: int = 1100, height: int = 300, small: bo
         ticks.append(t); t += step
     while len(ticks) > 5:
         ticks = ticks[::2]
-    out = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="demand by period, FY{fy}"{"" if small else " data-points=" + chr(39) + _points(periods, view, ref, py, X, Y, series) + chr(39)}>']
+    label = f"{series['unit']}, FY{fy}, by {series['grain']}"
+    out = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{label}"{"" if small else " data-points=" + chr(39) + _points(keys, view, ref, py, X, Y, series) + chr(39)}>']
     if small:
         if actual:
             out.append(f'<path d="{path(actual)}{f" L{actual[-1][0]:.1f},{mt + ph} L{actual[0][0]:.1f},{mt + ph} Z"}" fill="var(--soft)"/>')
@@ -144,9 +155,14 @@ def chart(series: dict, fy: int, width: int = 1100, height: int = 300, small: bo
         return "".join(out)
     for tv in ticks:
         out.append(f'<line x1="{ml}" x2="{ml + pw}" y1="{Y(tv):.1f}" y2="{Y(tv):.1f}" stroke="var(--rule)"/>'
-                   f'<text x="{ml - 8}" y="{Y(tv) + 4:.1f}" text-anchor="end" font-size="11" fill="var(--muted)">{tv / 1000:,.0f}k</text>')
-    for i, p in enumerate(periods):
-        out.append(f'<text x="{X(i):.1f}" y="{height - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">P{int(p[5:])}</text>')
+                   f'<text x="{ml - 8}" y="{Y(tv) + 4:.1f}" text-anchor="end" font-size="11" fill="var(--muted)">{_fmt(tv, y1)}</text>')
+    out.append(f'<text x="{ml - 8}" y="{mt - 4}" text-anchor="end" font-size="10" fill="var(--muted)">/ wk</text>')
+    for i, k in enumerate(keys):
+        if k["boundary"] and i > 0:
+            out.append(f'<line x1="{X(i) - pw / (len(ks) - 1) / 2:.1f}" x2="{X(i) - pw / (len(ks) - 1) / 2:.1f}" y1="{mt}" y2="{mt + ph}" stroke="var(--rule)" stroke-dasharray="2 4"/>')
+        if k["label"]:
+            anchor = "start" if series["grain"] == "week" else "middle"
+            out.append(f'<text x="{X(i):.1f}" y="{height - 8}" text-anchor="{anchor}" font-size="11" fill="var(--muted)">{k["label"]}</text>')
     if actual:
         area = path(actual) + f" L{actual[-1][0]:.1f},{mt + ph} L{actual[0][0]:.1f},{mt + ph} Z"
         out.append(f'<path d="{area}" fill="var(--soft)"/>')
@@ -178,16 +194,20 @@ def chart(series: dict, fy: int, width: int = 1100, height: int = 300, small: bo
     return "".join(out)
 
 
-def _points(periods, view, ref, py, X, Y, series) -> str:
+def _points(keys, view, ref, py, X, Y, series) -> str:
     import json
+    aud = series["measure"] != "cases"
+    def text(x: dict) -> str:
+        rate = f"{'$' if aud else ''}{x['rate']:,.0f} / wk"
+        return rate if x["weeks"] == 1 else f"{rate} · {'$' if aud else ''}{x['total']:,.0f} in {x['weeks']} wks"
     pts = []
-    for i, p in enumerate(periods):
-        d = {"x": round(X(i), 1), "label": p}
-        if p in view:
-            d["view"] = {"y": round(Y(view[p][0]), 1), "name": "shipped" if view[p][1] == "actual" else "plan", "text": f"{view[p][0]:,.0f}"}
-        if p in ref:
-            d["ref"] = {"y": round(Y(ref[p]), 1), "name": series["ref_id"], "text": f"{ref[p]:,.0f}"}
-        if p in py:
-            d["py"] = {"y": round(Y(py[p]), 1), "name": f"FY{int(p[:4]) - 1}", "text": f"{py[p]:,.0f}"}
+    for i, k in enumerate(keys):
+        d = {"x": round(X(i), 1), "label": k["say"]}
+        if k["k"] in view:
+            d["view"] = {"y": round(Y(view[k["k"]]["rate"]), 1), "name": "shipped" if view[k["k"]]["source"] == "actual" else "plan", "text": text(view[k["k"]])}
+        if k["k"] in ref:
+            d["ref"] = {"y": round(Y(ref[k["k"]]["rate"]), 1), "name": series["ref_id"], "text": text(ref[k["k"]])}
+        if k["k"] in py:
+            d["py"] = {"y": round(Y(py[k["k"]]["rate"]), 1), "name": f"FY{int(k['k'][:4]) - 1}", "text": text(py[k["k"]])}
         pts.append(d)
     return json.dumps(pts).replace("'", "&#39;")

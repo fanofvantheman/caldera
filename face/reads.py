@@ -256,18 +256,51 @@ def _scope_sql(customer: str | None, material: str | None, acct_col: str, mat_co
     return sql, params
 
 
-def demand_series(version_id: str, fy: int, customer: str | None = None, material: str | None = None) -> dict:
-    """The plan fiscal year by period at a node of either structure: this view (actual where closed, plan after), the
-    reference version, the prior year's shipments — cases, one axis."""
+def demand_series(version_id: str, fy: int, customer: str | None = None, material: str | None = None,
+                  grain: str = "period", measure: str = "cases") -> dict:
+    """The plan fiscal year at a node of either structure — this view (actual where closed, plan after), the reference
+    version, the prior year's shipments — read as a rate per week. On a 4-4-5 calendar a five-week period is a quarter
+    larger than a four-week one before anything in the business has moved, so a period total drawn as a series shows the
+    calendar, not the trend. grain 'period': each period's total divided by its weeks (the prior year by its own weeks,
+    so a 53-week year compares); grain 'week': the weeks themselves. measure 'cases' or 'net_sales' — the latter from the
+    plan's gross-to-net; shipments are not valued in history, so net sales has no shipped line and no prior year."""
     v = version(version_id) or {}
+    ref_id = v.get("reference_version")
+    val, tbl = ("cases", "plan.unconstrained_demand") if measure == "cases" else ("net_sales", "plan.demand_financialised")
+    src = {r["period"]: r["source"] for r in q("select distinct period, source from plan.demand_review where version_id = ? and fiscal_year = ?", version_id, fy)}
+    actual_p = sorted(p for p, s in src.items() if s == "actual"); plan_p = sorted(p for p, s in src.items() if s == "plan")
+    def inlist(ps): return "(" + ",".join("?" * len(ps)) + ")" if ps else "(null)"
     w, wp = _scope_sql(customer, material, "account_code", "standard_material")
-    cur = q(f"select period, source, sum(cases) cases from plan.demand_review where version_id = ? and fiscal_year = ?{w} group by all order by 1", version_id, fy, *wp)
-    ref = q(f"select period, sum(cases) cases from plan.unconstrained_demand_period where version_id = ? and fiscal_year = ?{w} group by 1 order by 1", v.get("reference_version"), fy, *wp) if v.get("reference_version") else []
-    py = q(f"select period, fiscal_year, sum(cases) cases from history.shipments_period where fiscal_year = ?{w} group by all order by 1", fy - 1, *wp)
-    periods = [r["period"] for r in q("select period from dims.dim_period where fiscal_year = ? order by 1", fy)]
-    return {"periods": periods, "view": {r["period"]: (r["cases"], r["source"]) for r in cur},
-            "ref": {r["period"]: r["cases"] for r in ref}, "py": {f"{fy}P{r['period'][5:]}": r["cases"] for r in py}, "ref_id": v.get("reference_version"),
-            "total": sum(r["cases"] for r in cur)}
+    if grain == "week":
+        keys = [{"k": r["week_id"], "label": f"P{r['fiscal_period']}" if r["first"] else "", "period": r["period"], "weeks": 1, "boundary": bool(r["first"]),
+                 "n": r["fiscal_week"], "say": f"{r['week_id']} · P{r['fiscal_period']} · w/c {r['week_start']:%d %b}"}
+                for r in q("""select week_id, fiscal_week, period, fiscal_period, week_start, fiscal_week = min(fiscal_week) over (partition by period) as first
+                              from dims.dim_week where fiscal_year = ? order by week_sequence""", fy)]
+        col, pyk = "week_id", "fiscal_week"
+        ws, wsp = _scope_sql(customer, material, "s.account_code", "m.standard_material")
+        actual = q(f"select s.week_id k, sum(s.cases) v from history.shipments s join dims.dim_material m on m.material_code = s.material_code where s.period in {inlist(actual_p)}{ws} group by 1",
+                   *actual_p, *wsp) if measure == "cases" and actual_p else []
+        py = q(f"select s.fiscal_week k, sum(s.cases) v from history.shipments s join dims.dim_material m on m.material_code = s.material_code where s.fiscal_year = ?{ws} group by 1",
+               fy - 1, *wsp) if measure == "cases" else []
+        py_weeks: dict = {}
+    else:
+        keys = [{"k": r["period"], "label": f"P{r['fiscal_period']} · {r['weeks_in_period']}w", "period": r["period"], "weeks": r["weeks_in_period"], "boundary": False,
+                 "n": r["fiscal_period"], "say": f"P{r['fiscal_period']} FY{fy} · {r['weeks_in_period']} weeks"}
+                for r in q("select period, fiscal_period, weeks_in_period from dims.dim_period where fiscal_year = ? order by 1", fy)]
+        col, pyk = "period", "fiscal_period"
+        actual = q(f"select period k, sum(cases) v from history.shipments_period where period in {inlist(actual_p)}{w} group by 1", *actual_p, *wp) if measure == "cases" and actual_p else []
+        py = q(f"select cast(substr(period, 6) as int) k, sum(cases) v from history.shipments_period where fiscal_year = ?{w} group by 1", fy - 1, *wp) if measure == "cases" else []
+        py_weeks = {r["fiscal_period"]: r["weeks_in_period"] for r in q("select fiscal_period, weeks_in_period from dims.dim_period where fiscal_year = ?", fy - 1)}
+    plan = q(f"select {col} k, sum({val}) v from {tbl} where version_id = ? and period in {inlist(plan_p)}{w} group by 1", version_id, *plan_p, *wp) if plan_p else []
+    ref = q(f"select {col} k, sum({val}) v from {tbl} where version_id = ? and fiscal_year = ?{w} group by 1", ref_id, fy, *wp) if ref_id else []
+    weeks = {k["k"]: k["weeks"] for k in keys}; by_n = {k["n"]: k["k"] for k in keys}
+    def pt(total, wk, source=None): return {"rate": total / wk if wk else None, "total": total, "weeks": wk, "source": source}
+    view = {r["k"]: pt(r["v"], weeks[r["k"]], "actual") for r in actual if r["k"] in weeks}
+    view.update({r["k"]: pt(r["v"], weeks[r["k"]], "plan") for r in plan if r["k"] in weeks})
+    return {"grain": grain, "measure": measure, "keys": keys, "unit": "cases / week" if measure == "cases" else "AUD net sales / week",
+            "view": view, "ref": {r["k"]: pt(r["v"], weeks[r["k"]]) for r in ref if r["k"] in weeks},
+            "py": {by_n[r["k"]]: pt(r["v"], py_weeks.get(r["k"], 1)) for r in py if r["k"] in by_n},
+            "ref_id": ref_id, "total": sum(x["total"] for x in view.values()), "n_actual": len(actual_p)}
 
 
 def node_label(dimension: str, node: str) -> str:
