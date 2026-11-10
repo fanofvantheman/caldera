@@ -680,7 +680,7 @@ RUNGS = {
     "standard": ("Standard by plant", "The standard cost of every material at every plant for the version's standard year, derived from the routes, the BOM and the cost inputs; a new plant through to a new standard and the transition."),
     "landed": ("Landed cost", "The distributor's standard: supplier price × FX + freight + duty by source; purchase price, FX and freight rate as the three variances."),
     "pnl": ("P&L plan", "Every line of the commercial P&L by cause — volume, price, mix, promotion, cost — at standard, with the planned variances beneath."),
-    "balance": ("Balance sheet plan", "Every line rolled from opening actuals by one declared movement source; three identities run as a guard on every version."),
+    "balance": ("Balance sheet plan", "Every line rolled from opening actuals by one declared movement source; three identities run as a check on every version."),
     "capex": ("Capital", "Projects entered, approved and phased; the maintenance deferral that raises unplanned downtime into the capacity analysis."),
     "cycle": ("Period control", "Periods opened and closed; the latest closed period that every version's baseline is read from."),
     "proof": ("Proof", "The identities and reconciliations that let a number be trusted: stack to total, gross to net, plan to reference."),

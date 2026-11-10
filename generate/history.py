@@ -32,6 +32,8 @@ def _season(cat: str, fiscal_week: int) -> float:
         return 1.0 + 0.06 * math.cos(x)
     if cat == "BEANS_SPAG":
         return 1.0 + 0.08 * math.cos(x)
+    if cat == "PASTA_SAUCE":
+        return 1.0 + 0.07 * math.cos(x)                 # a winter lift, like tomatoes but more of it
     return 1.0 + 0.05 * math.cos(x - math.pi / 2)
 
 
@@ -81,13 +83,23 @@ PRICE_LISTS = ["PL_GROCERY", "PL_WHOLESALE", "PL_CONTRACT", "PL_FOODSERVICE", "P
 LIST_FACTOR = {"PL_GROCERY": 1.00, "PL_WHOLESALE": 1.04, "PL_CONTRACT": 0.82, "PL_FOODSERVICE": 0.96, "PL_EXPORT": 0.90}
 
 
+# A legible list price per case: a per-kg price by category, scaled by tier and by format (a small can or a portion
+# costs more a kilo than a 3 kg can), times the case's net weight.
+PER_KG = {"CANNED_FRUIT": 5.2, "SNACK_CUPS": 9.8, "TOMATOES": 3.6, "BEANS_SPAG": 4.4, "SPREADS": 7.5, "PASTA_SAUCE": 6.4}
+TIER_FACTOR = {"premium": 1.25, "mainstream": 1.0, "value": 0.78}
+FORMAT_FACTOR = {"CAN_130": 1.35, "CAN_220": 1.20, "MP_4x220": 1.25, "MP_4x410": 1.04, "MP_4x400T": 1.04, "CAN_3KG": 0.72,
+                 "CUP_6x120": 0.97, "CUP_12x120": 0.92, "CUP_FS_120": 0.88, "JAR_250": 1.20, "BTL_700": 0.85,
+                 "PORT_FS": 1.60, "POUCH_2KG": 0.75, "CAN_800T": 0.92, "CAN_825": 0.95}
+
+
+def list_base(m: Material) -> float:
+    return round(PER_KG[m.category_code] * TIER_FACTOR[m.price_tier] * FORMAT_FACTOR.get(m.format_code, 1.0) * m.case_net_kg, 2)
+
+
 def generate_prices(materials: list[Material], rng: random.Random) -> list[dict]:
     rows: list[dict] = []
     for m in materials:
-        # a legible per-kg price by category, tier and container
-        per_kg = {"CANNED_FRUIT": 5.2, "SNACK_CUPS": 9.8, "TOMATOES": 3.6, "BEANS_SPAG": 4.4, "SPREADS": 7.5}[m.category_code]
-        per_kg *= {"premium": 1.25, "mainstream": 1.0, "value": 0.78}[m.price_tier]
-        base = round(per_kg * m.case_net_kg, 2)
+        base = list_base(m)
         for pl in PRICE_LISTS:
             if pl == "PL_CONTRACT" and m.branded != "private_label":
                 continue
@@ -138,7 +150,8 @@ def value_shipments(shipments: list[dict], prices: list[dict], terms: list[dict]
 # into. Forecast accuracy is read from these against shipments — the plan judged as a forecast at lag 1, 2 and 3 periods.
 # Each category carries its own bias (declining categories are planned high, growing ones low: the usual story), and the
 # error widens with the lag and with the account's noise. Deterministic from the seed, like everything else here.
-CATEGORY_BIAS = {"CANNED_FRUIT": 0.055, "SNACK_CUPS": -0.06, "TOMATOES": 0.01, "BEANS_SPAG": 0.02, "SPREADS": -0.015}
+CATEGORY_BIAS = {"CANNED_FRUIT": 0.055, "SNACK_CUPS": -0.06, "TOMATOES": 0.01, "BEANS_SPAG": 0.02, "SPREADS": -0.015,
+                 "PASTA_SAUCE": -0.035}
 LAG_SD = {1: 0.06, 2: 0.10, 3: 0.14}
 
 

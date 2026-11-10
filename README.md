@@ -24,7 +24,16 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
 ## Layout
 
 - `pyproject.toml` + `uv.lock` — the environment (uv-managed, lockfile-pinned, nothing global).
-- `generate/` — the synthetic client. `structures.py` is what Caldera makes, sells to, operates and is organised as;
+- `generate/` — the synthetic client. Caldera is a fruit and vegetable processor of about $300M net sales a year: six
+  categories (canned fruit, fruit snack cups, canned tomatoes, baked beans and spaghetti, jams and spreads, pasta sauces
+  and passata), 71 products in 21 formats, about 290 materials — retail sizes, multipacks, club and foodservice packs,
+  the grocers' own-label packs as variants of the standard material, a handful launching and a handful delisting — with
+  a Pareto volume shape (a fifth of the materials carry about four-fifths of the cases) and a long tail ranged at one
+  account. Two plants: Echuca, Victoria (tomatoes, sauces, beans and spaghetti, spreads, part of the fruit) and Loxton,
+  South Australia (the rest of the fruit and the snack cups); canned fruit is made at both, so the Melbourne DC and the
+  Brisbane cross-dock can be served from the nearer plant or the further one at a dearer lane. One reporting entity.
+  `structures.py` is what Caldera makes, sells to, operates and is organised as, built from a product × format ×
+  variant recipe;
   `calendar.py` the 4-4-5 trading calendar (fiscal year July–June, every week in exactly one period);
   `history.py` three years of shipments by material × ship-to × week — each row with what it invoiced, gross at list and net
   sales, because history is revenue and units and price is the derived figure — the price lists, and what each earlier cycle's
@@ -59,7 +68,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   difference, at that material, account and period; the cell shows the run's number with the change marked pending until
   the next run; actual cells and other people's layers never open), and **submissions**: demand is planned by unit
   (Westbrook, Carters, Merritt, other independents, Horeca — a level of the customer structure between account and ALL,
-  each with its own planner) and coordinated by the head of demand planning; a submission is an act row (submit or
+  each with its own planner) and led by the head of demand planning; a submission is an act row (submit or
   reopen) on a subject (a layer, a unit's demand, the plan) at a node, never a flag; the run derives every state —
   submitted, rolled up from beneath, ready, open, nothing — and the matrix page shows layers down, units across, the plan
   at the end, with the acts a person may make where they hold the verb. Account-facing layers submit at the account and

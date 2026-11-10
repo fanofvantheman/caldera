@@ -17,6 +17,7 @@ from collections import defaultdict
 
 from .calendar import Week, periods
 from .structures import Material, ACCOUNTS, SHIP_TOS, account_ranges, CATEGORIES, PROMO_GROUPS
+from .history import list_base
 
 TREND = {"declining": -0.045, "growing": 0.09, "flat": 0.005}
 
@@ -89,7 +90,7 @@ def latest_view_entries(plan_fy: int, latest_closed: str) -> list[dict]:
                "Account team expects the cups reset to hold through summer"),
         *[_entry(v, 2, dp, on, "CATEGORY_DECLINE", "primary", prod, "ALL", f"{plan_fy}P09", f"{fy1}P04", "rate_on_baseline", -0.03, "baseline_shape",
                  "Scan data shows the category falling faster than the fitted trend; the exiting and delisted lines are left to their own layers")
-          for prod in ("PEACH_SL", "PEAR_HV", "PL_PEACH", "PL_PEAR")],
+          for prod in ("PEACH_SL", "PEAR_HV")],
         _entry(v, 2, planner_of["CAR"], on, "RANGE_REVIEW", "primary", "PG_REDGUM", "CAR", f"{plan_fy}P06", f"{plan_fy}P06", "cases", 4000, "baseline_shape",
                "Pipeline fill for the Redgum shelf relay"),
         # layer 4 — distribution: one listing gained (no history, so catchment), one lost (a rate on what was there)
@@ -119,11 +120,10 @@ def promo_events(weeks: list[Week], plan_fy: int, latest_closed: str, materials:
     """The promotions calendar for the open version: dated windows (retailer weeks start mid-week), a mechanic,
     an uplift assumption, the price reduction and funding per case, a fixed fee where there is a catalogue."""
     v = f"LV-{latest_closed}"
-    per_kg = {"CANNED_FRUIT": 5.2, "SNACK_CUPS": 9.8, "TOMATOES": 3.6, "BEANS_SPAG": 4.4, "SPREADS": 7.5}
     mat = {m.material_code: m for m in materials}
     def avg_list(group: str) -> float:
         ms = [mat[c] for c in PROMO_GROUPS[group][1]]
-        return sum(per_kg[m.category_code] * {"premium": 1.25, "mainstream": 1.0, "value": 0.78}[m.price_tier] * m.case_net_kg for m in ms) / len(ms)
+        return sum(list_base(m) for m in ms) / len(ms)
     period_start = {p["period"]: p["period_start"] for p in periods(weeks)}
     plan = [  # (account, promo group, period, offset days into the period, length days, mechanic, uplift, tpr % of list, catalogue)
         ("WES", "PG_VALLEY_410", f"{plan_fy}P05", 9, 14, "half_price", 1.10, 0.25, True),
@@ -138,6 +138,8 @@ def promo_events(weeks: list[Week], plan_fy: int, latest_closed: str, materials:
         ("CAR", "PG_CUPS_4PK",   f"{plan_fy}P12", 16, 7, "price_cut",  0.60, 0.18, False),
         ("CAR", "PG_VALLEY_410", f"{plan_fy + 1}P02", 9, 14, "half_price", 1.00, 0.25, True),
         ("WES", "PG_CUPS_4PK",   f"{plan_fy + 1}P03", 2, 7,  "price_cut",  0.70, 0.18, False),
+        ("WES", "PG_ROSSO_JARS", f"{plan_fy}P09", 16, 7, "multi_buy",  0.50, 0.15, False),
+        ("CAR", "PG_ROSSO_JARS", f"{plan_fy + 1}P01", 9, 14, "price_cut", 0.55, 0.18, True),
     ]
     scan_accounts = {a[0] for a in ACCOUNTS if a[11] == "Y"}
     rows = []

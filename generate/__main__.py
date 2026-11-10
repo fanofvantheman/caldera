@@ -53,7 +53,7 @@ def main() -> None:
         "dim_ship_to": [{"ship_to_code": s[0], "account_code": s[1], "ship_to_name": s[2], "state": s[3], "serving_node": s[4], "stores_served": s[5]} for s in SHIP_TOS],
         "dim_node": [{"node_code": n[0], "node_name": n[1], "node_kind": n[2], "roles": n[3], "ownership": n[4], "state": n[5], "status": n[6]} for n in NODES],
         "dim_plant_area": [{"plant_code": a[0], "area_code": a[1], "area_name": a[2]} for a in PLANT_AREAS],
-        "dim_line": [{"line_code": l[0], "plant_code": "SHP", "area_code": l[1], "line_name": l[2], "rate_uom": l[3]} for l in LINES],
+        "dim_line": [{"line_code": l[0], "plant_code": l[1], "area_code": l[2], "line_name": l[3], "rate_uom": l[4]} for l in LINES],
         "ref_lane": [{"from_node": l[0], "to_code": l[1], "to_kind": l[2], "mode": l[3], "transit_days": l[4], "cost_per_pallet": l[5]} for l in LANES],
         "ref_route": build_routes(materials),
         "dim_cost_centre": [{"cost_centre_code": c[0], "cost_centre_name": c[1], "parent_code": c[2], "kind": c[3]} for c in COST_CENTRES],

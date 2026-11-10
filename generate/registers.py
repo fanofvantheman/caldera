@@ -54,7 +54,7 @@ ROLE_DEFINITIONS = [
     ("COMMERCIAL_FINANCE",   "Commercial finance",        "Owns versions, assumptions, the standard, the schedule, the balance sheet and reconciliation at entry."),
     ("RECONCILIATION_OWNER", "Reconciliation owner",      "Enters allocation and timing deltas and records the decision as the named latest view."),
     ("EXECUTIVE",            "Executive",                 "Accepts the decision that resets the reference; approves the business plan and capital."),
-    ("HEAD_OF_DEMAND",       "Head of demand planning",   "Coordinates the demand plan: every unit's demand rolls to them; they alone submit the plan."),
+    ("HEAD_OF_DEMAND",       "Head of demand planning",   "Leads the demand plan: every unit's demand rolls to them; they alone submit the plan."),
     ("PLAN_READER",          "Plan reader",               "Reads the plan and its readings at a scope and nothing else."),
     ("AUDITOR",              "Auditor",                   "Reads everything, changes nothing."),
 ]
@@ -81,7 +81,7 @@ ROLE_ACTIONS = {
     "AUDITOR":              ["read.plan", "read.reading", "read.drill", "read.health", "read.proof"],
 }
 
-# principal, role, scope dimension, scope node — demand is planned by unit; one head coordinates; account managers at their majors
+# principal, role, scope dimension, scope node — demand is planned by unit; one head leads; account managers at their majors
 ROLE_ASSIGNMENTS = [
     ("head.demand@caldera",         "HEAD_OF_DEMAND",       "customer",     "ALL"),
     ("planner.westbrook@caldera",   "DEMAND_PLANNER",       "customer",     "PU_WES"),
@@ -94,11 +94,14 @@ ROLE_ASSIGNMENTS = [
     ("kam.merritt@caldera",         "KEY_ACCOUNT_MANAGER",  "customer",     "MER"),
     ("trade.marketing@caldera",     "TRADE_MARKETING",      "customer",     "ALL"),
     ("portfolio.marketing@caldera", "PORTFOLIO_MARKETING",  "material",     "ALL"),
-    ("supply.planner@caldera",  "SUPPLY_PLANNER",       "location",     "SHP"),
+    ("supply.planner@caldera",  "SUPPLY_PLANNER",       "location",     "ECH"),
+    ("supply.planner@caldera",  "SUPPLY_PLANNER",       "location",     "LOX"),
     ("supply.planner@caldera",  "MATERIALS_PLANNER",    "material",     "ALL"),
     ("supply.planner@caldera",  "NETWORK_PLANNER",      "location",     "ALL"),
-    ("supply.planner@caldera",  "QUALITY",              "location",     "SHP"),
-    ("plant.manager@caldera",   "PLANT_MANAGER",        "location",     "SHP"),
+    ("supply.planner@caldera",  "QUALITY",              "location",     "ECH"),
+    ("supply.planner@caldera",  "QUALITY",              "location",     "LOX"),
+    ("plant.manager@caldera",   "PLANT_MANAGER",        "location",     "ECH"),
+    ("plant.manager@caldera",   "PLANT_MANAGER",        "location",     "LOX"),
     ("plant.manager@caldera",   "PLANT_MANAGER",        "organisation", "OPS"),
     ("finance.manager@caldera", "COMMERCIAL_FINANCE",   "organisation", "CAL"),
     ("finance.manager@caldera", "SALES_FINANCE",        "customer",     "ALL"),
@@ -121,18 +124,20 @@ def roles() -> tuple[list[dict], list[dict], list[dict]]:
 
 # --- capacity register: machine availability per line per period, campaign windows widen the hours -------------------
 
-CAMPAIGN = {  # area → fiscal periods in the campaign window (Jan–Apr ≈ P07–P10)
+CAMPAIGN = {  # hall → fiscal periods in the campaign window (Jan–Apr ≈ P07–P10), at both plants
     "FRUIT": (7, 10), "TOMATO": (8, 10), "CUPS": (7, 10),
 }
 
 
 def capacity_register(weeks: list[Week]) -> list[dict]:
+    """Each line's tier by period: its base shifts on five days outside the campaign; in the campaign window of its hall,
+    one more shift (to three at most) on six days."""
     rows = []
-    area_of = {l[0]: l[1] for l in LINES}
     for p in periods(weeks):
-        for line_code, area, _, _ in LINES:
-            in_campaign = area in CAMPAIGN and CAMPAIGN[area][0] <= p["fiscal_period"] <= CAMPAIGN[area][1]
-            shifts = 3 if in_campaign else (2 if area in ("FRUIT", "CUPS", "TOMATO") else 1)
+        for line_code, _plant, area, _name, _uom, _speed, base_shifts in LINES:
+            hall = area.split("_", 1)[1]
+            in_campaign = hall in CAMPAIGN and CAMPAIGN[hall][0] <= p["fiscal_period"] <= CAMPAIGN[hall][1]
+            shifts = min(3, base_shifts + 1) if in_campaign else base_shifts
             days = p["weeks"] * (6 if in_campaign else 5)
             hours = shifts * 8 * days
             rows.append({"line_code": line_code, "period": p["period"], "tier": f"{shifts}-shift", "shifts": shifts,
