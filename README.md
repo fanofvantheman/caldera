@@ -30,8 +30,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   the grocers' own-label packs as variants of the standard material, a handful launching and a handful delisting — with
   a Pareto volume shape (a fifth of the materials carry about four-fifths of the cases) and a long tail ranged at one
   account. Two plants: Echuca, Victoria (tomatoes, sauces, beans and spaghetti, spreads, part of the fruit) and Loxton,
-  South Australia (the rest of the fruit and the snack cups); canned fruit is made at both, so the Melbourne DC and the
-  Brisbane cross-dock can be served from the nearer plant or the further one at a dearer lane. One reporting entity.
+  South Australia (the rest of the fruit and the snack cups); canned fruit is made at both. Three 3PL stocking DCs —
+  Melbourne, Sydney and Brisbane — are each replenished from both plants, so any DC can be served from the nearer plant
+  or the further one at a dearer lane, and each serves the customers' DCs in its region (Perth from Melbourne); no
+  customer is served direct from a plant. One reporting entity.
   `structures.py` is what Caldera makes, sells to, operates and is organised as, built from a product × format ×
   variant recipe;
   `calendar.py` the 4-4-5 trading calendar (fiscal year July–June, every week in exactly one period);

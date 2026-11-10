@@ -10,8 +10,9 @@ Pareto-shaped — a fifth of the materials carry about four-fifths of the cases 
 Two plants that make and store: Echuca in northern Victoria (the tomato hall with the sauce and passata line, beans and
 spaghetti, spreads, and part of the fruit hall) and Loxton in the Riverland, South Australia (the rest of the fruit
 hall and the snack cup hall). Canned fruit is made at both, each with its own lines, rates and capacity, so a DC can be
-served from the nearer plant or the further one. A third-party DC in Melbourne stores and ships; a cross-dock in
-Brisbane. One reporting entity: the plants are a supply network, not a consolidation.
+served from the nearer plant or the further one. Three third-party DCs store and ship — Melbourne, Sydney and
+Brisbane — each replenished from both plants and each serving the customers' DCs in its own region; no customer is
+served direct from a plant. One reporting entity: the plants are a supply network, not a consolidation.
 
 Everything here is deterministic and legible: the catalogue is built from a product × format × variant recipe, volume
 from a rank rule, ranging from the rank — no hand-typed rows beyond the products themselves. Figures are
@@ -499,17 +500,17 @@ PLANNING_UNITS = [
 UNIT_OF = {a: (u, n) for u, n, accts in PLANNING_UNITS for a in accts}
 
 SHIP_TOS = [
-    ("WES-NSW", "WES", "Westbrook DC Minchinbury",    "NSW", "MEL", 380),
+    ("WES-NSW", "WES", "Westbrook DC Minchinbury",    "NSW", "SYD", 380),
     ("WES-VIC", "WES", "Westbrook DC Melbourne",      "VIC", "MEL", 300),
     ("WES-QLD", "WES", "Westbrook DC Brisbane",       "QLD", "BNE", 260),
     ("WES-WA",  "WES", "Westbrook DC Perth",          "WA",  "MEL", 120),
-    ("CAR-NSW", "CAR", "Carters DC Eastern Creek",       "NSW", "MEL", 300),
+    ("CAR-NSW", "CAR", "Carters DC Eastern Creek",       "NSW", "SYD", 300),
     ("CAR-VIC", "CAR", "Carters DC Truganina",           "VIC", "MEL", 260),
     ("CAR-QLD", "CAR", "Carters DC Brisbane",            "QLD", "BNE", 200),
     ("MER-VIC", "MER", "Merritt DC Laverton",          "VIC", "MEL", 450),
-    ("MER-NSW", "MER", "Merritt DC Huntingwood",       "NSW", "MEL", 500),
+    ("MER-NSW", "MER", "Merritt DC Huntingwood",       "NSW", "SYD", 500),
     ("ALS-VIC", "ALS", "Alders DC Derrimut",             "VIC", "MEL", 180),
-    ("ALS-NSW", "ALS", "Alders DC Minchinbury",          "NSW", "MEL", 200),
+    ("ALS-NSW", "ALS", "Alders DC Minchinbury",          "NSW", "SYD", 200),
     ("CRS-VIC", "CRS", "Crestway Docklands",             "VIC", "MEL", 4),
     ("BRD-VIC", "BRD", "Bradfield DC Melbourne",         "VIC", "MEL", 0),
     ("EXPJ-POR","EXPJ","Port of Yokohama (FOB Melbourne)", "JP", "MEL", 0),
@@ -558,9 +559,11 @@ NODES = [
     ("ECH", "Echuca plant",                "plant",      "make,store,ship", "owned", "VIC", "open"),
     ("LOX", "Loxton plant",                "plant",      "make,store,ship", "owned", "SA",  "open"),
     ("MEL", "Melbourne DC (3PL, Laverton)","3pl_dc",     "store,ship",      "3pl",   "VIC", "open"),
-    ("BNE", "Brisbane cross-dock",         "cross_dock", "ship",            "3pl",   "QLD", "open"),
+    ("SYD", "Sydney DC (3PL, Erskine Park)","3pl_dc",    "store,ship",      "3pl",   "NSW", "open"),
+    ("BNE", "Brisbane DC (3PL, Larapinta)","3pl_dc",     "store,ship",      "3pl",   "QLD", "open"),
 ]
 PLANTS = ("ECH", "LOX")
+DCS = ("MEL", "SYD", "BNE")
 
 # plant → area → line. Area codes carry the plant: each hall is a member of the location structure in its own right.
 PLANT_AREAS = [
@@ -590,24 +593,26 @@ LINES = [
 ]
 LINE_PLANT = {l[0]: l[1] for l in LINES}
 
-# lanes: from node → to node or ship-to; mode; transit days; cost per pallet. Both plants reach the DC and the
-# cross-dock; the cost per pallet follows the distance (about $25 a pallet plus 4.5 cents a pallet-kilometre), so the
-# further plant is a dearer source and the choice is a trade-off. The DC serves the customers' DCs.
-_KM = {("ECH", "MEL"): 220, ("ECH", "BNE"): 1_600, ("LOX", "MEL"): 530, ("LOX", "BNE"): 1_720}
+# lanes: from node → to node or ship-to; mode; transit days; cost per pallet. Both plants reach every DC; the cost per
+# pallet follows the distance (about $25 a pallet plus 4.5 cents a pallet-kilometre), so the further plant is a dearer
+# source and the choice is a trade-off. Each DC serves the customers' DCs in its region — never a plant direct.
+_KM = {("ECH", "MEL"): 220, ("ECH", "SYD"): 860, ("ECH", "BNE"): 1_600,
+       ("LOX", "MEL"): 530, ("LOX", "SYD"): 1_150, ("LOX", "BNE"): 1_720}
 LANES = [
-    *[(f, t, "node", "road linehaul", 1 if km < 600 else 3, round(25 + 0.045 * km, 1)) for (f, t), km in _KM.items()],
+    *[(f, t, "node", "road linehaul", 1 if km < 600 else 2 if km < 1_200 else 3, round(25 + 0.045 * km, 1))
+      for (f, t), km in _KM.items()],
     ("MEL", "WES-VIC", "ship_to", "road local",    1, 22.0),
     ("MEL", "CAR-VIC", "ship_to", "road local",    1, 22.0),
     ("MEL", "MER-VIC", "ship_to", "road local",    1, 22.0),
     ("MEL", "ALS-VIC", "ship_to", "road local",    1, 22.0),
     ("MEL", "CRS-VIC", "ship_to", "road local",    1, 24.0),
     ("MEL", "BRD-VIC", "ship_to", "road local",    1, 24.0),
-    ("MEL", "WES-NSW", "ship_to", "road interstate", 2, 48.0),
-    ("MEL", "CAR-NSW", "ship_to", "road interstate", 2, 48.0),
-    ("MEL", "MER-NSW", "ship_to", "road interstate", 2, 48.0),
-    ("MEL", "ALS-NSW", "ship_to", "road interstate", 2, 48.0),
     ("MEL", "WES-WA",  "ship_to", "rail interstate", 6, 110.0),
     ("MEL", "EXPJ-POR","ship_to", "sea container",   18, 60.0),
+    ("SYD", "WES-NSW", "ship_to", "road local",    1, 22.0),
+    ("SYD", "CAR-NSW", "ship_to", "road local",    1, 22.0),
+    ("SYD", "MER-NSW", "ship_to", "road local",    1, 22.0),
+    ("SYD", "ALS-NSW", "ship_to", "road local",    1, 22.0),
     ("BNE", "WES-QLD", "ship_to", "road local",    1, 24.0),
     ("BNE", "CAR-QLD", "ship_to", "road local",    1, 24.0),
 ]
