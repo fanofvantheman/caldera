@@ -623,6 +623,58 @@ def gap():
         return _busy("Gap to reference", e)
 
 
+# ---- financial planning: the revenue forecast, the versions laid over one another in net sales ----
+@plan.get("/revenue")
+def revenue():
+    """Net sales by fiscal year across its periods, per week: invoiced, the latest view and its reference over one another,
+    read against the reference only on the periods both value; at the plan or any node of either structure, the level
+    below as a split. Nothing typed here."""
+    try:
+        version = _version(); v = reads.version(version) or {}
+        years = reads.fiscal_years(version)
+        fy = request.args.get("fy", type=int)
+        if fy not in years:
+            fy = int(v.get("fiscal_year") or 0) if int(v.get("fiscal_year") or 0) in years else (years[0] if years else 0)
+        dim = request.args.get("dim") if request.args.get("dim") in ("customer", "material") else "customer"
+        node = request.args.get("node") or "ALL"
+        grain = request.args.get("grain") if request.args.get("grain") in ("period", "week") else "period"
+        def L(**kw): return url_for("plan.revenue", **{"version": version, "fy": fy, "dim": dim, "node": node, "grain": grain, **kw})
+        def at(n): return {"customer": n} if dim == "customer" else {"material": n}
+        series = reads.demand_series(version, fy, **at(node))               # by period: the table, the tiles, the like-for-like
+        shown = series if grain == "period" else reads.demand_series(version, fy, grain="week", **at(node))
+        lfl = reads.like_for_like(series)
+        both = set(lfl["keys"])
+        table = []
+        for k in series["keys"]:
+            x, r, p = series["view"].get(k["k"]), series["ref"].get(k["k"]), series["py"].get(k["k"])
+            row = {"label": k["say"].split(" · ")[0], "weeks": k["weeks"], "source": x["source"] if x else None,
+                   "view_rate": x["rate"] if x else None, "ref_rate": r["rate"] if r else None, "py_rate": p["rate"] if p else None,
+                   "view": x["total"] if x else None, "ref": r["total"] if r else None, "gap": None, "gap_d": None}
+            if k["k"] in both:
+                row["gap"] = x["total"] - r["total"]; row["gap_d"] = _d(x["total"], r["total"])
+            table.append(row)
+        d = {"py": _d(lfl["year"], lfl["py_year"]), "lfl": _d(lfl["view"], lfl["ref"])}
+        split = []
+        for ch in reads.node_children(dim, node):
+            cs = reads.demand_series(version, fy, **at(ch["code"]))
+            if cs["view"]:
+                cl = reads.like_for_like(cs)
+                split.append({**ch, "href": L(node=ch["code"]), "lfl": cl, "py_d": _d(cl["year"], cl["py_year"]), "gap_d": _d(cl["view"], cl["ref"])})
+        split.sort(key=lambda c: -c["lfl"]["year"])
+        level = split[0]["level"] if split else ""
+        split_of = {"planning_unit": "unit", "account": "account", "category": "category", "product": "product"}.get(level, level.replace("_", " ") or "level below")
+        ref_id = series["ref_id"] if series["ref"] else None              # a reference that does not carry this year is not shown against it
+        ref_kind = (reads.version(ref_id) or {}).get("cycle") if ref_id else (f"{series['ref_id']} does not carry FY{fy}" if series["ref_id"] else None)
+        drill = {"dim": dim, "label": reads.node_label(dim, node), "path": [{**n, "href": L(node=n["code"])} for n in reads.node_path(dim, node)],
+                 "other": L(dim=("material" if dim == "customer" else "customer"), node="ALL")}
+        return _page(dashboard.REVENUE_PAGE, title="Revenue forecast", active="revenue", width="none", version=version, versions=reads.versions(), fy=fy,
+                     years=[{"fy": y, "href": L(fy=y)} for y in years], grain=grain, grains=[{"label": g, "on": g == grain, "href": L(grain=g)} for g in ("period", "week")],
+                     series=series, chart=dashboard.chart(shown, fy), lfl=lfl, d=d, table=table, split=split, split_of=split_of, drill=drill,
+                     ref_id=ref_id, ref_kind=ref_kind)
+    except Busy as e:
+        return _busy("Revenue forecast", e)
+
+
 # ---- the rungs named but not yet built ----
 RUNGS = {
     "standard": ("Standard by plant", "The standard cost of every material at every plant for the version's standard year, derived from the routes, the BOM and the cost inputs; a new plant through to a new standard and the transition."),

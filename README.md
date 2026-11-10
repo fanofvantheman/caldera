@@ -71,7 +71,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the
   reason offered on the layer — flagged, not refused), the revenue bridge, the gap to the reference version by period and by material, launches and exits as the
   innovation layers' entries, the promotions and terms registers (terms grouped by account with every attribute; **price lists** with the accounts on each, the price before and in force per material and the dated increase events),
-  the versions, the rungs named but not yet built
+  the versions, the **revenue forecast** under financial planning (net sales by fiscal year across its periods, per week —
+  invoiced, the latest view and its reference laid over one another, last year faint; read against the reference only on
+  the periods both value, with the gap by period; at the plan or any node of either structure, the level below as a split;
+  nothing typed), the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
   whoever holds `run.plan`, the log kept. Every act writes a receipt under `data/receipts/`. What a page shows is what
   the last run said: an entry placed is in the plan after the next run, and a withdrawal of an entry the warehouse has

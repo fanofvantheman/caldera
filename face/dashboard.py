@@ -15,6 +15,23 @@ table.tree tr.l1 td:first-child{padding-left:1.8rem}table.tree tr.l2 td:first-ch
 .delta{font-variant-numeric:tabular-nums;white-space:nowrap}.delta.up::before{content:"▲ ";font-size:.7em}.delta.down::before{content:"▼ ";font-size:.7em}.delta.flat::before{content:"— "}
 .bias.high::after{content:" high";color:var(--muted);font-size:.8em}.bias.low::after{content:" low";color:var(--muted);font-size:.8em}"""
 
+# the figure: the chart's frame, legend swatches, drill crumbs, small multiples and the hover read-out — shared by every page that draws chart()
+FIG_CSS = """.fig svg{display:block;width:100%;height:auto;max-height:420px;margin-top:.6rem}.fighead{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}.fighead .legend{margin-left:auto}
+.key{display:inline-flex;align-items:center;gap:.3rem}.sw{display:inline-block;width:1.1rem;height:0;border-top:2px solid var(--ink)}.sw.actual{border-top-width:4px}.sw.ref{border-top-style:dashed}.sw.py{border-top-color:var(--faint)}
+.crumbs{font-size:.85rem;color:var(--muted)}.crumbs a{text-decoration:none}.crumbs a:hover{text-decoration:underline}.crumbs b{color:var(--ink)}.crumbs .switch{margin-left:.9rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;padding:.1rem .6rem}.crumbs .seg{display:inline-flex;margin-left:.6rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;overflow:hidden}.crumbs .seg a,.crumbs .seg b{padding:.1rem .6rem}.crumbs .seg b{background:var(--ink);color:var(--paper);font-weight:500}.crumbs .seg a+a,.crumbs .seg b+a,.crumbs .seg a+b{border-left:1px solid var(--rule)}
+.multiples{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.8rem;margin-top:1rem;border-top:1px solid var(--rule);padding-top:1rem}
+.multiple{display:block;text-decoration:none;color:inherit;border:1px solid var(--rule);border-radius:var(--radius-s);padding:.5rem .7rem .3rem}.multiple:hover{background:var(--hover);border-color:var(--faint)}
+.mhead{display:flex;justify-content:space-between;font-size:.82rem;font-weight:500;gap:.5rem}.multiple svg{max-height:120px}
+.fig{position:relative}.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.78rem;padding:.4rem .6rem;border-radius:var(--radius-s);line-height:1.4;white-space:nowrap}
+"""
+
+FIG_JS = """<script>(()=>{const svg=document.querySelector('.fig svg');if(!svg)return;const tip=document.querySelector('.fig .tip');const pts=JSON.parse(svg.dataset.points);const cross=svg.querySelector('.cross');const dots=svg.querySelectorAll('.dot');
+svg.addEventListener('mousemove',e=>{const r=svg.getBoundingClientRect();const x=(e.clientX-r.left)/r.width*svg.viewBox.baseVal.width;let i=0;for(let k=1;k<pts.length;k++)if(Math.abs(pts[k].x-x)<Math.abs(pts[i].x-x))i=k;const p=pts[i];
+cross.setAttribute('x1',p.x);cross.setAttribute('x2',p.x);cross.style.display='';dots.forEach(d=>{const v=p[d.dataset.s];if(v==null){d.style.display='none'}else{d.style.display='';d.setAttribute('cx',p.x);d.setAttribute('cy',v.y)}});
+tip.innerHTML='<b>'+p.label+'</b>'+Object.entries(p).filter(([k,v])=>v&&v.text).map(([k,v])=>'<br>'+v.name+' '+v.text).join('');tip.hidden=false;const fr=svg.parentNode.getBoundingClientRect();tip.style.left=Math.min(e.clientX-fr.left+14,fr.width-tip.offsetWidth-8)+'px';tip.style.top=(e.clientY-fr.top-10)+'px'});
+svg.addEventListener('mouseleave',()=>{tip.hidden=true;cross.style.display='none';dots.forEach(d=>d.style.display='none')})})()</script>
+"""
+
 HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what the run says this morning</small></h1>
 <form class="toolbar" method="get"><label>version<select name="version" onchange="this.form.submit()">{% for v in versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == version }}>{{ v.version_id }} · {{ v.status }}</option>{% endfor %}</select></label></form>
 <div class="cards tiles">
@@ -26,7 +43,7 @@ HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what
 <div class="grid2">
 <div class="card fig"><div class="fighead"><b>{{ 'Net sales' if series.measure == 'net_sales' else 'Demand' }} per week</b><span class="crumbs">{% for n in drill.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}<a class="switch" href="{{ drill.other }}">by {{ 'material' if drill.dim == 'customer' else 'customer' }}</a><span class="seg">{% for g in fig.grains %}{% if g.on %}<b>{{ g.label }}</b>{% else %}<a href="{{ g.href }}">{{ g.label }}</a>{% endif %}{% endfor %}</span>{% if fig.measures %}<span class="seg">{% for g in fig.measures %}{% if g.on %}<b>{{ g.label }}</b>{% else %}<a href="{{ g.href }}">{{ g.label }}</a>{% endif %}{% endfor %}</span>{% endif %}</span><span class="legend">
 <span class="key"><i class="sw actual"></i>{{ 'invoiced' if series.measure == 'net_sales' else 'shipped' }}</span><span class="key"><i class="sw plan"></i>{{ version }}</span>{% if series.ref_id %}<span class="key"><i class="sw ref"></i>{{ series.ref_id }}</span>{% endif %}<span class="key"><i class="sw py"></i>FY{{ fy - 1 }}</span></span></div>
-{{ chart|safe }}
+{{ chart|safe }}<div class="tip" hidden></div>
 <p class="hint">Every point is a rate per week{% if series.grain == 'period' %} — the period's total over its weeks, the week count in the label — so a five-week period does not read as a step{% else %} — the weeks themselves, a rule at each period boundary{% endif %}. {% if series.measure == 'net_sales' %}History is what was invoiced; the plan is cases at the list and terms in force.{% if not fig.measures %} Cases are read at a material — open one — and mean nothing added across materials.{% endif %}{% else %}Period totals are on the <a href="{{ links.demand }}">demand grid</a>.{% endif %}</p>
 {% if drill.children %}<div class="multiples">{% for c in drill.children %}<a class="multiple" href="{{ c.href }}"><div class="mhead"><span>{{ c.label }}</span><span class="muted">{{ c.total|aud if series.measure == 'net_sales' else c.total|k }}</span></div>{{ c.chart|safe }}</a>{% endfor %}</div>
 <p class="hint">Each small chart is the level below; open one to make it the chart and see its own children. Same scale within a row is not promised — read the shape, then the number.</p>{% endif %}</div>
@@ -59,13 +76,7 @@ HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what
 .rows a,.ladder a,h2 a,table a{text-decoration:none}.rows a:hover,.ladder a:hover,h2 a:hover,table a:hover{text-decoration:underline}.card.stat b{font-size:1.75rem;margin:.3rem 0 .2rem}
 .grid2{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:1.4rem;align-items:start;margin:0 0 .5rem}
 @media (min-width:1900px){.grid2{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}.tiles{gap:1.4rem}h1{font-size:2.4rem}}.grid2>.card{margin:0}.grid2 h2{margin-top:1.2rem}
-.fig svg{display:block;width:100%;height:auto;max-height:420px;margin-top:.6rem}.fighead{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}.fighead .legend{margin-left:auto}
-.key{display:inline-flex;align-items:center;gap:.3rem}.sw{display:inline-block;width:1.1rem;height:0;border-top:2px solid var(--ink)}.sw.actual{border-top-width:4px}.sw.ref{border-top-style:dashed}.sw.py{border-top-color:var(--faint)}
-.crumbs{font-size:.85rem;color:var(--muted)}.crumbs a{text-decoration:none}.crumbs a:hover{text-decoration:underline}.crumbs b{color:var(--ink)}.crumbs .switch{margin-left:.9rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;padding:.1rem .6rem}.crumbs .seg{display:inline-flex;margin-left:.6rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;overflow:hidden}.crumbs .seg a,.crumbs .seg b{padding:.1rem .6rem}.crumbs .seg b{background:var(--ink);color:var(--paper);font-weight:500}.crumbs .seg a+a,.crumbs .seg b+a,.crumbs .seg a+b{border-left:1px solid var(--rule)}
-.multiples{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.8rem;margin-top:1rem;border-top:1px solid var(--rule);padding-top:1rem}
-.multiple{display:block;text-decoration:none;color:inherit;border:1px solid var(--rule);border-radius:var(--radius-s);padding:.5rem .7rem .3rem}.multiple:hover{background:var(--hover);border-color:var(--faint)}
-.mhead{display:flex;justify-content:space-between;font-size:.82rem;font-weight:500;gap:.5rem}.multiple svg{max-height:120px}
-.fig{position:relative}.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.78rem;padding:.4rem .6rem;border-radius:var(--radius-s);line-height:1.4;white-space:nowrap}
+""" + FIG_CSS + """
 .card.list b .count{font-weight:400;margin-left:.6rem;font-size:.85rem;color:var(--muted)}.card.list{max-height:460px;overflow-y:auto}.rows{list-style:none;margin:.6rem 0 0;padding:0}.rows li{padding:.5rem 0;border-top:1px solid var(--rule);font-size:.9rem}
 .acts{display:flex;flex-direction:column;gap:.4rem}.acts .button{display:block;text-decoration:none;padding:.55rem .9rem;border:1px solid var(--rule);border-radius:var(--radius-s);background:var(--panel);font-weight:500;font-size:.9rem}.acts .button:hover{background:var(--soft)}.acts .button small{display:block;font-weight:400;color:var(--muted);font-size:.78rem}
 .ladder{margin-top:1.4rem;display:flex;gap:2rem;align-items:center;flex-wrap:wrap}.ladder ol{list-style:none;display:flex;gap:1.4rem;margin:0;padding:0;flex:1 1 auto;flex-wrap:wrap}.ladder li{display:flex;gap:.6rem;align-items:center}
@@ -76,11 +87,7 @@ HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what
 .state.FROZEN{color:var(--muted);border-color:var(--faint)}
 @media (max-width:1100px){.tiles{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
 """ + TREE_CSS + """</style>""" + TREE_JS + """
-<script>(()=>{const svg=document.querySelector('.fig svg');if(!svg)return;const tip=document.querySelector('.fig .tip');const pts=JSON.parse(svg.dataset.points);const cross=svg.querySelector('.cross');const dots=svg.querySelectorAll('.dot');
-svg.addEventListener('mousemove',e=>{const r=svg.getBoundingClientRect();const x=(e.clientX-r.left)/r.width*svg.viewBox.baseVal.width;let i=0;for(let k=1;k<pts.length;k++)if(Math.abs(pts[k].x-x)<Math.abs(pts[i].x-x))i=k;const p=pts[i];
-cross.setAttribute('x1',p.x);cross.setAttribute('x2',p.x);cross.style.display='';dots.forEach(d=>{const v=p[d.dataset.s];if(v==null){d.style.display='none'}else{d.style.display='';d.setAttribute('cx',p.x);d.setAttribute('cy',v.y)}});
-tip.innerHTML='<b>'+p.label+'</b>'+Object.entries(p).filter(([k,v])=>v&&v.text).map(([k,v])=>'<br>'+v.name+' '+v.text).join('');tip.hidden=false;const fr=svg.parentNode.getBoundingClientRect();tip.style.left=Math.min(e.clientX-fr.left+14,fr.width-tip.offsetWidth-8)+'px';tip.style.top=(e.clientY-fr.top-10)+'px'});
-svg.addEventListener('mouseleave',()=>{tip.hidden=true;cross.style.display='none';dots.forEach(d=>d.style.display='none')})})()</script>"""
+""" + FIG_JS
 
 ACCURACY_PAGE = """<h1>Forecast accuracy<small>the plan judged as a forecast: what the cycle {{ lag }} periods before said, against what shipped · 1 − Σ|error| ÷ Σ shipped · bias is the signed error</small></h1>
 <nav class="tabs">{% for l in lags %}<a href="{{ url_for('plan.accuracy', lag=l) }}" class="{{ 'active' if l == lag }}">lag {{ l }}</a>{% endfor %}</nav>
@@ -211,3 +218,32 @@ def _points(keys, view, ref, py, X, Y, series) -> str:
             d["py"] = {"y": round(Y(py[k["k"]]["rate"]), 1), "name": f"FY{int(k['k'][:4]) - 1}", "text": text(py[k["k"]])}
         pts.append(d)
     return json.dumps(pts).replace("'", "&#39;")
+
+
+REVENUE_PAGE = """<form class="toolbar" method="get"><label>version<select name="version" onchange="this.form.submit()">{% for v in versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == version }}>{{ v.version_id }} · {{ v.status }}</option>{% endfor %}</select></label></form>
+<h1>Revenue forecast<small>{{ version }} · FY{{ fy }} · net sales invoiced, the latest view and {{ ref_id or 'no reference' }} laid over one another, per week</small></h1>
+{% if years|length > 1 %}<nav class="tabs">{% for y in years %}<a href="{{ y.href }}" class="{{ 'active' if y.fy == fy }}">FY{{ y.fy }}</a>{% endfor %}</nav>{% endif %}
+<div class="cards tiles">
+<div class="card stat"><span>FY{{ fy }} latest view · AUD</span><b>{{ lfl.year|m }}</b><div class="small delta {{ d.py|dir }}">{% if lfl.py_year %}{{ d.py|pct }} vs FY{{ fy - 1 }} invoiced{% elif lfl.py_part %}FY{{ fy - 1 }} is still closing — no year to read against{% else %}no FY{{ fy - 1 }} invoiced to read against{% endif %}</div></div>
+<div class="card stat"><span>Invoiced to date</span><b>{{ lfl.invoiced|m }}</b><div class="small muted">{% if series.n_actual %}{{ series.n_actual }} closed period{{ 's' if series.n_actual > 1 }} of {{ table|length }}{% else %}no period closed yet{% endif %}</div></div>
+<div class="card stat"><span>{% if lfl.from %}{{ lfl.from.label.split(' ')[0] }}–{{ lfl.to.label.split(' ')[0] }} vs {{ ref_id }}{% else %}Against the reference{% endif %}</span><b>{{ lfl.gap|aud if lfl.gap is not none else '—' }}</b><div class="small delta {{ d.lfl|dir }}">{% if lfl.from %}{{ d.lfl|pct }} on the periods both value{% else %}no periods both value{% endif %}</div></div>
+<div class="card stat"><span>{{ ref_id or 'Reference' }} · FY{{ fy }}</span><b>{{ lfl.ref_year|m if lfl.ref_year else '—' }}</b><div class="small muted">{{ ref_kind or 'this version names no reference' }}</div></div>
+</div>
+<div class="card fig"><div class="fighead"><b>Net sales per week</b><span class="crumbs">{% for n in drill.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}<a class="switch" href="{{ drill.other }}">by {{ 'material' if drill.dim == 'customer' else 'customer' }}</a><span class="seg">{% for g in grains %}{% if g.on %}<b>{{ g.label }}</b>{% else %}<a href="{{ g.href }}">{{ g.label }}</a>{% endif %}{% endfor %}</span></span><span class="legend">
+<span class="key"><i class="sw actual"></i>invoiced</span><span class="key"><i class="sw plan"></i>{{ version }}</span>{% if ref_id %}<span class="key"><i class="sw ref"></i>{{ ref_id }}</span>{% endif %}<span class="key"><i class="sw py"></i>FY{{ fy - 1 }} invoiced</span></span></div>
+{{ chart|safe }}<div class="tip" hidden></div>
+<p class="hint">Every point is a rate per week{% if grain == 'period' %} — the period's total over its weeks, the week count in the label — so a five-week period does not read as a step{% else %} — the weeks themselves, a rule at each period boundary{% endif %}. History is what was invoiced; the plan is cases at the list and terms in force.</p></div>
+<h2>By period<span class="count">{{ drill.label }} · per week, then the period's total</span></h2>
+<table><thead><tr><th>Period</th><th class="n">Weeks</th><th></th><th class="n">{{ version }} / wk</th><th class="n">{{ ref_id or 'Reference' }} / wk</th><th class="n">FY{{ fy - 1 }} / wk</th><th class="n">{{ version }}</th><th class="n">{{ ref_id or 'Reference' }}</th><th class="n">Gap</th><th class="n">Gap %</th></tr></thead><tbody>
+{% for r in table %}<tr class="{{ 'closed' if r.source == 'actual' }}"><td>{{ r.label }}</td><td class="n">{{ r.weeks }}</td><td><span class="small muted">{{ 'invoiced' if r.source == 'actual' else ('plan' if r.source else '') }}</span></td><td class="n">{{ r.view_rate|aud }}</td><td class="n">{{ r.ref_rate|aud }}</td><td class="n muted">{{ r.py_rate|aud }}</td><td class="n">{{ r.view|aud }}</td><td class="n">{{ r.ref|aud }}</td><td class="n">{{ r.gap|aud }}</td><td class="n delta {{ r.gap_d|dir }}">{{ r.gap_d|pct }}</td></tr>{% endfor %}
+<tr class="total"><td>FY{{ fy }}</td><td class="n">{{ table|sum(attribute='weeks') }}</td><td></td><td></td><td></td><td></td><td class="n">{{ lfl.year|aud }}</td><td class="n">{{ lfl.ref_year|aud }}</td><td class="n">{{ lfl.gap|aud }}</td><td class="n delta {{ d.lfl|dir }}">{{ d.lfl|pct }}</td></tr>
+</tbody></table>
+<p class="hint">The gap is read only where both versions value the period: the closed periods are what was invoiced, not a forecast, so they carry no gap here{% if lfl.from %} — the year's gap is {{ lfl.from.label.split(' ')[0] }} to {{ lfl.to.label.split(' ')[0] }}{% endif %}. Last year is read by its own weeks, so a 53-week year compares.</p>
+{% if split %}<h2>By {{ split_of }}<span class="count">FY{{ fy }} · open one to make it the chart</span></h2>
+<table><thead><tr><th>{{ split_of|capitalize }}</th><th class="n">FY{{ fy }} {{ version }}</th><th class="n">vs FY{{ fy - 1 }}</th><th class="n">Invoiced to date</th><th class="n">{{ version }}{% if lfl.from %} {{ lfl.from.label.split(' ')[0] }}–{{ lfl.to.label.split(' ')[0] }}{% endif %}</th><th class="n">{{ ref_id or 'Reference' }}</th><th class="n">Gap</th><th class="n">Gap %</th></tr></thead><tbody>
+{% for c in split %}<tr><td><a href="{{ c.href }}">{{ c.label }}</a></td><td class="n">{{ c.lfl.year|aud }}</td><td class="n delta {{ c.py_d|dir }}">{{ c.py_d|pct }}</td><td class="n">{{ c.lfl.invoiced|aud }}</td><td class="n">{{ c.lfl.view|aud }}</td><td class="n">{{ c.lfl.ref|aud }}</td><td class="n">{{ c.lfl.gap|aud }}</td><td class="n delta {{ c.gap_d|dir }}">{{ c.gap_d|pct }}</td></tr>{% endfor %}
+<tr class="total"><td>{{ drill.label }}</td><td class="n">{{ lfl.year|aud }}</td><td class="n delta {{ d.py|dir }}">{{ d.py|pct }}</td><td class="n">{{ lfl.invoiced|aud }}</td><td class="n">{{ lfl.view|aud }}</td><td class="n">{{ lfl.ref|aud }}</td><td class="n">{{ lfl.gap|aud }}</td><td class="n delta {{ d.lfl|dir }}">{{ d.lfl|pct }}</td></tr>
+</tbody></table>{% endif %}
+<style>.tiles{grid-template-columns:repeat(4,1fr)}.card.stat{margin:0}.card.stat b{font-size:1.75rem;margin:.3rem 0 .2rem}tr.closed td{color:var(--muted)}table a{text-decoration:none}table a:hover{text-decoration:underline}
+@media (max-width:1100px){.tiles{grid-template-columns:repeat(2,1fr)}}
+""" + TREE_CSS + FIG_CSS + """</style>""" + FIG_JS

@@ -424,3 +424,25 @@ def account_of_ship_to(ship_to: str) -> str | None:
 def unit_of_account(account: str) -> str | None:
     r = one("select planning_unit from dims.dim_account where account_code = ?", account)
     return r["planning_unit"] if r else None
+
+
+def fiscal_years(version_id: str) -> list[int]:
+    """The fiscal years a version carries, actual or plan."""
+    return [r["fiscal_year"] for r in q("select distinct fiscal_year from plan.demand_review where version_id = ? order by 1", version_id)]
+
+
+def like_for_like(series: dict) -> dict:
+    """A series read against its reference on the points both value: the view's planned points that the reference also
+    values. Closed points are what was invoiced, not a forecast, so they are left out — the same rule as revenue_fy, at
+    any node and either grain. Also the year's invoiced to date, the view's whole year, the reference's whole year, and
+    the prior year invoiced only when it covers every point (a year still closing is no year to grow against)."""
+    view, ref, py = series["view"], series["ref"], series["py"]
+    both = [k["k"] for k in series["keys"] if k["k"] in view and view[k["k"]]["source"] == "plan" and k["k"] in ref]
+    lv = sum(view[k]["total"] for k in both); bp = sum(ref[k]["total"] for k in both)
+    labels = {k["k"]: k for k in series["keys"]}
+    return {"keys": both, "view": lv if both else None, "ref": bp if both else None, "gap": lv - bp if both else None,
+            "from": labels[both[0]] if both else None, "to": labels[both[-1]] if both else None,
+            "invoiced": sum(x["total"] for x in view.values() if x["source"] == "actual"),
+            "year": series["total"], "ref_year": sum(x["total"] for x in ref.values()) if ref else None,
+            "py_year": sum(x["total"] for x in py.values()) if py and len(py) == len(series["keys"]) else None,
+            "py_part": 0 < len(py) < len(series["keys"])}
