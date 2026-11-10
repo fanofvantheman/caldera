@@ -154,7 +154,8 @@ def terms() -> list[dict]:
 def price_lists() -> list[dict]:
     """Every price list with its currency, the accounts on it, and each material's rows in validity order, so an
     increase reads as a dated event with the price before and after."""
-    rows = q("select * from history.price_list order by price_list, material_code, valid_from")
+    rows = q("""select p.*, coalesce(m.material_name, p.material_code) as material_name from history.price_list p
+                left join dims.dim_material m on m.material_code = p.material_code order by p.price_list, p.material_code, p.valid_from""")
     accts = q("select price_list, account_code, account_name from dims.dim_account order by account_name")
     out: dict[str, dict] = {}
     for r in rows:
@@ -169,7 +170,7 @@ def price_lists() -> list[dict]:
             cur = rs[-1]
             prev = rs[-2] if len(rs) > 1 else None
             chg = None if prev is None or not prev["price_per_case"] else cur["price_per_case"] / prev["price_per_case"] - 1
-            mats.append({"material_code": code, "rows": rs, "current": cur, "prior": prev, "change": chg})
+            mats.append({"material_code": code, "material_name": cur["material_name"], "rows": rs, "current": cur, "prior": prev, "change": chg})
             for i, r in enumerate(rs):
                 if r["price_event"]:
                     e = pl["events"].setdefault((r["price_event"], r["valid_from"]), {"event": r["price_event"], "effective": r["valid_from"], "n": 0, "chg": []})

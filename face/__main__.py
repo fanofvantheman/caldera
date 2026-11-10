@@ -689,7 +689,7 @@ PRICE_LISTS = """<h1>Price lists<small>list price per case in the list's currenc
 {% for e in pl.events %}<tr><td>{{ e.event }}</td><td>{{ e.effective }}</td><td class="n">{{ e.n }}</td><td class="n">{{ e.avg|pct1s }}</td></tr>{% endfor %}
 </tbody></table>{% endif %}
 <table><thead><tr><th>Material</th><th class="n">Price before</th><th>Valid</th><th class="n">Price in force</th><th>Valid</th><th class="n">Change</th><th>Event</th></tr></thead><tbody>
-{% for m in pl.materials %}{% set c = m.current %}{% set p = m.prior %}<tr><td>{{ m.material_code }}</td>
+{% for m in pl.materials %}{% set c = m.current %}{% set p = m.prior %}<tr><td>{{ m.material_name }} <span class="muted">{{ m.material_code }}</span></td>
 <td class="n">{{ p.price_per_case|n(2) if p else '' }}</td><td>{% if p %}{{ p.valid_from }} to {{ p.valid_to or 'open' }}{% endif %}</td>
 <td class="n">{{ c.price_per_case|n(2) }}</td><td>{{ c.valid_from }} to {{ c.valid_to or 'open' }}</td>
 <td class="n">{{ m.change|pct1s if m.change is not none else '' }}</td><td>{{ c.price_event or '' }}</td></tr>{% endfor %}
