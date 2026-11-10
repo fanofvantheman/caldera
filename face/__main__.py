@@ -663,13 +663,45 @@ def events():
         return _busy("Promotions", e)
 
 
+TERMS = """<h1>Terms<small>the instruments in force, by account</small></h1>
+{% for a in groups %}<h2>{{ a.account_name }}<span class="count">{{ a.account_code }} · {{ a.rows|length }} instrument{{ '' if a.rows|length == 1 else 's' }}</span></h2>
+<table><thead><tr><th>Instrument</th><th>Kind</th><th>Driver basis</th><th class="n">Rate</th><th>Flow position</th><th>Conditionality</th><th>Settlement</th><th>Material scope</th><th>Valid from</th><th>Valid to</th><th>Note</th></tr></thead><tbody>
+{% for r in a.rows %}<tr><td>{{ r.instrument_code }}</td><td>{{ r.instrument_kind }}</td><td>{{ r.driver_basis }}</td><td class="n">{{ r.rate }}</td><td>{{ r.flow_position }}</td><td>{{ r.conditionality }}</td><td>{{ r.settlement_timing }}</td><td>{{ r.scope_material or '' }}</td><td>{{ r.valid_from }}</td><td>{{ r.valid_to or '' }}</td><td>{{ r.note or '' }}</td></tr>{% endfor %}
+</tbody></table>{% endfor %}"""
+
+
 @plan.get("/terms")
 def terms():
     try:
-        cols = ["instrument_code", "account_code", "instrument_kind", "driver_basis", "rate", "flow_position", "conditionality", "settlement_timing", "scope_material", "valid_from", "valid_to", "note"]
-        return _page("<h1>Terms<small>the instruments in force, by account</small></h1>" + _table(reads.terms(), cols), title="Terms", active="terms")
+        names = {a["account_code"]: a["account_name"] for a in q("select account_code, account_name from dims.dim_account")}
+        groups: dict[str, dict] = {}
+        for r in reads.terms():
+            g = groups.setdefault(r["account_code"], {"account_code": r["account_code"], "account_name": names.get(r["account_code"], r["account_code"]), "rows": []})
+            g["rows"].append(r)
+        return _page(TERMS, title="Terms", active="terms", groups=sorted(groups.values(), key=lambda g: g["account_name"]))
     except Busy as e:
         return _busy("Terms", e)
+
+
+PRICE_LISTS = """<h1>Price lists<small>list price per case in the list's currency, effective-dated; an increase is a dated event</small></h1>
+{% for pl in lists %}<h2>{{ pl.price_list }}<span class="count">{{ pl.currency }} · {{ pl.materials|length }} materials · on it: {% for a in pl.accounts %}{{ a.account_name }}{{ ', ' if not loop.last }}{% else %}no account{% endfor %}</span></h2>
+{% if pl.events %}<table><thead><tr><th>Increase event</th><th>Effective</th><th class="n">Materials repriced</th><th class="n">Average change</th></tr></thead><tbody>
+{% for e in pl.events %}<tr><td>{{ e.event }}</td><td>{{ e.effective }}</td><td class="n">{{ e.n }}</td><td class="n">{{ e.avg|pct1s }}</td></tr>{% endfor %}
+</tbody></table>{% endif %}
+<table><thead><tr><th>Material</th><th class="n">Price before</th><th>Valid</th><th class="n">Price in force</th><th>Valid</th><th class="n">Change</th><th>Event</th></tr></thead><tbody>
+{% for m in pl.materials %}{% set c = m.current %}{% set p = m.prior %}<tr><td>{{ m.material_code }}</td>
+<td class="n">{{ p.price_per_case|n(2) if p else '' }}</td><td>{% if p %}{{ p.valid_from }} to {{ p.valid_to or 'open' }}{% endif %}</td>
+<td class="n">{{ c.price_per_case|n(2) }}</td><td>{{ c.valid_from }} to {{ c.valid_to or 'open' }}</td>
+<td class="n">{{ m.change|pct1s if m.change is not none else '' }}</td><td>{{ c.price_event or '' }}</td></tr>{% endfor %}
+</tbody></table>{% endfor %}"""
+
+
+@plan.get("/price_lists")
+def price_lists():
+    try:
+        return _page(PRICE_LISTS, title="Price lists", active="pricelists", lists=reads.price_lists())
+    except Busy as e:
+        return _busy("Price lists", e)
 
 
 @plan.get("/versions")

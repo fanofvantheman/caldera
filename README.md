@@ -70,7 +70,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   version (a withdrawal is a later row that names the entry; the entry stays, struck through), a new entry placed as a
   file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the
   reason offered on the layer — flagged, not refused), the revenue bridge, the gap to the reference version by period and by material, launches and exits as the
-  innovation layers' entries, the promotions and terms registers, the versions, the rungs named but not yet built
+  innovation layers' entries, the promotions and terms registers (terms grouped by account with every attribute; **price lists** with the accounts on each, the price before and in force per material and the dated increase events),
+  the versions, the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
   whoever holds `run.plan`, the log kept. Every act writes a receipt under `data/receipts/`. What a page shows is what
   the last run said: an entry placed is in the plan after the next run, and a withdrawal of an entry the warehouse has

@@ -151,6 +151,38 @@ def terms() -> list[dict]:
     return q("select * from plan.terms order by account_code, instrument_code")
 
 
+def price_lists() -> list[dict]:
+    """Every price list with its currency, the accounts on it, and each material's rows in validity order, so an
+    increase reads as a dated event with the price before and after."""
+    rows = q("select * from history.price_list order by price_list, material_code, valid_from")
+    accts = q("select price_list, account_code, account_name from dims.dim_account order by account_name")
+    out: dict[str, dict] = {}
+    for r in rows:
+        pl = out.setdefault(r["price_list"], {"price_list": r["price_list"], "currency": r["currency"], "materials": {}, "accounts": [], "events": {}})
+        pl["materials"].setdefault(r["material_code"], []).append(r)
+    for a in accts:
+        if a["price_list"] in out:
+            out[a["price_list"]]["accounts"].append(a)
+    for pl in out.values():
+        mats = []
+        for code, rs in pl["materials"].items():
+            cur = rs[-1]
+            prev = rs[-2] if len(rs) > 1 else None
+            chg = None if prev is None or not prev["price_per_case"] else cur["price_per_case"] / prev["price_per_case"] - 1
+            mats.append({"material_code": code, "rows": rs, "current": cur, "prior": prev, "change": chg})
+            for i, r in enumerate(rs):
+                if r["price_event"]:
+                    e = pl["events"].setdefault((r["price_event"], r["valid_from"]), {"event": r["price_event"], "effective": r["valid_from"], "n": 0, "chg": []})
+                    e["n"] += 1
+                    if i and rs[i - 1]["price_per_case"]:
+                        e["chg"].append(r["price_per_case"] / rs[i - 1]["price_per_case"] - 1)
+        pl["materials"] = mats
+        pl["events"] = sorted(pl["events"].values(), key=lambda e: e["effective"])
+        for e in pl["events"]:
+            e["avg"] = sum(e["chg"]) / len(e["chg"]) if e["chg"] else None
+    return list(out.values())
+
+
 # ---- submissions ----
 def units() -> list[dict]:
     return q("""select distinct h.ancestor_code as code, a.planning_unit_name as unit_name from dims.dim_customer_hierarchy h

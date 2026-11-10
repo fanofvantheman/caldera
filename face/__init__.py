@@ -42,6 +42,7 @@ PROCESSES = [
             Section("new", "New entry", "plan.entry_new", verbs=ENTER),
             Section("events", "Promotions", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
             Section("terms", "Terms", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill"]),
+            Section("pricelists", "Price lists", "plan.price_lists", verbs=["register.price_list.maintain", "read.drill"]),
             Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"]),
         ]),
         Area("supply", "Supply", [
