@@ -41,18 +41,25 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   sales, because history is revenue and units and price is the derived figure — the price lists, and what each earlier cycle's
   latest view said (the forecast snapshots accuracy is read from); `registers.py` the
   versions, roles, capacity register and planning assumptions; `plan.py` what the people typed — layer entries on
-  each version, the promotions calendar, the terms register. Deterministic from a seed; output is regenerated
+  each version, the promotions calendar, the terms register; `sender.py` the promotions system that keeps Westbrook's
+  and Carters' calendars and sends them in its own codes (its planning accounts, product groups, tactics, fund types,
+  status words): the calendar re-issued through its two doors — their events as the export already taken in, with the
+  mapping of their codes to ours accepted when the sender was connected, Merritt's typed in the plan — the mechanic,
+  funding-type and status lists the mapping lands on, and the next export waiting in `data/generated/sender/` to be
+  taken in (new events, one moved, one cancelled, one for an account whose promotions are typed here, and codes the
+  mapping has not seen). Deterministic from a seed; output is regenerated
   every run and never committed.
 - `ingest/pipeline.py` — dlt: one resource per file into `bronze`, replaced whole on every load. A plan table is fed by
   the generated file and then every file the face has placed under `data/landing/plan/<table>/`, in file order —
-  file order is time order; the face is the landing's only writer.
+  file order is time order; the face is the landing's only writer. The sender's outbox (`data/generated/sender/`) is
+  read by the face, never loaded: a file reaches the landing only when someone takes it in.
 - `face/` — the planning face, organised around the person. The processes in play are a register (`face/__init__.py`
   `PROCESSES`: integrated planning, financial planning, actuals, admin), each with its areas and pages and the verbs
   that make a page relevant; a person sees the processes, areas and pages their roles reach, and their home page is
   what those processes expect of them today — their entries awaiting the cycle, the gap to reference, the versions,
   the files waiting for a run. Above that, **My attention**: every row the last run routed to the person — the
   worklists under `models/worklists/` (entries refused, withdrawals refused, entries unresolved, reasons unknown,
-  cells below zero), each row carrying `whose`, with `plan.run_health` as the row-per-worklist index the run page
+  cells below zero, promotions held, promotions refused, mappings to review), each row carrying `whose`, with `plan.run_health` as the row-per-worklist index the run page
   shows. Nothing on the home page is typed: a row exists because the run produced it. Someone who submits the
   demand plan gets the plan as a whole as their home page, in money — a case means one thing at a material and nothing
   above it: the fiscal year's net sales against last year's invoiced, net sales against the reference on the periods both value, **forecast accuracy** (the plan judged as a forecast: what the
@@ -81,7 +88,21 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   version (a withdrawal is a later row that names the entry; the entry stays, struck through), a new entry placed as a
   file after its checks (version open, who holds the layer's enter verb, both scopes resolve, window in horizon, the
   reason offered on the layer — flagged, not refused), the revenue bridge, the gap to the reference version by period and by material, launches and exits as the
-  innovation layers' entries, the promotions and terms registers (terms grouped by account with every attribute; **price lists** with the accounts on each, the price before and in force per material and the dated increase events),
+  innovation layers' entries, **promotions** — one calendar, two doors: each account says where its promotions are
+  kept (`promotions_master`: the promotions system for Westbrook and Carters, typed here for every other account); a file
+  from the promotions system is taken in by an act (its header and funding lines into the landing, a re-sent event
+  replacing the earlier, a cancelled one removed), and every code in it no mapping has named is given a proposed target
+  with a confidence and a one-line reason by the shared mapping tool (`99_core_clones/coa_map-*.whl`, a real model call
+  when `ANTHROPIC_API_KEY` is set; without it the take-in says the first pass did not run and the codes wait for a
+  person). The page shows the calendar with each event's source and, for a sent event, its own codes beside ours, and
+  any funding the gross-to-net does not price yet; the **held** events (a code not mapped or not reviewed) with what each
+  waits for and the cases and net sales it would bring; the **refused** (the wrong door, with the reason) and the
+  cancelled; and, for an account whose promotions are typed here, a **new event** form — account, promo group, window,
+  mechanic, price reduction per case, scan funding, fixed fee, status — whose uplift and dip default from the mechanic
+  register unless overridden with a note, placed after its checks like an entry (an event typed at an account the
+  promotions system keeps is refused). The **mapping review** lists the codes waiting for a person, lowest confidence
+  first: accept, or alter to another of ours with a reason (or map a code nobody proposed); a held event enters on the
+  first run after. Held, refused and to-review rows reach trade marketing through My attention. The terms register (terms grouped by account with every attribute; **price lists** with the accounts on each, the price before and in force per material and the dated increase events),
   the versions, the **revenue forecast** under financial planning (net sales by fiscal year across its periods, per week —
   invoiced, the latest view and its reference laid over one another, last year faint; read against the reference only on
   the periods both value, with the gap by period; at the plan or any node of either structure, the level below as a split;
@@ -94,13 +115,16 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   are the **chassis** (`99_core_clones/chassis-*.whl`, a dependency in `pyproject.toml`) — the part of a face that does
   not know which method it carries, shared with the other builds. `99_core_clones/chassis_usage.md` says how it is used.
 - `config.yaml` + `models/` — the SQLMesh project:
-  - `dims/` the calendar (weeks, periods with relative position), versions, the four structures as hierarchy
+  - `dims/` the calendar (weeks, periods with relative position), versions, the mechanic, funding-type and promotion
+    status registers, the four structures as hierarchy
     bridges (material, customer, location, organisation), the bill of materials, routes, lanes, the capacity
     register, the assumptions register, roles and the entitlements derived from them
   - `history/` shipments at week and period grain with gross and net sales invoiced, price lists, each earlier cycle's latest view at the plan's grain
   - `plan/` the demand plan and its money: the category trend and the history shape fitted from cleansed
     shipments; the layer entries as filed and resolved to the grid; layer 1 computed for the open version and
-    entered for the frozen one; the promotions calendar's uplift and dip lines, day-weighted into the weeks a
+    entered for the frozen one; the promotions calendar resolved from both doors (`promo_sender_event` through the
+    mapping register `promo_mapping` and the funding lines `promo_funding`; `promo_typed_event` with the mechanic's
+    default response; `promo_event` the one calendar) and its uplift and dip lines, day-weighted into the weeks a
     dated window touches; the stack (every layer line, keyed by version and source); the unconstrained demand plan
     at storage grain and at the review's grain with each layer beside the total; the list price and terms in force
     by week; every line valued through the gross-to-net (wide, and long with each deduction's attributes); the
@@ -109,7 +133,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
 - `audits/` — the checks every model runs: every member reaches its root, every week in one period, exactly one
   open period, vocabularies, references resolve, one person does not both enter demand and enter the supply
   constraint; an entry is on a known version, resolves to leaves, and was entered by the layer's owner; every
-  case has a list price in force; gross less every deduction is net on every line; the long form ties to the wide.
+  case has a list price in force; gross less every deduction is net on every line; the long form ties to the wide; an
+  event in the calendar came through its account's door; a mapping in force lands on a member of our list.
 
 ## Stack
 

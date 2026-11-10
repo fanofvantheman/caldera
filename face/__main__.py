@@ -16,6 +16,7 @@ from chassis.warehouse import Busy, q
 from . import ENTRY_COLUMNS, HEALTH, SHELL, SUBMISSION_COLUMNS, roles, session
 from . import reads
 from . import dashboard
+from . import promotions
 
 plan = Blueprint("plan", __name__)
 ENTRIES = LogLanding("plan", "layer_entry", ENTRY_COLUMNS)
@@ -113,7 +114,7 @@ def _expected(area_key: str, who: str, held: set[str]) -> list[dict]:
             vs = reads.versions()
             say(", ".join(f"{x['version_id']} {x['status']}" for x in vs if x["version_kind"] != "actual"))
         elif area_key == "run":
-            pend = ENTRIES.pending()
+            pend = _pending()
             say(f"{len(pend)} file{'s' if len(pend) > 1 else ''} waiting for the next run" if pend else "the plan is current with the landing")
             if session.run_log:
                 say("last run: " + ("completed" if "✗" not in session.run_log else "stopped"), "✗" not in session.run_log)
@@ -130,6 +131,10 @@ def _where(surface: str, r: dict) -> str | None:
     submission to the matrix at its unit. A row with nothing to go to gets no link."""
     v = r.get("version_id")
     try:
+        if r.get("local_code"):
+            return url_for("plan.mapping") + f"#{r['subject']}-{r['local_code']}"
+        if r.get("event_id"):
+            return url_for("plan.events") + f"#{r['event_id']}"
         if r.get("entry_id"):
             return url_for("plan.entries", version=v, layer=r.get("layer_no") or "", withdrawn=1) + f"#{r['entry_id']}"
         if r.get("ship_to_code"):
@@ -148,10 +153,19 @@ def _mine(who: str, held: set[str]) -> list[dict]:
     """What the last run routed to this person, plus the one thing the face itself can see: files placed and not yet run."""
     rows = [{"item": a["row"].get("item") or a["surface"], "name": a["name"], "what_to_do": a["what_to_do"], "severity": a["severity"], "href": _where(a["surface"], a["row"])}
             for a in attention(q, who, HEALTH)]
+    if "register.promo_calendar.maintain" in held:
+        for f in promotions.waiting():
+            rows.append({"item": f"{f['file_id']} from the promotions system: {len(f['events'])} events waiting to be taken in", "name": "promotions sender",
+                         "what_to_do": "take the file in on the promotions page", "severity": "ACTION", "href": url_for("plan.events")})
     if "run.plan" in held:
-        for f in ENTRIES.pending():
+        for f in _pending():
             rows.append({"item": f"{f.name} placed, not yet in the plan", "name": "landing", "what_to_do": "run the plan to take it in", "severity": "PENDING", "href": url_for("plan.run")})
     return rows
+
+
+def _pending() -> list[pathlib.Path]:
+    """Every file any act has placed since the last run, across the landing's tables."""
+    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending()
 
 
 def _d(a: float | None, b: float | None) -> float | None:
@@ -714,14 +728,263 @@ def _table(rows: list[dict], cols: list[str]) -> str:
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
+# ---- promotions: one calendar, two doors ----
+EVENTS = """<h1>Promotions<small>{{ version }} · one calendar, two doors — the promotions system sends the events of the accounts it keeps, in its own codes; every other account's events are typed here</small></h1>
+<div class="cards"><div class="card stat"><b>{{ cal|length }}</b><span>events in the calendar · {{ n_sender }} sent, {{ n_plan }} typed</span></div>
+<div class="card stat"><b>{{ held_events|length }}</b><span>held — waiting for a mapping</span></div>
+<div class="card stat"><b>{{ refused|length }}</b><span>refused at the door</span></div>
+<div class="card stat"><b>{{ waiting }}</b><span>file{{ '' if waiting == 1 else 's' }} from the promotions system waiting</span></div></div>
+<p class="small muted">Where each account's promotions are kept: {% for a in accounts %}{{ a.account_code }} {{ 'promotions system' if a.promotions_master == 'TPM' else 'typed here' }}{{ ' · ' if not loop.last }}{% endfor %}</p>
+<h2 id="sender">From the promotions system<span class="count">each file is taken in by an act; a re-sent event replaces the earlier one, a cancelled one is removed</span></h2>
+<table><thead><tr><th>File</th><th class="n">Events</th><th class="n">Funding lines</th><th>State</th><th></th></tr></thead><tbody>
+{% for f in files %}<tr><td><code>{{ f.file_id }}</code></td><td class="n">{{ f.events|length if f.events else '' }}</td><td class="n">{{ f.funding|length if f.funding else '' }}</td>
+<td>{% if f.taken_in_at %}taken in {{ f.taken_in_at }}{% else %}<span class="severity">waiting</span>{% endif %}</td>
+<td>{% if not f.taken_in_at and may %}<form class="inline" method="post" action="{{ url_for('plan.take_in') }}"><input type="hidden" name="file_id" value="{{ f.file_id }}"><button class="act">Take in</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+<h2 id="calendar">The calendar<span class="count">every event the plan carries, by window — the promotions system's codes beside ours</span></h2>
+<table><thead><tr><th>Event</th><th>Source</th><th>Account</th><th>Promo group</th><th>Window</th><th>Mechanic</th><th class="n">Uplift</th><th class="n">Dip</th><th>Response</th>
+<th class="n">Price reduction / case</th><th class="n">Scan / case</th><th class="n">Fixed fee</th><th>Status</th><th>Their codes</th><th>Funding not yet priced</th></tr></thead><tbody>
+{% for e in cal %}<tr id="{{ e.event_id }}"><td>{{ e.event_id }}</td><td>{{ 'promotions system' if e.source == 'sender' else 'typed' }}</td><td>{{ e.account_code }}</td><td>{{ e.promo_group_code }}</td>
+<td>{{ e.window_start }} – {{ e.window_end }}</td><td>{{ e.mechanic }} <span class="muted small">{{ e.mechanic_family }}</span></td><td class="n">{{ e.uplift_pct|pct1 }}</td><td class="n">{{ e.dip_pct|pct1 }}</td>
+<td class="small">{{ e.response_source }}{% if e.note %} — {{ e.note }}{% endif %}</td><td class="n">{{ e.tpr_per_case|n(2) }}</td><td class="n">{{ e.scan_funding_per_case|n(2) }}</td><td class="n">{{ e.fixed_fee|n }}</td>
+<td>{{ e.status }}</td><td class="small muted">{{ e.local_codes or '' }}</td><td class="small">{{ e.unpriced_funding or '' }}</td></tr>{% endfor %}
+</tbody></table>
+<h2 id="held">Held<span class="count">sent, not in the calendar until every code is mapped — what each waits for and what it would bring</span></h2>
+{% if held_events %}<table><thead><tr><th>Event</th><th>Their codes</th><th>Ours so far</th><th>Window</th><th>Waits for</th><th class="n">Cases it would bring</th><th class="n">Net sales it would bring</th><th class="n">Fixed fee</th></tr></thead><tbody>
+{% for h in held_events %}<tr id="{{ h.event_id }}"><td>{{ h.event_id }}</td><td class="small">{{ h.local_account }} · {{ h.local_product_group }} · {{ h.local_tactic }} · {{ h.local_status }}</td>
+<td class="small">{{ h.account_code or '?' }} · {{ h.promo_group_code or '?' }}</td><td>{{ h.window_start }} – {{ h.window_end }}</td><td class="small">{{ h.waits_for }}</td>
+<td class="n">{{ h.would_bring_cases|n }}</td><td class="n">{{ h.would_bring_net_sales|n }}</td><td class="n">{{ h.would_bring_fixed_fee|n }}</td></tr>{% endfor %}
+</tbody></table>{% if may_map %}<p class="hint"><a href="{{ url_for('plan.mapping') }}">Review the codes they wait for</a> — they enter on the next run after.</p>{% endif %}
+{% else %}<p class="muted">Nothing held.</p>{% endif %}
+<h2 id="refused">Refused<span class="count">came through the wrong door — stays on file, out of the calendar</span></h2>
+{% if refused %}<table><thead><tr><th>Event</th><th>From</th><th>Account</th><th>Window</th><th>Why</th></tr></thead><tbody>
+{% for r in refused %}<tr id="{{ r.event_id }}"><td>{{ r.event_id }}</td><td>{{ 'promotions system' if r.source == 'sender' else 'typed' }}</td><td>{{ r.account_code }}{% if r.local_account %} <span class="muted small">{{ r.local_account }}</span>{% endif %}</td>
+<td>{{ r.window_start }} – {{ r.window_end }}</td><td>{{ r.refused_because }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="muted">Nothing refused.</p>{% endif %}
+{% if cancelled %}<h2>Cancelled by the promotions system</h2><table><thead><tr><th>Event</th><th>Their codes</th><th>Window</th><th>File</th></tr></thead><tbody>
+{% for c in cancelled %}<tr><td>{{ c.event_id }}</td><td class="small">{{ c.local_account }} · {{ c.local_product_group }}</td><td>{{ c.window_start }} – {{ c.window_end }}</td><td><code>{{ c.sender_file }}</code></td></tr>{% endfor %}</tbody></table>{% endif %}
+{% if pending %}<p class="hint">{{ pending|length }} file{{ '' if pending|length == 1 else 's' }} placed since the last run — the calendar shows them after the run.</p>{% endif %}
+{% if may %}<h2 id="new">New event<span class="count">for an account whose promotions are typed here — the plan supplies the response from the mechanic unless you override it, with a note</span></h2>
+<form class="entry" method="post" action="{{ url_for('plan.event_new') }}">
+<label>account<select name="account_code">{% for a in accounts %}<option value="{{ a.account_code }}">{{ a.account_code }} · {{ a.account_name }}{{ ' (promotions system)' if a.promotions_master == 'TPM' }}</option>{% endfor %}</select></label>
+<label>promo group<select name="promo_group_code">{% for g in groups %}<option value="{{ g.promo_group_code }}">{{ g.promo_group_code }} · {{ g.promo_group_name }}</option>{% endfor %}</select></label>
+<label>shopper window from<input name="window_start" type="date" required></label>
+<label>to<input name="window_end" type="date" required></label>
+<label>mechanic<select name="mechanic">{% for m in mechanics %}<option value="{{ m.mechanic }}">{{ m.mechanic }} · uplift {{ m.default_uplift_pct|pct1 }}, dip {{ m.default_dip_pct|pct1 }}</option>{% endfor %}</select></label>
+<label>status<select name="status"><option>agreed</option><option>proposed</option></select></label>
+<label>price reduction per case<input name="tpr_per_case" type="number" step="0.01" min="0" value="0"></label>
+<label>scan funding per case<input name="scan_funding_per_case" type="number" step="0.01" min="0" value="0"></label>
+<label>fixed fee<input name="fixed_fee" type="number" step="1" min="0" value="0"></label>
+<label>uplift (blank: the mechanic's)<input name="uplift_pct" type="number" step="0.01" min="0" placeholder="e.g. 0.6 for +60%"></label>
+<label>dip (blank: the mechanic's)<input name="dip_pct" type="number" step="0.01" min="0" placeholder="e.g. 0.15"></label>
+<label class="wide">note<textarea name="note" rows="2" placeholder="required when the response is overridden"></textarea></label>
+<div class="actions"><button class="primary">Place event</button><span class="hint">on {{ version }} by {{ who }} as at today — in the calendar after the next run</span></div></form>{% endif %}
+{% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
+
+
 @plan.get("/events")
 def events():
     try:
-        rows = reads.events()
-        cols = ["event_id", "version_id", "account_code", "promo_group_code", "window_start", "window_end", "mechanic", "uplift_pct", "dip_pct", "tpr_per_case", "scan_funding_per_case", "fixed_fee", "status", "owner"]
-        return _page("<h1>Promotions<small>the calendar: dated windows, the uplift in the window and the dip after</small></h1>" + _table(rows, cols), title="Promotions", active="events")
+        who = _who(); version = reads.default_version()
+        cal = reads.events()
+        return _page(EVENTS, title="Promotions", active="events", width="none", version=version, cal=cal,
+                     n_sender=sum(1 for e in cal if e["source"] == "sender"), n_plan=sum(1 for e in cal if e["source"] == "plan"),
+                     held_events=reads.events_held(), refused=reads.events_refused(), cancelled=reads.events_cancelled(),
+                     files=promotions.sender_files(), waiting=len(promotions.waiting()), accounts=reads.accounts_master(),
+                     groups=reads.promo_groups(), mechanics=reads.mechanics(), pending=promotions.pending(),
+                     may=roles.may(who, "register.promo_calendar.maintain"),
+                     may_map=roles.may(who, "mapping.accept") or roles.may(who, "mapping.alter"), last=session.last)
     except Busy as e:
         return _busy("Promotions", e)
+
+
+def _date(x: str | None) -> dt.date | None:
+    try:
+        return dt.date.fromisoformat(x or "")
+    except ValueError:
+        return None
+
+
+def _num(x, blank=None) -> float | None:
+    if x is None or str(x).strip() == "":
+        return blank
+    try:
+        return float(x)
+    except ValueError:
+        return None
+
+
+def _window_checks(start: dt.date | None, end: dt.date | None, version: str) -> dict:
+    v = reads.version(version) or {}
+    hz = reads.horizon(version)
+    lo = q("select min(week_start) d from dims.dim_week where period = ?", hz[0])[0]["d"] if hz else None
+    hi = q("select max(week_end) d from dims.dim_week where period = ?", hz[-1])[0]["d"] if hz else None
+    ok = bool(start and end and lo and start <= end and start >= lo and end <= hi)
+    return {"check": "window in horizon", "ok": ok,
+            "says": f"{start} – {end} within {v.get('horizon_start')} – {v.get('horizon_end')}" if ok else "window missing, reversed or outside the version's horizon"}
+
+
+@plan.post("/events/take_in")
+def take_in():
+    """A file from the promotions system into the landing, then the first pass over the codes nobody has mapped."""
+    who = _who(); fid = request.form["file_id"]; version = reads.default_version()
+    f = next((x for x in promotions.sender_files() if x["file_id"] == fid), None)
+    ids = {e.get("event_id") for e in (f or {}).get("events", [])}
+    dated = all(_date(e.get("shopper_start")) and _date(e.get("shopper_end")) and _date(e["shopper_start"]) <= _date(e["shopper_end"]) for e in (f or {}).get("events", []))
+    lines_ok = all(x.get("event_id") in ids and _num(x.get("rate")) is not None for x in (f or {}).get("funding", []))
+    may = roles.may(who, "register.promo_calendar.maintain")
+    checks = [
+        {"check": "who may take it in", "ok": may, "says": f"{who} holds register.promo_calendar.maintain" if may else f"{who} does not hold register.promo_calendar.maintain"},
+        {"check": "file waiting", "ok": bool(f and f["events"] and not f["taken_in_at"]),
+         "says": f"{fid}: {len(f['events'])} events, {len(f['funding'])} funding lines" if f and f["events"] and not f["taken_in_at"] else f"{fid} is not waiting" + (f" — taken in {f['taken_in_at']}" if f and f["taken_in_at"] else "")},
+        {"check": "version open", "ok": bool(version), "says": f"into {version}" if version else "no open version"},
+        {"check": "every event dated", "ok": bool(f) and dated and all(ids), "says": "every event has an id and an ordered shopper window" if f and dated and all(ids) else "an event has no id or its window is missing or reversed"},
+        {"check": "every funding line on an event", "ok": bool(f) and lines_ok, "says": "every funding line names an event in the file and carries a rate" if f and lines_ok else "a funding line names no event in the file, or has no rate"},
+    ]
+    placed = receipts.judge(checks)
+    if placed:
+        promotions.take_in(f, version, who)
+        n, says, ran = promotions.first_pass(promotions.unmapped(promotions.codes_in(f["events"], f["funding"])), who)
+        checks.append({"check": "first pass on new codes", "ok": ran, "flag": True, "says": says})
+    session.last = receipts.write("take_in", who, fid, checks, placed)
+    session.say(f"{fid} taken in — {checks[-1]['says']}; the calendar reads it after the next run" if placed
+                else "take-in refused: " + "; ".join(c["says"] for c in checks if not c["ok"] and not c.get("flag")), placed)
+    return redirect(url_for("plan.events") + "#sender")
+
+
+@plan.post("/events/new")
+def event_new():
+    """An event typed in the plan: the plan's checks, then the act — a file in the landing and a receipt."""
+    f = request.form; who = _who(); version = reads.default_version() or ""
+    v = reads.version(version)
+    acct = reads.account(f.get("account_code", "")) or {}
+    mech = next((m for m in reads.mechanics() if m["mechanic"] == f.get("mechanic")), None)
+    groups = {g["promo_group_code"] for g in reads.promo_groups()}
+    start, end = _date(f.get("window_start")), _date(f.get("window_end"))
+    tpr, scan, fee = _num(f.get("tpr_per_case"), 0.0), _num(f.get("scan_funding_per_case"), 0.0), _num(f.get("fixed_fee"), 0.0)
+    up, dip = _num(f.get("uplift_pct")), _num(f.get("dip_pct"))
+    up_given, dip_given = str(f.get("uplift_pct") or "").strip() != "", str(f.get("dip_pct") or "").strip() != ""
+    overridden = bool(mech) and ((up_given and up != mech["default_uplift_pct"]) or (dip_given and dip != mech["default_dip_pct"]))
+    note = (f.get("note") or "").strip()
+    may = roles.may(who, "register.promo_calendar.maintain")
+    numbers = all(x is not None and x >= 0 for x in (tpr, scan, fee)) and (not up_given or (up is not None and up >= 0)) and (not dip_given or (dip is not None and dip >= 0))
+    checks = [
+        {"check": "version open", "ok": bool(v and v["status"] == "open"), "says": f"{version} is {v['status'] if v else 'unknown'}"},
+        {"check": "who may enter", "ok": may, "says": f"{who} holds register.promo_calendar.maintain" if may else f"{who} does not hold register.promo_calendar.maintain"},
+        {"check": "account's promotions typed here", "ok": acct.get("promotions_master") == "PLAN",
+         "says": f"{acct.get('account_code')} promotions are typed in the plan" if acct.get("promotions_master") == "PLAN"
+                 else (f"{acct.get('account_code')} promotions come from the promotions system — enter them there" if acct else "unknown account")},
+        {"check": "promo group known", "ok": f.get("promo_group_code") in groups, "says": f"{f.get('promo_group_code')} is a promo group" if f.get("promo_group_code") in groups else f"{f.get('promo_group_code')} is not a promo group"},
+        _window_checks(start, end, version),
+        {"check": "mechanic known", "ok": mech is not None, "says": f"{mech['mechanic']} ({mech['family']})" if mech else f"{f.get('mechanic')} is not a mechanic on the register"},
+        {"check": "funding are numbers", "ok": numbers, "says": "price reduction, scan funding, fee and any response are numbers, none below zero" if numbers else "a funding or response value is not a number, or below zero"},
+        {"check": "status", "ok": f.get("status") in ("agreed", "proposed"), "says": f"{f.get('status')} — " + ("in the calendar after the next run" if f.get("status") == "agreed" else "a candidate, held out of the calendar")},
+        {"check": "override carries a note", "ok": not overridden or bool(note),
+         "says": ("response overridden: " + note) if overridden and note else ("response overridden without a note — say why" if overridden else
+                 (f"response from the mechanic: uplift {mech['default_uplift_pct']:.0%}, dip {mech['default_dip_pct']:.0%}" if mech else "no mechanic"))},
+        {"check": "scan funding charged", "ok": not scan or bool(acct.get("supplies_scan_data")), "flag": True,
+         "says": "no scan funding" if not scan else (f"{acct.get('account_code')} supplies scan data" if acct.get("supplies_scan_data") else f"{acct.get('account_code')} supplies no scan data — the scan funding is carried and not charged")},
+    ]
+    placed = receipts.judge(checks)
+    eid = f"EV-F-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+    if placed:
+        promotions.TYPED.place([{"event_id": eid, "version_id": version, "account_code": acct["account_code"], "promo_group_code": f["promo_group_code"],
+                                 "window_start": start.isoformat(), "window_end": end.isoformat(), "mechanic": mech["mechanic"],
+                                 "uplift_pct": up if up_given else "", "dip_pct": dip if dip_given else "", "tpr_per_case": tpr,
+                                 "scan_funding_per_case": scan, "fixed_fee": fee, "status": f["status"], "owner": who, "baseline_version": version,
+                                 "note": note, "entered_on": dt.date.today().isoformat()}], who)
+    session.last = receipts.write("event", who, eid, checks, placed)
+    session.say(f"{eid} placed at {acct.get('account_code')} — in the calendar after the next run" if placed
+                else "event refused: " + "; ".join(c["says"] for c in checks if not c["ok"] and not c.get("flag")), placed)
+    return redirect(url_for("plan.events") + ("#calendar" if placed else "#new"))
+
+
+# ---- the mapping review ----
+MAPPING = """<h1>Mapping review<small>the promotions system's codes onto ours — accept the proposal, or alter it to another of ours with a reason; an event waits until every code it uses is accepted or altered</small></h1>
+{% if pending %}<p class="hint">{{ pending }} act{{ '' if pending == 1 else 's' }} placed since the last run — this list shows {{ 'it' if pending == 1 else 'them' }} after the run.</p>{% endif %}
+<h2 id="waiting">Waiting for a person<span class="count">{{ review|length }} code{{ '' if review|length == 1 else 's' }} · lowest confidence first</span></h2>
+{% if review %}<table><thead><tr><th>Subject</th><th>Their code</th><th>Their description</th><th>Proposed</th><th>Confidence</th><th>Why</th><th class="n">Events held</th><th>Act</th></tr></thead><tbody>
+{% for r in review %}<tr id="{{ r.subject }}-{{ r.local_code }}"><td>{{ say[r.subject] }}</td><td><code>{{ r.local_code }}</code></td><td>{{ r.local_description or '' }}</td>
+<td>{% if r.proposed_target %}{{ r.proposed_target }} <span class="muted small">{{ r.proposed_target_name }}</span>{% else %}<span class="muted">not mapped</span>{% endif %}</td>
+<td>{{ r.confidence or '' }}</td><td class="small">{{ r.rationale or '' }}</td><td class="n">{{ r.events }}</td>
+<td>{% if r.proposed_target and may_accept %}<form class="inline" method="post" action="{{ url_for('plan.mapping_act') }}"><input type="hidden" name="subject" value="{{ r.subject }}"><input type="hidden" name="local_code" value="{{ r.local_code }}">
+<input type="hidden" name="act" value="accept"><button class="act">Accept</button></form>{% endif %}
+{% if may_alter %}<form class="inline" method="post" action="{{ url_for('plan.mapping_act') }}"><input type="hidden" name="subject" value="{{ r.subject }}"><input type="hidden" name="local_code" value="{{ r.local_code }}">
+<input type="hidden" name="act" value="alter"><select name="target_code">{% for t in targets[r.subject] %}<option value="{{ t.code }}" {{ 'selected' if t.code == r.proposed_target }}>{{ t.code }}</option>{% endfor %}</select>
+<input name="reason" placeholder="reason" required size="18"><button class="act">{{ 'Alter' if r.proposed_target else 'Map' }}</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+{% if missing and may_alter %}<form method="post" action="{{ url_for('plan.mapping_propose') }}"><button class="act">Propose for the {{ missing }} code{{ '' if missing == 1 else 's' }} not mapped</button>
+<span class="hint">the first pass, for codes it has never proposed</span></form>{% endif %}
+{% else %}<p class="muted">Nothing waits for a person.</p>{% endif %}
+<h2 id="force">In force<span class="count">the latest act per code; a proposal is shown above until it is reviewed</span></h2>
+<table><thead><tr><th>Subject</th><th>Their code</th><th>Their description</th><th>Ours</th><th>Origin</th><th>State</th><th>By</th><th>At</th><th>Reason</th></tr></thead><tbody>
+{% for m in force %}{% if m.in_force %}<tr><td>{{ say[m.subject] }}</td><td><code>{{ m.local_code }}</code></td><td>{{ m.local_description or '' }}</td><td>{{ m.target_code }} <span class="muted small">{{ m.target_name }}</span></td>
+<td>{{ m.origin.replace('_', ' ') }}</td><td>{{ m.review_state }}</td><td>{{ m.acted_by }}</td><td class="small">{{ m.acted_at }}</td><td class="small">{{ m.reason or '' }}</td></tr>{% endif %}{% endfor %}
+</tbody></table>
+{% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
+
+
+@plan.get("/mapping")
+def mapping():
+    try:
+        who = _who(); review = reads.mapping_review()
+        return _page(MAPPING, title="Mapping review", active="mapping", width="none", review=review, force=reads.mapping_in_force(),
+                     targets={s: reads.mapping_targets(s) for s in promotions.SUBJECTS}, say=promotions.SAY,
+                     missing=sum(1 for r in review if r["review_state"] == "missing"), pending=len(promotions.MAPPINGS.pending()),
+                     may_accept=roles.may(who, "mapping.accept"), may_alter=roles.may(who, "mapping.alter"), last=session.last)
+    except Busy as e:
+        return _busy("Mapping review", e)
+
+
+@plan.post("/mapping/act")
+def mapping_act():
+    """Accept a proposal, or alter it (or map a code nobody proposed) to another member of our list, with a reason."""
+    f = request.form; who = _who(); subject, code, act = f["subject"], f["local_code"], f["act"]
+    row = next((r for r in reads.mapping_review() if r["subject"] == subject and r["local_code"] == code), None)
+    target = row["proposed_target"] if act == "accept" and row else f.get("target_code", "")
+    ours = {t["code"] for t in reads.mapping_targets(subject)} if subject in promotions.SUBJECTS else set()
+    verb = "mapping.accept" if act == "accept" else "mapping.alter"
+    reason = (f.get("reason") or "").strip()
+    checks = [
+        {"check": "who may " + act, "ok": roles.may(who, verb), "says": f"{who} holds {verb}" if roles.may(who, verb) else f"{who} does not hold {verb}"},
+        {"check": "code waiting for review", "ok": row is not None, "says": f"{promotions.SAY.get(subject, subject)} {code} is waiting" if row else f"{subject} {code} is not waiting for review"},
+        {"check": "a proposal to accept", "ok": act != "accept" or bool(row and row["proposed_target"]), "says": f"proposed {row['proposed_target']}" if row and row["proposed_target"] else "no proposal — map it instead"},
+        {"check": "target on our list", "ok": target in ours, "says": f"{target} is one of ours" if target in ours else f"{target or 'nothing'} is not on our {subject} list"},
+        {"check": "reason given", "ok": act == "accept" or bool(reason), "says": reason or ("not needed to accept" if act == "accept" else "an alteration says why")},
+    ]
+    placed = receipts.judge(checks)
+    if placed:
+        state = "accepted" if act == "accept" else "altered"
+        promotions.MAPPINGS.place([{"mapping_id": f"MP-F-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}", "sender": promotions.SENDER, "subject": subject,
+                                    "local_code": code, "local_description": row["local_description"] or "", "target_code": target, "origin": "person",
+                                    "review_state": state, "confidence": row["confidence"] or "", "rationale": row["rationale"] or "",
+                                    "acted_by": who, "acted_at": dt.datetime.now().isoformat(timespec="seconds"), "reason": reason}], who)
+    session.last = receipts.write("mapping." + act, who, f"{subject}:{code}", checks, placed)
+    session.say(f"{promotions.SAY.get(subject, subject)} {code} → {target} {'accepted' if act == 'accept' else 'altered'} — events waiting on it enter after the next run" if placed
+                else f"{act} refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+    return redirect(url_for("plan.mapping"))
+
+
+@plan.post("/mapping/propose")
+def mapping_propose():
+    """The first pass again, for codes on the review list that nobody has proposed — when it could not run at take-in."""
+    who = _who()
+    codes = {s: {} for s in promotions.SUBJECTS}
+    for r in reads.mapping_review():
+        if r["review_state"] == "missing":
+            codes[r["subject"]][r["local_code"]] = r["local_description"] or ""
+    codes = promotions.unmapped(codes)
+    may = roles.may(who, "mapping.alter")
+    checks = [{"check": "who may propose", "ok": may, "says": f"{who} holds mapping.alter" if may else f"{who} does not hold mapping.alter"}]
+    if may:
+        n, says, ran = promotions.first_pass(codes, who)
+        checks.append({"check": "first pass", "ok": ran, "flag": True, "says": says})
+    placed = receipts.judge(checks)
+    session.last = receipts.write("mapping.propose", who, "first pass", checks, placed)
+    session.say(checks[-1]["says"], placed and checks[-1]["ok"])
+    return redirect(url_for("plan.mapping"))
 
 
 TERMS = """<h1>Terms<small>the instruments in force, by account</small></h1>
@@ -815,7 +1078,7 @@ def run():
     except Busy:
         h = []
     return _page(RUN, title="Run and health", active="run", may_run=bool(who) and _may_run(who), run_log=session.run_log,
-                 pending=ENTRIES.pending(), receipts=receipts.recent(12), health=h)
+                 pending=_pending(), receipts=receipts.recent(12), health=h)
 
 
 def _principals_ok() -> bool:

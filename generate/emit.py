@@ -2,7 +2,9 @@
 
   reference/*.csv   structures, registers, calendar, versions, roles
   history/*.csv     shipments by material × ship-to × week; price lists
-  plan/*.csv        layer entries on a version, the promotions calendar, the terms register
+  plan/*.csv        layer entries on a version, the promotions calendar (the sender's export taken in, the events typed in
+                    the plan, the mapping of the sender's codes), the terms register
+  sender/*.csv      what the promotions sender has sent and nobody has taken in yet — read by the face, never loaded
   manifest.json     seed and counts
 """
 
@@ -29,7 +31,8 @@ def _write(path: Path, rows: list[dict]) -> int:
     return len(rows)
 
 
-def emit_all(out: Path, tables: dict[str, list[dict]], history: dict[str, list[dict]], plan: dict[str, list[dict]], seed: int) -> dict:
+def emit_all(out: Path, tables: dict[str, list[dict]], history: dict[str, list[dict]], plan: dict[str, list[dict]], seed: int,
+             outbox: dict[str, list[dict]] | None = None) -> dict:
     if out.exists():
         shutil.rmtree(out)
     counts: dict[str, int] = {}
@@ -39,6 +42,8 @@ def emit_all(out: Path, tables: dict[str, list[dict]], history: dict[str, list[d
         counts[name] = _write(out / "history" / f"{name}.csv", rows)
     for name, rows in plan.items():
         counts[name] = _write(out / "plan" / f"{name}.csv", rows)
+    for name, rows in (outbox or {}).items():
+        counts[name] = _write(out / "sender" / f"{name}.csv", rows)
     manifest = {"seed": seed, "counts": counts}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
     return manifest

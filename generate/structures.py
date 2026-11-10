@@ -486,6 +486,11 @@ ACCOUNTS = [
     ("EXPJ",  "Nihon Foods Import Co.",    "export",      "importer",      "regional",    "via importer", "JP",  "PL_EXPORT",      60, 0.0, "N", "N"),
 ]
 
+# where each account's promotions are mastered: the two majors negotiate their calendars in the trade promotion system,
+# which sends them in its own codes; every other account's events are typed in the plan. One master per account, so
+# no promotion can come in through both doors.
+PROMOTIONS_MASTER = {"WES": "TPM", "CAR": "TPM"}          # every other account: "PLAN"
+
 # (ship_to_code, account_code, name, state, serving_node, stores_served)
 # planning units: who plans the demand — a level between account and ALL on the customer structure. Export is not yet
 # significant enough to need its own planner and mostly plans itself (it takes what the domestic plan does not); it sits

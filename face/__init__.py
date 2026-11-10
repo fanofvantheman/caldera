@@ -41,6 +41,7 @@ PROCESSES = [
             Section("accuracy", "Forecast accuracy", "plan.accuracy", verbs=READ),
             Section("new", "New entry", "plan.entry_new", verbs=ENTER),
             Section("events", "Promotions", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
+            Section("mapping", "Mapping review", "plan.mapping", verbs=["mapping.accept", "mapping.alter"]),
             Section("terms", "Terms", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill"]),
             Section("pricelists", "Price lists", "plan.price_lists", verbs=["register.price_list.maintain", "read.drill"]),
             Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"]),
@@ -94,3 +95,14 @@ SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home"
 SUBMISSION_COLUMNS = ["submission_id", "action", "version_id", "subject", "scope_node", "submitted_by", "submitted_on", "note"]
 ENTRY_COLUMNS = ["entry_id", "action", "withdraws", "version_id", "layer_no", "entered_by", "entered_on", "reason_code", "effect_type",
                  "scope_material", "scope_customer", "period_from", "period_to", "value_kind", "value", "spread_rule", "note"]
+
+# the promotions doors' contracts — the sender's export taken in (header and funding lines, in our layout, their codes),
+# the events typed in the plan, and the mapping register; the generator writes the same columns
+TPM_EVENT_COLUMNS = ["sender", "sender_file", "version_id", "taken_in_at", "taken_in_by", "event_id", "planning_account", "planning_account_name",
+                     "product_group", "product_group_name", "tactic", "tactic_name", "shopper_start", "shopper_end", "status", "uplift_pct",
+                     "dip_pct", "baseline_version"]
+TPM_FUNDING_COLUMNS = ["sender", "sender_file", "version_id", "taken_in_at", "event_id", "line_no", "fund_type", "fund_type_name", "rate_basis", "rate"]
+PROMO_EVENT_COLUMNS = ["event_id", "version_id", "account_code", "promo_group_code", "window_start", "window_end", "mechanic", "uplift_pct", "dip_pct",
+                       "tpr_per_case", "scan_funding_per_case", "fixed_fee", "status", "owner", "baseline_version", "note", "entered_on"]
+MAPPING_COLUMNS = ["mapping_id", "sender", "subject", "local_code", "local_description", "target_code", "origin", "review_state", "confidence",
+                   "rationale", "acted_by", "acted_at", "reason"]

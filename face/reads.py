@@ -175,7 +175,59 @@ def bridge(version_id: str) -> dict:
 
 
 def events() -> list[dict]:
+    """The one calendar: both doors, each event with its source and, for the sender's, its own codes beside ours."""
     return q("select * from plan.promo_event order by window_start, account_code")
+
+
+def events_held() -> list[dict]:
+    return q("select * from plan.worklist_promo_held order by window_start")
+
+
+def events_refused() -> list[dict]:
+    return q("select * from plan.worklist_promo_refused order by event_id")
+
+
+def events_cancelled() -> list[dict]:
+    return q("select event_id, local_account, local_product_group, window_start, window_end, sender_file from plan.promo_sender_event where state = 'cancelled' order by event_id")
+
+
+def accounts_master() -> list[dict]:
+    return q("select account_code, account_name, promotions_master, supplies_scan_data from dims.dim_account order by promotions_master, account_code")
+
+
+def account(code: str) -> dict | None:
+    return one("select * from dims.dim_account where account_code = ?", code)
+
+
+def promo_groups() -> list[dict]:
+    return q("select promo_group_code, any_value(promo_group_name) promo_group_name, count(*) materials from dims.ref_promo_group group by 1 order by 1")
+
+
+def mechanics() -> list[dict]:
+    return q("select * from dims.ref_mechanic order by family, mechanic")
+
+
+def statuses() -> list[dict]:
+    return q("select * from dims.ref_promo_status order by status")
+
+
+def mapping_targets(subject: str) -> list[dict]:
+    """Our list a sender's code maps onto, per subject: code and description."""
+    sql = {"mechanic": "select mechanic code, mechanic_name description from dims.ref_mechanic order by 1",
+           "funding_type": "select funding_type code, funding_type_name description from dims.ref_funding_type order by 1",
+           "status": "select status code, status_name description from dims.ref_promo_status order by 1",
+           "customer": "select account_code code, account_name description from dims.dim_account order by 1",
+           "material": "select promo_group_code code, any_value(promo_group_name) description from dims.ref_promo_group group by 1 order by 1"}[subject]
+    return q(sql)
+
+
+def mapping_review() -> list[dict]:
+    """The codes waiting for a person, lowest confidence first; codes with no proposal at all lead."""
+    return q("select * from plan.worklist_promo_mapping_review order by confidence_rank, subject, local_code")
+
+
+def mapping_in_force() -> list[dict]:
+    return q("select * from plan.promo_mapping order by subject, local_code")
 
 
 def terms() -> list[dict]:

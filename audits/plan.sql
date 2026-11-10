@@ -70,3 +70,30 @@ wide AS (SELECT version_id, SUM(gross_at_list) AS gross, SUM(net_sales) AS net F
 SELECT l.version_id, l.gross - w.gross AS gross_diff, l.net - w.net AS net_diff
 FROM long l JOIN wide w ON w.version_id = l.version_id
 WHERE ABS(l.gross - w.gross) > 0.01 OR ABS(l.net - w.net) > 0.01;
+
+AUDIT (name promo_event_one_door);
+/* blocking: an event in the calendar came in through the door its account's promotions are mastered at — the sender's
+   for TPM, the plan's for PLAN — so no promotion is counted through both */
+SELECT event_id, source, account_code, promotions_master FROM @this_model
+WHERE (source = 'sender' AND promotions_master <> 'TPM') OR (source = 'plan' AND promotions_master <> 'PLAN');
+
+AUDIT (name promo_mapping_vocabulary);
+SELECT sender, subject, local_code FROM @this_model
+WHERE subject NOT IN ('mechanic', 'funding_type', 'status', 'customer', 'material')
+   OR origin NOT IN ('first_pass', 'person') OR review_state NOT IN ('proposed', 'accepted', 'altered')
+   OR (confidence IS NOT NULL AND confidence NOT IN ('high', 'medium', 'low'));
+
+AUDIT (name promo_mapping_target_known);
+/* blocking: a mapping in force lands on a member of our list — the reviewer alters within it, never invents */
+SELECT sender, subject, local_code, target_code FROM @this_model WHERE review_state IN ('accepted', 'altered') AND NOT target_known;
+
+AUDIT (name mechanic_family_known);
+SELECT mechanic, family FROM @this_model
+WHERE family NOT IN ('price', 'feature_and_display', 'pack', 'theme_and_seasonal', 'trial_and_experience', 'loyalty_and_personalised', 'clearance', 'unclassified');
+
+AUDIT (name funding_type_priced_has_column);
+SELECT funding_type FROM @this_model
+WHERE priced AND COALESCE(event_column, '') NOT IN ('tpr_per_case', 'scan_funding_per_case', 'fixed_fee');
+
+AUDIT (name account_promotions_master_known);
+SELECT account_code, promotions_master FROM @this_model WHERE promotions_master NOT IN ('TPM', 'PLAN');

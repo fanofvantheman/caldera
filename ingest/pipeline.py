@@ -43,6 +43,9 @@ REFERENCE = {
     "reg_capacity_machine": ("shifts", "working_days", "available_hours", "planned_downtime_hours", "efficiency_assumption"),
     "reg_assumption": ("value",),
     "ref_reason_code": (),
+    "ref_mechanic": ("default_uplift_pct", "default_dip_pct"),
+    "ref_funding_type": (),
+    "ref_promo_status": (),
     "ctl_role_definition": (),
     "ctl_role_action": (),
     "ctl_role_assignment": (),
@@ -55,10 +58,13 @@ HISTORY = {
 PLAN = {
     "layer_entry": ("layer_no", "value"),
     "reg_promo_event": ("uplift_pct", "dip_pct", "tpr_per_case", "scan_funding_per_case", "fixed_fee"),
+    "tpm_event": ("uplift_pct", "dip_pct"),
+    "tpm_funding": ("line_no", "rate"),
+    "reg_promo_mapping": (),
     "reg_terms": ("rate",),
     "reg_submission": (),
 }
-INTEGER = frozenset({"layer_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
+INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days"})
 
 

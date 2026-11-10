@@ -18,4 +18,10 @@ FROM (
          'submit what is yours when it is complete; a unit submits when its layers are in; the plan when its units are' FROM plan.worklist_open_submissions
   UNION ALL SELECT 'entries after submission', 'plan.worklist_entry_after_submission', 'VERDICT', COUNT(*),
          'the layer is closed at that scope: the holder reopens it, or the entry waits for the next cycle' FROM plan.worklist_entry_after_submission
+  UNION ALL SELECT 'promotions held', 'plan.worklist_promo_held', 'VERDICT', COUNT(*),
+         'review the codes it waits for: the event enters on the first run after its mappings are accepted or altered' FROM plan.worklist_promo_held
+  UNION ALL SELECT 'promotions refused', 'plan.worklist_promo_refused', 'VERDICT', COUNT(*),
+         'the event came through the wrong door: the sender withdraws it, or it is entered where the account''s promotions are kept' FROM plan.worklist_promo_refused
+  UNION ALL SELECT 'mappings to review', 'plan.worklist_promo_mapping_review', 'ACTION', COUNT(*),
+         'accept the proposal, or alter it to another of ours with a reason' FROM plan.worklist_promo_mapping_review
 ) w CROSS JOIN readers r

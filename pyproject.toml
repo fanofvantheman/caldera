@@ -9,10 +9,12 @@ dependencies = [
     "duckdb",
     "flask>=3.1.3",
     "chassis",
+    "coa-map",
 ]
 
 [tool.uv.sources]
 chassis = { path = "99_core_clones/chassis-0.6.0-py3-none-any.whl" }
+coa-map = { path = "99_core_clones/coa_map-0.4.0-py3-none-any.whl" }
 
 [tool.uv]
 package = false
