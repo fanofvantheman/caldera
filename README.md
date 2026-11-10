@@ -63,7 +63,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   units with their submission state; versions; the pages their roles reach; and the submission ladder across the
   bottom (inputs in, plans built, units submitted, plan submitted, reference declared) with the one act at its end.
   The **forecast accuracy** page under Demand reads the same judgement at every lag, by unit and by period. "Acting as" in the top bar opens the sign-in screen: every person, the roles they hold
-  and where, one click to act as them. Pages built so far: the demand plan (with **inputs directly into cells**: choose an account and the layer you
+  and where, one click to act as them. Pages built so far: the demand plan (grouped category → product → standard material as a collapsible tree, opening on the categories with the total beneath, group rows summed and read-only; with **inputs directly into cells**: choose an account and the layer you
   enter as, click a plan cell, type the total you want, give a reason — what is placed is an entry on that layer for the
   difference, at that material, account and period; the cell shows the run's number with the change marked pending until
   the next run; actual cells and other people's layers never open), and **submissions**: demand is planned by unit

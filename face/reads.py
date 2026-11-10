@@ -70,11 +70,42 @@ def demand(version_id: str, account: str | None) -> dict:
         fy_tot[(r["standard_material"], r["fiscal_year"])] = fy_tot.get((r["standard_material"], r["fiscal_year"]), 0.0) + r["cases"]
     ref_tot = {(r["standard_material"], r["fiscal_year"]): r["cases"] for r in ref}
     comps = [{"fy": fy, "py": fy in py_years, "ref": fy in ref_years} for fy in fys]
-    def line(m: str | None) -> dict:
-        pick = (lambda d, k: d.get((m, k))) if m else (lambda d, k: (sum(v for (mm, kk), v in d.items() if kk == k) or None) if any(kk == k for (_, kk) in d) else None)
+    indexed: dict[int, dict] = {}
+    def idx(d: dict) -> dict:
+        """d keyed (material, k) -> k -> material -> value, built once per dict."""
+        if id(d) not in indexed:
+            out: dict = {}
+            for (m, k), v in d.items():
+                out.setdefault(k, {})[m] = v
+            indexed[id(d)] = out
+        return indexed[id(d)]
+    def line(ms: list[str] | None, name: str) -> dict:
+        """One row: a single material, a group of them (summed), or — with none — the whole grid."""
+        def pick(d, k):
+            by_m = idx(d).get(k, {})
+            vals = list(by_m.values()) if ms is None else [by_m[m] for m in ms if m in by_m]
+            return sum(vals) if vals else None
         blocks = [{"fy": c["fy"], "total": pick(fy_tot, c["fy"]) or 0.0, "py": pick(py_tot, c["fy"]) if c["py"] else None, "ref": pick(ref_tot, c["fy"]) if c["ref"] else None} for c in comps]
-        return {"material": m or "Total", "cells": [pick(cell, p) for p in periods], "blocks": blocks, "total": sum(b["total"] for b in blocks)}
-    return {"periods": periods, "source_of": source_of, "comps": comps, "ref_id": ref_id, "rows": [line(m) for m in mats], "totals": line(None),
+        return {"material": name, "cells": [pick(cell, p) for p in periods], "blocks": blocks, "total": sum(b["total"] for b in blocks)}
+    # the material structure over the materials in view: category -> product -> standard material, largest first
+    info = {r["material_code"]: r for r in q("select material_code, material_name, product_code, product_name, category_code, category_name from dims.dim_material")}
+    tree: dict[str, dict] = {}
+    for m in mats:
+        i = info.get(m) or {"material_name": m, "product_code": "?", "product_name": "Other", "category_code": "?", "category_name": "Other"}
+        c = tree.setdefault(i["category_code"], {"code": i["category_code"], "label": i["category_name"], "products": {}})
+        p = c["products"].setdefault(i["product_code"], {"code": i["product_code"], "label": i["product_name"], "mats": []})
+        p["mats"].append(m)
+    groups = []
+    for c in tree.values():
+        prods = []
+        for p in c["products"].values():
+            row = line(p["mats"], p["label"]); row.update(code=p["code"], children=sorted((dict(line([m], m), label=(info.get(m) or {}).get("material_name", m)) for m in p["mats"]), key=lambda r: -r["total"]))
+            prods.append(row)
+        prods.sort(key=lambda r: -r["total"])
+        row = line([m for p in c["products"].values() for m in p["mats"]], c["label"]); row.update(code=c["code"], children=prods)
+        groups.append(row)
+    groups.sort(key=lambda r: -r["total"])
+    return {"periods": periods, "source_of": source_of, "comps": comps, "ref_id": ref_id, "groups": groups, "rows": [line([m], m) for m in mats], "totals": line(None, "Total"),
             "n_actual": sum(1 for p in periods if source_of[p] == "actual")}
 
 

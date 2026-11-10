@@ -43,15 +43,20 @@ def _version() -> str | None:
     return request.args.get("version") or reads.default_version()
 
 
+def _z(x: float | None, scale: float = 1, d: int = 0) -> float | None:
+    """A value that rounds to zero at the digits shown is zero, not minus zero (a run-out leaves -0.0 cells)."""
+    return x if x is None or round(x / scale, d) != 0 else 0.0
+
+
 def _n(x: float | None, d: int = 0) -> str:
-    return "" if x is None else f"{x:,.{d}f}"
+    return "" if x is None else f"{_z(x, 1, d) + 0.0:,.{d}f}"
 
 
 plan.add_app_template_filter(_n, "n")
-plan.add_app_template_filter(lambda x: f"{x:+,.0f}", "signed")
-plan.add_app_template_filter(lambda x: "" if x is None else (f"{x / 1e6:,.2f}M" if abs(x) >= 1e6 else f"{x / 1e3:,.0f}k"), "k")
-plan.add_app_template_filter(lambda x: "" if x is None else f"${x / 1e6:,.1f}M", "m")
-plan.add_app_template_filter(lambda x: "" if x is None else (f"${x / 1e6:,.2f}M" if abs(x) >= 1e6 else f"${x / 1e3:,.0f}k"), "aud")
+plan.add_app_template_filter(lambda x: f"{_z(x) + 0.0:+,.0f}" if _z(x) else "0", "signed")
+plan.add_app_template_filter(lambda x: "" if x is None else (f"{x / 1e6:,.2f}M" if abs(x) >= 1e6 else f"{_z(x, 1e3) / 1e3 + 0.0:,.0f}k"), "k")
+plan.add_app_template_filter(lambda x: "" if x is None else f"${_z(x, 1e6, 1) / 1e6 + 0.0:,.1f}M", "m")
+plan.add_app_template_filter(lambda x: "" if x is None else (f"${x / 1e6:,.2f}M" if abs(x) >= 1e6 else f"${_z(x, 1e3) / 1e3 + 0.0:,.0f}k"), "aud")
 plan.add_app_template_filter(lambda x: "" if x is None else f"{x:+.1%}", "pct")
 plan.add_app_template_filter(lambda x: "" if x is None else f"{x:.1%}", "pct1")
 plan.add_app_template_filter(lambda x: "" if x is None else f"{x:+.1%}", "pct1s")
@@ -239,23 +244,27 @@ DEMAND = VERSION_PICKER + """
 <h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material{% if account %} · {{ account }}{% endif %} · {{ d.n_actual }} closed periods as actuals, then the plan · totals by fiscal year with comparatives</small></h1>
 {% if editable %}<p class="hint">Cells are open: click one, type the total you want, Enter, give a reason. What is placed is an entry on layer {{ layer }} for the difference; the cell shows the run's number until the next run takes it in.</p>
 {% elif can_enter %}<p class="hint">Choose an account to open the cells for input.</p>{% endif %}
-<div class="wide"><table class="plan" {% if editable %}data-cells-post="{{ url_for('plan.cell') }}" data-cells-reasons="reasons"{% endif %}><thead>
+<div class="wide"><table class="plan tree" {% if editable %}data-cells-post="{{ url_for('plan.cell') }}" data-cells-reasons="reasons"{% endif %}><thead>
 <tr><th rowspan="2" class="sticky">Material</th><th colspan="{{ d.periods|length }}" style="text-align:center">Periods</th>
 {% for c in d.comps %}<th colspan="{{ 1 + (1 if c.py else 0) + (1 if c.ref else 0) }}" style="text-align:center;border-left:1px solid var(--rule)">FY{{ c.fy }}</th>{% endfor %}<th class="n" rowspan="2">Horizon</th></tr>
 <tr>{% for pp in d.periods %}<th class="n {{ 'actual' if d.source_of[pp] == 'actual' }}" title="{{ pp }}{{ ' · actual' if d.source_of[pp] == 'actual' }}">{{ pp[2:4] }}·{{ pp[5:] }}</th>{% endfor %}
 {% for c in d.comps %}<th class="n" style="border-left:1px solid var(--rule)">Total</th>{% if c.py %}<th class="n" title="same periods, prior fiscal year: shipments where closed, else this view">PY</th>{% endif %}{% if c.ref %}<th class="n" title="{{ d.ref_id }}">{{ d.ref_id }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
-{% for r in d.rows + [d.totals] %}<tr class="{{ 'total' if r.material == 'Total' }}"><td class="sticky">{{ r.material }}</td>{% for c in r.cells %}{% set pp = d.periods[loop.index0] %}{% set key = r.material ~ '|' ~ pp %}
-<td class="n {{ 'actual' if d.source_of[pp] == 'actual' }} {{ 'has-pending' if key in pending }}" {% if editable and r.material != 'Total' and d.source_of[pp] != 'actual' %}data-cell='{"version": "{{ version }}", "layer": {{ layer }}, "material": "{{ r.material }}", "account": "{{ account }}", "period": "{{ pp }}"}' data-current="{{ c or 0 }}"{% endif %}>{{ c|n }}{% if key in pending %}<span class="pending" title="placed, not yet run">{{ pending[key]|signed }} pending</span>{% endif %}</td>{% endfor %}
-{% for b in r.blocks %}<td class="n" style="border-left:1px solid var(--rule);font-weight:500">{{ b.total|n }}</td>{% if d.comps[loop.index0].py %}<td class="n muted">{{ b.py|n }}</td>{% endif %}{% if d.comps[loop.index0].ref %}<td class="n muted">{{ b.ref|n }}</td>{% endif %}{% endfor %}<td class="n" style="font-weight:600">{{ r.total|n }}</td></tr>{% endfor %}
+{% macro row(r, cls, parent, tog, id, label) %}<tr class="{{ cls }}"{% if parent %} data-parent="{{ parent }}"{% endif %}><td class="sticky">{% if tog %}<button type="button" class="tog" data-id="{{ id }}"></button>{% endif %}{{ label }}{% if cls == 'l2' %} <span class="muted">{{ r.material }}</span>{% endif %}</td>{% for c in r.cells %}{% set pp = d.periods[loop.index0] %}{% set key = r.material ~ '|' ~ pp %}
+<td class="n {{ 'actual' if d.source_of[pp] == 'actual' }} {{ 'has-pending' if key in pending }}" {% if editable and cls == 'l2' and d.source_of[pp] != 'actual' %}data-cell='{"version": "{{ version }}", "layer": {{ layer }}, "material": "{{ r.material }}", "account": "{{ account }}", "period": "{{ pp }}"}' data-current="{{ c or 0 }}"{% endif %}>{{ c|n }}{% if key in pending %}<span class="pending" title="placed, not yet run">{{ pending[key]|signed }} pending</span>{% endif %}</td>{% endfor %}
+{% for b in r.blocks %}<td class="n" style="border-left:1px solid var(--rule);font-weight:500">{{ b.total|n }}</td>{% if d.comps[loop.index0].py %}<td class="n muted">{{ b.py|n }}</td>{% endif %}{% if d.comps[loop.index0].ref %}<td class="n muted">{{ b.ref|n }}</td>{% endif %}{% endfor %}<td class="n" style="font-weight:600">{{ r.total|n }}</td></tr>{% endmacro %}
+{% for c in d.groups %}{{ row(c, 'l0', None, True, c.code, c.material) }}
+{% for p in c.children %}{{ row(p, 'l1', c.code, True, p.code, p.material) }}
+{% for m in p.children %}{{ row(m, 'l2', p.code, False, None, m.label) }}{% endfor %}{% endfor %}{% endfor %}
+{{ row(d.totals, 'total', None, False, None, 'Total') }}
 </tbody></table></div>
-<p class="hint">Shaded periods are closed and read from shipments; the rest is the plan. PY is the same periods a year earlier — shipments where that year is closed, otherwise this view; {{ d.ref_id }} is the reference version where its horizon overlaps.</p>
+<p class="hint">Categories and products are sums of the standard materials beneath them and are read-only; open a category, then a product, to reach its materials{% if editable %} — only a material's open periods take input{% endif %}. Shaded periods are closed and read from shipments; the rest is the plan. PY is the same periods a year earlier — shipments where that year is closed, otherwise this view; {{ d.ref_id }} is the reference version where its horizon overlaps.</p>
 <h2>Plan by layer and fiscal year</h2>
 <table><thead><tr><th>Fiscal year</th><th class="n">1 Baseline</th><th class="n">2 Adjustment</th><th class="n">4 Distribution</th><th class="n">6 Promotions</th><th class="n">7 Innovation</th><th class="n">8 Exit</th><th class="n">Plan</th></tr></thead><tbody>
 {% for r in layers %}<tr><td>FY{{ r.fiscal_year }}</td><td class="n">{{ r.l1|n }}</td><td class="n">{{ r.l2|n }}</td><td class="n">{{ r.l4|n }}</td><td class="n">{{ r.l6|n }}</td><td class="n">{{ r.l7|n }}</td><td class="n">{{ r.l8|n }}</td><td class="n">{{ r.cases|n }}</td></tr>{% endfor %}
 </tbody></table>
 {% if editable %}<script type="application/json" id="reasons">{{ reasons_json|safe }}</script><script src="{{ url_for('static', filename='cells.js') }}"></script>{% endif %}
 <style>.wide{overflow-x:auto;margin:0 -1rem;padding:0 1rem}table.plan{width:max-content;min-width:100%;font-size:.82rem}table.plan th,table.plan td{padding:.35rem .5rem}
-table.plan .actual{background:var(--soft)}table.plan .sticky{position:sticky;left:0;background:var(--panel);z-index:1}table.plan th.sticky{z-index:2;background:var(--soft)}</style>"""
+table.plan .actual{background:var(--soft)}table.plan .sticky{position:sticky;left:0;background:var(--panel);z-index:1}table.plan th.sticky{z-index:2;background:var(--soft)}table.plan tr.l0 td{font-weight:600}</style><style>""" + dashboard.TREE_CSS + """</style>""" + dashboard.TREE_JS
 
 
 def _pending_cells(version: str, account: str | None) -> dict[str, float]:
