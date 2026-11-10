@@ -26,7 +26,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
 - `pyproject.toml` + `uv.lock` — the environment (uv-managed, lockfile-pinned, nothing global).
 - `generate/` — the synthetic client. `structures.py` is what Caldera makes, sells to, operates and is organised as;
   `calendar.py` the 4-4-5 trading calendar (fiscal year July–June, every week in exactly one period);
-  `history.py` three years of shipments by material × ship-to × week, the price lists, and what each earlier cycle's
+  `history.py` three years of shipments by material × ship-to × week — each row with what it invoiced, gross at list and net
+  sales, because history is revenue and units and price is the derived figure — the price lists, and what each earlier cycle's
   latest view said (the forecast snapshots accuracy is read from); `registers.py` the
   versions, roles, capacity register and planning assumptions; `plan.py` what the people typed — layer entries on
   each version, the promotions calendar, the terms register. Deterministic from a seed; output is regenerated
@@ -42,12 +43,13 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   worklists under `models/worklists/` (entries refused, withdrawals refused, entries unresolved, reasons unknown,
   cells below zero), each row carrying `whose`, with `plan.run_health` as the row-per-worklist index the run page
   shows. Nothing on the home page is typed: a row exists because the run produced it. Someone who submits the
-  demand plan gets the plan as a whole as their home page: the fiscal year's cases against last year's shipments, net
-  sales against the reference on the periods both value, **forecast accuracy** (the plan judged as a forecast: what the
+  demand plan gets the plan as a whole as their home page, in money — a case means one thing at a material and nothing
+  above it: the fiscal year's net sales against last year's invoiced, net sales against the reference on the periods both value, **forecast accuracy** (the plan judged as a forecast: what the
   cycle three periods before said against what shipped, over the last twelve closed periods, 1 − Σ|error| ÷ Σ shipped,
   with bias) and how many units are in; the year **per week** — by period (each period's total over its weeks, the week count in
-  the label) or by week, in cases or net sales, with the reference dashed and last year faint, because a 4-4-5 period
-  total steps every third point by the calendar alone and the trend only reads per week; the plan by
+  the label) or by week, net sales invoiced then planned, with the reference dashed and last year faint, because a 4-4-5
+  period total steps every third point by the calendar alone and the trend only reads per week; cases offered only once
+  the chart is drilled to a material; the plan by
   category opening to products and materials — the material structure, with accuracy and bias at every node; the
   units with their submission state; versions; the pages their roles reach; and the submission ladder across the
   bottom (inputs in, plans built, units submitted, plan submitted, reference declared) with the one act at its end.
@@ -80,7 +82,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   - `dims/` the calendar (weeks, periods with relative position), versions, the four structures as hierarchy
     bridges (material, customer, location, organisation), the bill of materials, routes, lanes, the capacity
     register, the assumptions register, roles and the entitlements derived from them
-  - `history/` shipments at week and period grain, price lists, each earlier cycle's latest view at the plan's grain
+  - `history/` shipments at week and period grain with gross and net sales invoiced, price lists, each earlier cycle's latest view at the plan's grain
   - `plan/` the demand plan and its money: the category trend and the history shape fitted from cleansed
     shipments; the layer entries as filed and resolved to the grid; layer 1 computed for the open version and
     entered for the frozen one; the promotions calendar's uplift and dip lines, day-weighted into the weeks a

@@ -48,7 +48,7 @@ REFERENCE = {
     "ctl_role_assignment": (),
 }
 HISTORY = {
-    "shipments": ("cases", "tonnes"),
+    "shipments": ("cases", "tonnes", "gross_sales", "net_sales"),
     "price_list": ("price_per_case",),
     "forecast_snapshot": ("lag", "cases"),
 }

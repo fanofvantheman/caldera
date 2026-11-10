@@ -3,7 +3,10 @@
 Demand history is shipments (the signal the baseline is fitted from, before any constraint the
 plan later applies). Each material × ship-to has a base rate, a category trend, a seasonal shape,
 promotion weeks and noise — all deterministic from the seed. Prices are per price list, dated,
-with one increase event so the history has a step in it.
+with one increase event so the history has a step in it. Every shipment row also carries what it
+invoiced — gross sales at list and net sales after the terms in force, the promotion's price
+reduction and the history deduction rates — because history is revenue and units, from which price
+is derived; the plan is units and a price, from which revenue is derived.
 """
 
 from __future__ import annotations
@@ -99,6 +102,36 @@ def generate_prices(materials: list[Material], rng: random.Random) -> list[dict]
             rows.append({"price_list": pl, "material_code": m.material_code, "currency": "AUD" if pl != "PL_EXPORT" else "USD",
                          "price_per_case": p1 if pl != "PL_EXPORT" else round(p1 * 0.66, 2), "valid_from": "2025-09-29", "valid_to": "", "event": "PI-2025-10 cost pass-through"})
     return rows
+
+
+def value_shipments(shipments: list[dict], prices: list[dict], terms: list[dict], weeks: list[Week], rng: random.Random,
+                    aud_usd: float = 0.66, returns_rate: float = 0.004, claims_rate: float = 0.003) -> None:
+    """Give every shipment row its gross sales at list and its net sales, in AUD: the list in force on the account's
+    price list that week; on a promotion week the list less a price reduction of a fifth and the scan funding at scan
+    accounts; the account's standing discount on invoice; its off-invoice instruments, returns and claims as rates on
+    the invoice; and a little realised-price noise, so the implied price (net ÷ cases) is near the list, never equal to
+    it. History is what was invoiced — a fact — not the plan's machinery run backwards."""
+    start_of = {w.week_id: w.week_start for w in weeks}
+    pl_of = {a[0]: a[7] for a in ACCOUNTS}; scan = {a[0] for a in ACCOUNTS if a[11] == "Y"}
+    windows: dict[tuple[str, str], list] = defaultdict(list)
+    for r in prices:
+        windows[(r["price_list"], r["material_code"])].append((r["valid_from"], r["valid_to"] or "9999-12-31", r["price_per_case"], r["currency"]))
+    on_inv: dict[str, float] = defaultdict(float); off_inv: dict[str, float] = defaultdict(float)
+    for t in terms:
+        (on_inv if t["instrument_kind"] == "standing_discount" else off_inv)[t["account_code"]] += t["rate"]
+    for r in shipments:
+        d = start_of[r["week_id"]].isoformat()
+        hit = next(((p, cur) for vf, vt, p, cur in windows.get((pl_of[r["account_code"]], r["material_code"]), []) if vf <= d <= vt), None)
+        if hit is None:
+            r["gross_sales"] = r["net_sales"] = None
+            continue
+        list_price = hit[0] / aud_usd if hit[1] == "USD" else hit[0]
+        promo = r["is_promo_week"] == "Y"
+        gross = r["cases"] * list_price
+        invoice = gross * (1 - on_inv[r["account_code"]]) - (r["cases"] * list_price * 0.20 if promo else 0.0)
+        net = invoice * (1 - off_inv[r["account_code"]] - returns_rate - claims_rate) - (r["cases"] * 1.50 if promo and r["account_code"] in scan else 0.0)
+        r["gross_sales"] = round(gross, 2)
+        r["net_sales"] = round(net * rng.gauss(1.0, 0.01), 2)
 
 
 # What earlier cycles said: the latest view each IBP cycle produced, kept at the plan's grain for the periods it looked

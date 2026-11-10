@@ -215,34 +215,43 @@ def accuracy_tree(lag: int, periods: list[str]) -> list[dict]:
     return cats
 
 
+def is_material(node: str) -> bool:
+    """A node of the material structure at which cases mean one thing: a standard material or one of its variants."""
+    return one("select 1 as x from dims.dim_material where material_code = ? or standard_material = ? limit 1", node, node) is not None
+
+
 def demand_tree(version_id: str, fy: int) -> dict:
-    """The plan fiscal year by category → product → standard material: this view's total (closed periods as actuals, the
-    rest plan), the prior fiscal year's shipments, and the reference version's total where it has the year."""
+    """The plan fiscal year by category → product → standard material in net sales — this view's total (closed periods as
+    actuals, the rest plan), the prior fiscal year invoiced, the reference version where it has the year — with cases
+    beside the money on the material rows only: a case means one thing at a material and nothing above it."""
     v = version(version_id) or {}
     ref_id = v.get("reference_version")
-    cur = q("""select m.category_code, m.category_name, m.product_code, m.product_name, d.standard_material, m.material_name, sum(d.cases) cases
+    cur = q("""select m.category_code, m.category_name, m.product_code, m.product_name, d.standard_material, m.material_name,
+                      sum(d.net_sales) net_value, sum(d.cases) cases
                from plan.demand_review d join dims.dim_material m on m.material_code = d.standard_material
                where d.version_id = ? and d.fiscal_year = ? group by all""", version_id, fy)
-    py = {r["standard_material"]: r["cases"] for r in q("select standard_material, sum(cases) cases from history.shipments_period where fiscal_year = ? group by 1", fy - 1)}
-    ref = {r["standard_material"]: r["cases"] for r in q("select standard_material, sum(cases) cases from plan.unconstrained_demand_period where version_id = ? and fiscal_year = ? group by 1", ref_id, fy)} if ref_id else {}
+    py = {r["standard_material"]: r for r in q("select standard_material, sum(net_sales) net_value, sum(cases) cases from history.shipments_period where fiscal_year = ? group by 1", fy - 1)}
+    ref = {r["standard_material"]: r["net_value"] for r in q("select standard_material, sum(net_sales) net_value from plan.demand_financialised where version_id = ? and fiscal_year = ? group by 1", ref_id, fy)} if ref_id else {}
     for r in cur:
-        r["py"] = py.get(r["standard_material"], 0.0); r["ref"] = ref.get(r["standard_material"])
+        r["value"] = r.pop("net_value")
+        r["py"] = (py.get(r["standard_material"]) or {}).get("net_value") or 0.0; r["py_cases"] = (py.get(r["standard_material"]) or {}).get("cases") or 0.0
+        r["ref"] = ref.get(r["standard_material"])
     def roll(rows: list[dict], key: str, label: str) -> list[dict]:
         out: dict[str, dict] = {}
         for r in rows:
-            o = out.setdefault(r[key], {"code": r[key], "label": r[label], "cases": 0.0, "py": 0.0, "ref": 0.0 if ref else None, "children": []})
-            o["cases"] += r["cases"]; o["py"] += r["py"]
+            o = out.setdefault(r[key], {"code": r[key], "label": r[label], "value": 0.0, "py": 0.0, "ref": 0.0 if ref else None, "children": []})
+            o["value"] += r["value"] or 0.0; o["py"] += r["py"]
             if ref: o["ref"] += r["ref"] or 0.0
             o["children"].append(r)
-        return sorted(out.values(), key=lambda o: -o["cases"])
+        return sorted(out.values(), key=lambda o: -o["value"])
     for r in cur:
         r["code"], r["label"] = r["standard_material"], r["material_name"]; r["children"] = []
     prods = roll(cur, "product_code", "product_name")
     for p in prods:
         p["category_code"] = p["children"][0]["category_code"]; p["category_name"] = p["children"][0]["category_name"]
-        p["children"].sort(key=lambda m: -m["cases"])
+        p["children"].sort(key=lambda m: -(m["value"] or 0.0))
     cats = roll(prods, "category_code", "category_name")
-    total = {"cases": sum(c["cases"] for c in cats), "py": sum(c["py"] for c in cats), "ref": (sum(c["ref"] for c in cats) if ref else None)}
+    total = {"value": sum(c["value"] for c in cats), "py": sum(c["py"] for c in cats), "ref": (sum(c["ref"] for c in cats) if ref else None)}
     return {"categories": cats, "total": total, "ref_id": ref_id, "fy": fy}
 
 
@@ -257,13 +266,14 @@ def _scope_sql(customer: str | None, material: str | None, acct_col: str, mat_co
 
 
 def demand_series(version_id: str, fy: int, customer: str | None = None, material: str | None = None,
-                  grain: str = "period", measure: str = "cases") -> dict:
+                  grain: str = "period", measure: str = "net_sales") -> dict:
     """The plan fiscal year at a node of either structure — this view (actual where closed, plan after), the reference
     version, the prior year's shipments — read as a rate per week. On a 4-4-5 calendar a five-week period is a quarter
     larger than a four-week one before anything in the business has moved, so a period total drawn as a series shows the
     calendar, not the trend. grain 'period': each period's total divided by its weeks (the prior year by its own weeks,
-    so a 53-week year compares); grain 'week': the weeks themselves. measure 'cases' or 'net_sales' — the latter from the
-    plan's gross-to-net; shipments are not valued in history, so net sales has no shipped line and no prior year."""
+    so a 53-week year compares); grain 'week': the weeks themselves. measure 'net_sales' (history: what was invoiced; plan:
+    the gross-to-net at the list and terms in force) or 'cases', which is meaningful only at a material — the caller
+    decides where to offer it."""
     v = version(version_id) or {}
     ref_id = v.get("reference_version")
     val, tbl = ("cases", "plan.unconstrained_demand") if measure == "cases" else ("net_sales", "plan.demand_financialised")
@@ -278,18 +288,18 @@ def demand_series(version_id: str, fy: int, customer: str | None = None, materia
                               from dims.dim_week where fiscal_year = ? order by week_sequence""", fy)]
         col, pyk = "week_id", "fiscal_week"
         ws, wsp = _scope_sql(customer, material, "s.account_code", "m.standard_material")
-        actual = q(f"select s.week_id k, sum(s.cases) v from history.shipments s join dims.dim_material m on m.material_code = s.material_code where s.period in {inlist(actual_p)}{ws} group by 1",
-                   *actual_p, *wsp) if measure == "cases" and actual_p else []
-        py = q(f"select s.fiscal_week k, sum(s.cases) v from history.shipments s join dims.dim_material m on m.material_code = s.material_code where s.fiscal_year = ?{ws} group by 1",
-               fy - 1, *wsp) if measure == "cases" else []
+        actual = q(f"select s.week_id k, sum(s.{val}) v from history.shipments s join dims.dim_material m on m.material_code = s.material_code where s.period in {inlist(actual_p)}{ws} group by 1",
+                   *actual_p, *wsp) if actual_p else []
+        py = q(f"select s.fiscal_week k, sum(s.{val}) v from history.shipments s join dims.dim_material m on m.material_code = s.material_code where s.fiscal_year = ?{ws} group by 1",
+               fy - 1, *wsp)
         py_weeks: dict = {}
     else:
         keys = [{"k": r["period"], "label": f"P{r['fiscal_period']} · {r['weeks_in_period']}w", "period": r["period"], "weeks": r["weeks_in_period"], "boundary": False,
                  "n": r["fiscal_period"], "say": f"P{r['fiscal_period']} FY{fy} · {r['weeks_in_period']} weeks"}
                 for r in q("select period, fiscal_period, weeks_in_period from dims.dim_period where fiscal_year = ? order by 1", fy)]
         col, pyk = "period", "fiscal_period"
-        actual = q(f"select period k, sum(cases) v from history.shipments_period where period in {inlist(actual_p)}{w} group by 1", *actual_p, *wp) if measure == "cases" and actual_p else []
-        py = q(f"select cast(substr(period, 6) as int) k, sum(cases) v from history.shipments_period where fiscal_year = ?{w} group by 1", fy - 1, *wp) if measure == "cases" else []
+        actual = q(f"select period k, sum({val}) v from history.shipments_period where period in {inlist(actual_p)}{w} group by 1", *actual_p, *wp) if actual_p else []
+        py = q(f"select cast(substr(period, 6) as int) k, sum({val}) v from history.shipments_period where fiscal_year = ?{w} group by 1", fy - 1, *wp)
         py_weeks = {r["fiscal_period"]: r["weeks_in_period"] for r in q("select fiscal_period, weeks_in_period from dims.dim_period where fiscal_year = ?", fy - 1)}
     plan = q(f"select {col} k, sum({val}) v from {tbl} where version_id = ? and period in {inlist(plan_p)}{w} group by 1", version_id, *plan_p, *wp) if plan_p else []
     ref = q(f"select {col} k, sum({val}) v from {tbl} where version_id = ? and fiscal_year = ?{w} group by 1", ref_id, fy, *wp) if ref_id else []
@@ -340,16 +350,19 @@ def revenue_fy(version_id: str, fy: int) -> dict | None:
 
 
 def unit_status(version_id: str, fy: int) -> list[dict]:
-    """One row per planning unit: its demand this fiscal year against the prior year, and the unit's submission state."""
-    return q("""select u.code, u.unit_name, s.state, s.open_below, s.acted_by, s.acted_on,
-                       (select sum(d.cases) from plan.demand_review d join dims.dim_account a on a.account_code = d.account_code
-                         where d.version_id = ? and d.fiscal_year = ? and a.planning_unit = u.code) cases,
-                       (select sum(h.cases) from history.shipments_period h join dims.dim_account a on a.account_code = h.account_code
+    """One row per planning unit: its net sales this fiscal year against the prior year invoiced, and its submission state."""
+    rows = q("""select u.code, u.unit_name, s.state, s.open_below, s.acted_by, s.acted_on,
+                       (select sum(d.net_sales) from plan.demand_review d join dims.dim_account a on a.account_code = d.account_code
+                         where d.version_id = ? and d.fiscal_year = ? and a.planning_unit = u.code) net_value,
+                       (select sum(h.net_sales) from history.shipments_period h join dims.dim_account a on a.account_code = h.account_code
                          where h.fiscal_year = ? and a.planning_unit = u.code) py
                 from (select distinct h.ancestor_code as code, a.planning_unit_name as unit_name from dims.dim_customer_hierarchy h
                       join dims.dim_account a on a.planning_unit = h.ancestor_code where h.ancestor_level = 'planning_unit') u
                 left join plan.submission_state s on s.version_id = ? and s.subject = 'unit' and s.node = u.code
-                order by cases desc nulls last""", version_id, fy, fy - 1, version_id)
+                order by net_value desc nulls last""", version_id, fy, fy - 1, version_id)
+    for r in rows:
+        r["value"] = r.pop("net_value")
+    return rows
 
 
 def ladder(version_id: str) -> list[dict]:

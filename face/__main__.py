@@ -51,6 +51,7 @@ plan.add_app_template_filter(_n, "n")
 plan.add_app_template_filter(lambda x: f"{x:+,.0f}", "signed")
 plan.add_app_template_filter(lambda x: "" if x is None else (f"{x / 1e6:,.2f}M" if abs(x) >= 1e6 else f"{x / 1e3:,.0f}k"), "k")
 plan.add_app_template_filter(lambda x: "" if x is None else f"${x / 1e6:,.1f}M", "m")
+plan.add_app_template_filter(lambda x: "" if x is None else (f"${x / 1e6:,.2f}M" if abs(x) >= 1e6 else f"${x / 1e3:,.0f}k"), "aud")
 plan.add_app_template_filter(lambda x: "" if x is None else f"{x:+.1%}", "pct")
 plan.add_app_template_filter(lambda x: "" if x is None else f"{x:.1%}", "pct1")
 plan.add_app_template_filter(lambda x: "" if x is None else f"{x:+.1%}", "pct1s")
@@ -171,12 +172,12 @@ def _head(who: str, held: set[str]) -> str:
     tree = reads.demand_tree(version, fy)
     for c in tree["categories"]:
         for node in [c] + c["children"] + [m for pr in c["children"] for m in pr["children"]]:
-            node["py_d"] = _d(node["cases"], node["py"]); node["ref_d"] = _d(node["cases"], node["ref"])
-    t = {"cases": tree["total"]["cases"], "cases_d": _d(tree["total"]["cases"], tree["total"]["py"]), "ref_d": _d(tree["total"]["cases"], tree["total"]["ref"])}
+            node["py_d"] = _d(node["value"], node["py"]); node["ref_d"] = _d(node["value"], node["ref"])
+    t = {"value": tree["total"]["value"], "value_d": _d(tree["total"]["value"], tree["total"]["py"]), "ref_d": _d(tree["total"]["value"], tree["total"]["ref"])}
     rev = reads.revenue_fy(version, fy); rev["d"] = _d(rev["net_sales"], rev["ref_net_sales"])
     units = reads.unit_status(version, fy)
     for u in units:
-        u["d"] = _d(u["cases"], u["py"])
+        u["d"] = _d(u["value"], u["py"])
         u["cell"] = _cell(who, {"subject": "unit", "node": u["code"], "state": u["state"] or "nothing", "open_below": u["open_below"], "acted_by": u["acted_by"], "acted_on": u["acted_on"]})
     ladder = reads.ladder(version)
     now = next((i for i, s in enumerate(ladder) if s["done"] < s["total"] or not s["total"]), len(ladder))
@@ -196,7 +197,8 @@ def _head(who: str, held: set[str]) -> str:
     dim = request.args.get("dim") if request.args.get("dim") in ("customer", "material") else "customer"
     node = request.args.get("node") or "ALL"
     grain = request.args.get("grain") if request.args.get("grain") in ("period", "week") else "period"
-    measure = request.args.get("measure") if request.args.get("measure") in ("cases", "net_sales") else "cases"
+    leaf = dim == "material" and reads.is_material(node)             # cases mean one thing at a material and nothing above it
+    measure = "cases" if leaf and request.args.get("measure") == "cases" else "net_sales"
     def L(**kw): return url_for("plan.home", **{"version": version, "dim": dim, "node": node, "grain": grain, "measure": measure, **kw})
     at = {"customer": node} if dim == "customer" else {"material": node}
     series = reads.demand_series(version, fy, grain=grain, measure=measure, **at)
@@ -205,7 +207,7 @@ def _head(who: str, held: set[str]) -> str:
              "other": L(dim=("material" if dim == "customer" else "customer"), node="ALL"),
              "children": []}
     fig = {"grains": [{"label": g, "on": g == grain, "href": L(grain=g)} for g in ("period", "week")],
-           "measures": [{"label": lab, "on": m == measure, "href": L(measure=m)} for m, lab in (("cases", "cases"), ("net_sales", "net sales"))]}
+           "measures": [{"label": lab, "on": m == measure, "href": L(measure=m)} for m, lab in (("net_sales", "net sales"), ("cases", "cases"))] if leaf else []}
     for ch in reads.node_children(dim, node):
         cs = reads.demand_series(version, fy, grain=grain, measure=measure, **({"customer": ch["code"]} if dim == "customer" else {"material": ch["code"]}))
         if cs["view"]:

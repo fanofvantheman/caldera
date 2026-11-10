@@ -13,7 +13,7 @@ from pathlib import Path
 from . import calendar as cal
 from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIALS, CATEGORIES, PRODUCTS, FORMATS,
                          PROMO_GROUPS, ACCOUNTS, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
-from .history import forecast_snapshots, generate_demand, generate_prices
+from .history import forecast_snapshots, generate_demand, generate_prices, value_shipments
 from .registers import versions, period_control, roles, capacity_register, assumptions
 from .plan import business_plan_entries, latest_view_entries, promo_events, terms_register, reason_codes, submissions
 from .emit import emit_all, dataclass_rows
@@ -66,13 +66,15 @@ def main() -> None:
 
     shipments = generate_demand(materials, history_weeks, rng, FIRST_FY)
     period_order = [p["period"] for p in cal.periods(weeks)]
-    history = {"shipments": shipments, "price_list": generate_prices(materials, rng),
+    prices, terms = generate_prices(materials, rng), terms_register()
+    history = {"shipments": shipments, "price_list": prices,
                "forecast_snapshot": forecast_snapshots(shipments, materials, period_order, LATEST_CLOSED, rng)}
+    value_shipments(shipments, prices, terms, weeks, rng)         # history is revenue and units; price is the derived figure
     entries = business_plan_entries(materials, shipments, PLAN_FY) + latest_view_entries(PLAN_FY, LATEST_CLOSED)
     plan = {
         "layer_entry": [{"entry_id": f"LE-{i:05d}", **e} for i, e in enumerate(entries, start=1)],
         "reg_promo_event": promo_events(weeks, PLAN_FY, LATEST_CLOSED, materials),
-        "reg_terms": terms_register(),
+        "reg_terms": terms,
         "reg_submission": submissions(LATEST_CLOSED),
     }
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed)
