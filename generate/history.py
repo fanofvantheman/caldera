@@ -130,6 +130,8 @@ def value_shipments(shipments: list[dict], prices: list[dict], terms: list[dict]
         windows[(r["price_list"], r["material_code"])].append((r["valid_from"], r["valid_to"] or "9999-12-31", r["price_per_case"], r["currency"]))
     on_inv: dict[str, float] = defaultdict(float); off_inv: dict[str, float] = defaultdict(float)
     for t in terms:
+        if t["driver_basis"] not in ("pct_of_list", "pct_of_invoice"):
+            continue   # an amount, not a rate (the co-op envelope): it is money at the events that draw on it, never a share of the invoice
         (on_inv if t["instrument_kind"] == "standing_discount" else off_inv)[t["account_code"]] += t["rate"]
     for r in shipments:
         d = start_of[r["week_id"]].isoformat()
