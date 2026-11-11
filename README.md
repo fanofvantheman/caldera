@@ -13,6 +13,7 @@ uv run python -m generate            # the synthetic client, from its recipe, un
 uv run python -m ingest.pipeline     # load the landing into bronze (DuckDB file at data/caldera.duckdb)
 uv run sqlmesh plan prod --auto-apply --no-prompts   # every model, every check
 uv run python -m face                # the planning face → http://localhost:8010 (--no-reload for the room)
+uv run python -m face --skin         # the same face in a specimen client's colours
 ```
 
 GitHub Actions runs the same three steps on every push and prints what the room would read.
@@ -41,7 +42,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   sales, because history is revenue and units and price is the derived figure — the price lists, and what each earlier cycle's
   latest view said (the forecast snapshots accuracy is read from); `registers.py` the
   versions, roles, capacity register and planning assumptions; `plan.py` what the people typed — layer entries on
-  each version, the promotions calendar, the terms register; `sender.py` the promotions system that keeps Westbrook's
+  each version, the promotions calendar (mostly price-led, as ambient grocery is, with display-only gondola ends, a
+  Christmas seasonal display, a points offer, a clearance run-out and events funded by catalogue and display fees, retail
+  media and the co-op envelope), the neighbour lines declared on events, the terms register (with each major's annual
+  co-op envelope); `sender.py` the promotions system that keeps Westbrook's
   and Carters' calendars and sends them in its own codes (its planning accounts, product groups, tactics, fund types,
   status words): the calendar re-issued through its two doors — their events as the export already taken in, with the
   mapping of their codes to ours accepted when the sender was connected, Merritt's typed in the plan — the mechanic,
@@ -95,14 +99,27 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   with a confidence and a one-line reason by the shared mapping tool (`99_core_clones/coa_map-*.whl`, a real model call
   when `ANTHROPIC_API_KEY` is set; without it the take-in says the first pass did not run and the codes wait for a
   person). The page shows the calendar with each event's source and, for a sent event, its own codes beside ours, and
-  any funding the gross-to-net does not price yet; the **held** events (a code not mapped or not reviewed) with what each
+  any funding the gross-to-net does not price yet; **what each event does** — gross uplift, the dip after, what it takes
+  from (or lends to) the neighbouring ranges it declares, the net incremental in cases and net sales, and its return
+  (net incremental net sales less the price reduction and scan funding given on every other case in its window, less its
+  lump sums); the **neighbour lines** — a rate on a neighbouring range's baseline in the event's window, declared by the
+  event's owner on either door, cases only, never estimated, absent meaning none declared; the **held** events (a code not mapped or not reviewed) with what each
   waits for and the cases and net sales it would bring; the **refused** (the wrong door, with the reason) and the
   cancelled; and, for an account whose promotions are typed here, a **new event** form — account, promo group, window,
-  mechanic, price reduction per case, scan funding, fixed fee, status — whose uplift and dip default from the mechanic
-  register unless overridden with a note, placed after its checks like an entry (an event typed at an account the
-  promotions system keeps is refused). The **mapping review** lists the codes waiting for a person, lowest confidence
+  mechanic, price reduction per case, scan funding, fixed fee, retail media, co-op drawdown, status — whose window
+  defaults to the account's promotional week and whose uplift and dip default from the mechanic register (one or more
+  mechanics in each of seven families; one mechanic per event, a supporting catalogue page or display being a fee on the
+  price event) unless overridden with a note, placed after its checks like an entry (an event typed at an account the
+  promotions system keeps is refused; a drawdown with no envelope to draw on is refused; a window off the account's
+  promotional week is placed and flagged). The **promotions calendar** draws our trading weeks as the grid and each event
+  as a bar on its true dates, filterable by account and promo group: a grocer's promotional week runs Wednesday to
+  Tuesday, so its bar starts mid-week and straddles two of our weeks, and an event opened shows the split it produces —
+  days and cases in each trading week, and the periods it lands in. **Their structure to ours** lays the promotions
+  system's structure against the plan's — planning account to account, product group to promo group and its materials,
+  tactic to mechanic and family, fund type to the gross-to-net line it prices into, status to calendar — with one event
+  read both ways. The **mapping review** lists the codes waiting for a person, lowest confidence
   first: accept, or alter to another of ours with a reason (or map a code nobody proposed); a held event enters on the
-  first run after. Held, refused and to-review rows reach trade marketing through My attention. The terms register (terms grouped by account with every attribute; **price lists** with the accounts on each, the price before and in force per material and the dated increase events),
+  first run after. Held, refused and to-review rows reach trade marketing through My attention. The terms register (terms grouped by account with every attribute, and each co-op envelope as committed, drawn by the events in the calendar, and remaining; **price lists** with the accounts on each, the price before and in force per material and the dated increase events) — read by every planner, amended only by whoever holds the register's maintain verb (Finance): an amendment or a price change is a new row from a date, never an edit of the row in force,
   the versions, the **revenue forecast** under financial planning (net sales by fiscal year across its periods, per week —
   invoiced, the latest view and its reference laid over one another, last year faint; read against the reference only on
   the periods both value, with the gap by period; at the plan or any node of either structure, the level below as a split;
@@ -116,16 +133,18 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   not know which method it carries, shared with the other builds. `99_core_clones/chassis_usage.md` says how it is used.
 - `config.yaml` + `models/` — the SQLMesh project:
   - `dims/` the calendar (weeks, periods with relative position), versions, the mechanic, funding-type and promotion
-    status registers, the four structures as hierarchy
+    status registers, each account's promotional week, the four structures as hierarchy
     bridges (material, customer, location, organisation), the bill of materials, routes, lanes, the capacity
     register, the assumptions register, roles and the entitlements derived from them
   - `history/` shipments at week and period grain with gross and net sales invoiced, price lists, each earlier cycle's latest view at the plan's grain
   - `plan/` the demand plan and its money: the category trend and the history shape fitted from cleansed
     shipments; the layer entries as filed and resolved to the grid; layer 1 computed for the open version and
-    entered for the frozen one; the promotions calendar resolved from both doors (`promo_sender_event` through the
+    entered for the frozen one; the terms and price lists effective-dated (the latest act per date, each row running to the day before the
+    next); the co-op envelopes drawn (`terms_envelope`); the promotions calendar resolved from both doors (`promo_sender_event` through the
     mapping register `promo_mapping` and the funding lines `promo_funding`; `promo_typed_event` with the mechanic's
-    default response; `promo_event` the one calendar) and its uplift and dip lines, day-weighted into the weeks a
-    dated window touches; the stack (every layer line, keyed by version and source); the unconstrained demand plan
+    default response; `promo_event` the one calendar, each event flagged where it is off its account's promotional week) and its uplift,
+    dip and neighbour lines (`promo_neighbour`), day-weighted into the weeks a dated window touches; each event's effect
+    and return (`promo_event_effect`); its lump sums — fixed fee, retail media, co-op drawdown — in the long form; the stack (every layer line, keyed by version and source); the unconstrained demand plan
     at storage grain and at the review's grain with each layer beside the total; the list price and terms in force
     by week; every line valued through the gross-to-net (wide, and long with each deduction's attributes); the
     revenue bridge by layer; the gap to the version's reference; the plan judged as a forecast (`forecast_accuracy`:
@@ -134,7 +153,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   open period, vocabularies, references resolve, one person does not both enter demand and enter the supply
   constraint; an entry is on a known version, resolves to leaves, and was entered by the layer's owner; every
   case has a list price in force; gross less every deduction is net on every line; the long form ties to the wide; an
-  event in the calendar came through its account's door; a mapping in force lands on a member of our list.
+  event in the calendar came through its account's door; a mapping in force lands on a member of our list; a
+  neighbour line names a range of ours and its sign fits its effect.
 
 ## Stack
 

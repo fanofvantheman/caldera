@@ -2,7 +2,7 @@
    nobody has reviewed, a status still proposed — and what it would bring when it enters: the cases (uplift in the window
    less the dip after, on the baseline of every material in the promo group at every ship-to of the account, day-weighted
    as the calendar does it), the net sales those cases and the event's price reduction and scan funding would move at the
-   list and terms in force, and the fixed fee beside. Where a code is not yet mapped to an account or a promo group the
+   list and terms in force, and the lump sums beside (fixed fee, retail media, co-op drawdown). Where a code is not yet mapped to an account or a promo group the
    volume cannot be placed and reads nothing. Routed to trade marketing; the event enters on the first run after its wait
    is over. */
 MODEL (name plan.worklist_promo_held, kind FULL, grain (version_id, event_id));
@@ -40,7 +40,7 @@ money AS (
 readers AS (SELECT STRING_AGG(DISTINCT principal, ', ') AS whose FROM dims.effective_entitlements WHERE action = 'register.promo_calendar.maintain')
 SELECT e.event_id, e.version_id, e.sender_file, e.local_account, e.local_product_group, e.local_tactic, e.local_status,
        e.account_code, e.promo_group_code, e.window_start, e.window_end, e.waits_for,
-       COALESCE(m.cases, 0) AS would_bring_cases, COALESCE(m.net_sales, 0) AS would_bring_net_sales, e.fixed_fee AS would_bring_fixed_fee,
+       COALESCE(m.cases, 0) AS would_bring_cases, COALESCE(m.net_sales, 0) AS would_bring_net_sales, e.fixed_fee + e.media_fee + e.envelope_drawdown AS would_bring_lump_sums,
        e.event_id || ' (' || e.local_account || ', ' || e.local_product_group || ', ' || e.window_start || ') waits for ' || e.waits_for AS item,
        r.whose
 FROM ev e

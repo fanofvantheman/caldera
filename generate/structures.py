@@ -355,6 +355,8 @@ PROMO_GROUPS = {
     "PG_BEANS_SPAG": ("Beans and spaghetti",     _group(lambda m: m.category_code == "BEANS_SPAG" and m.format_code in ("CAN_220", "CAN_410"))),
     "PG_ROSSO_JARS": ("Rosso Vale pasta sauces", _group(lambda m: m.category_code == "PASTA_SAUCE" and m.format_code == "JAR_500")),
     "PG_ORCHARD":    ("Orchard House jams",      _group(lambda m: m.category_code == "SPREADS" and m.format_code == "JAR_500")),
+    "PG_VALLEY_825": ("Valley Gold 825 g range", _group(lambda m: m.brand == "Valley Gold" and m.format_code == "CAN_825")),
+    "PG_FRUITSAL_825": ("Fruit salad 825 g",     _group(lambda m: m.material_code == "FRUIT_SAL-CAN_825")),
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -490,6 +492,11 @@ ACCOUNTS = [
 # which sends them in its own codes; every other account's events are typed in the plan. One master per account, so
 # no promotion can come in through both doors.
 PROMOTIONS_MASTER = {"WES": "TPM", "CAR": "TPM"}          # every other account: "PLAN"
+
+# the day each account's promotional week starts: the grocers' and the discounter's catalogue week runs Wednesday to
+# Tuesday; wholesale, foodservice and export run no weekly catalogue, so their events keep no week. The trading calendar
+# does not change — Monday weeks, every week in one period — this is only where an event's window is expected to sit.
+PROMO_WEEK_START = {"WES": "Wednesday", "CAR": "Wednesday", "MER": "Wednesday", "ALS": "Wednesday"}
 
 # (ship_to_code, account_code, name, state, serving_node, stores_served)
 # planning units: who plans the demand — a level between account and ALL on the customer structure. Export is not yet

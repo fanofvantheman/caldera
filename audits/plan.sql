@@ -39,7 +39,8 @@ SELECT event_id FROM @this_model WHERE NOT event_known;
 AUDIT (name terms_vocabulary);
 SELECT instrument_code FROM @this_model
 WHERE NOT account_known
-   OR instrument_kind NOT IN ('standing_discount', 'retro_rebate', 'volume_rebate', 'growth_incentive', 'warehouse_allowance', 'settlement_discount', 'range_bonus')
+   OR instrument_kind NOT IN ('standing_discount', 'retro_rebate', 'volume_rebate', 'growth_incentive', 'warehouse_allowance', 'settlement_discount', 'range_bonus', 'coop_envelope')
+   OR NOT window_ordered
    OR driver_basis NOT IN ('pct_of_list', 'pct_of_invoice', 'per_case', 'lump_sum', 'tiered')
    OR flow_position NOT IN ('on_invoice', 'off_invoice')
    OR conditionality NOT IN ('unconditional', 'volume', 'growth', 'event', 'compliance', 'payment')
@@ -93,7 +94,17 @@ WHERE family NOT IN ('price', 'feature_and_display', 'pack', 'theme_and_seasonal
 
 AUDIT (name funding_type_priced_has_column);
 SELECT funding_type FROM @this_model
-WHERE priced AND COALESCE(event_column, '') NOT IN ('tpr_per_case', 'scan_funding_per_case', 'fixed_fee');
+WHERE priced AND COALESCE(event_column, '') NOT IN ('tpr_per_case', 'scan_funding_per_case', 'fixed_fee', 'media_fee', 'envelope_drawdown');
 
 AUDIT (name account_promotions_master_known);
 SELECT account_code, promotions_master FROM @this_model WHERE promotions_master NOT IN ('TPM', 'PLAN');
+
+AUDIT (name account_promo_week_known);
+SELECT account_code, promo_week_start FROM @this_model
+WHERE promo_week_start IS NOT NULL AND promo_week_start NOT IN ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday');
+
+AUDIT (name promo_neighbour_valid);
+/* blocking: a neighbour line names a scope of ours that resolves, an effect we know, and a sign that fits it —
+   cannibalisation takes (a negative rate), halo lends (a positive one) */
+SELECT version_id, event_id, scope_material, effect_type, rate FROM @this_model
+WHERE NOT scope_resolves OR effect_type NOT IN ('cannibalisation', 'halo') OR NOT sign_fits;

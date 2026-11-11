@@ -13,13 +13,15 @@ from chassis.landing import LogLanding
 from chassis.run import Runner, attention, health
 from chassis.warehouse import Busy, q
 
-from . import ENTRY_COLUMNS, HEALTH, SHELL, SUBMISSION_COLUMNS, roles, session
+from . import ENTRY_COLUMNS, HEALTH, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUMNS, TERMS_COLUMNS, roles, session
 from . import reads
 from . import dashboard
 from . import promotions
 
 plan = Blueprint("plan", __name__)
 ENTRIES = LogLanding("plan", "layer_entry", ENTRY_COLUMNS)
+TERMS_LANDING = LogLanding("plan", "reg_terms", TERMS_COLUMNS)
+PRICES_LANDING = LogLanding("history", "price_list", PRICE_LIST_COLUMNS)
 SUBMISSIONS = LogLanding("plan", "reg_submission", SUBMISSION_COLUMNS)
 SPREADS = ["baseline_shape", "history_shape", "catchment"]
 KINDS = ["cases", "rate_on_baseline"]
@@ -165,7 +167,7 @@ def _mine(who: str, held: set[str]) -> list[dict]:
 
 def _pending() -> list[pathlib.Path]:
     """Every file any act has placed since the last run, across the landing's tables."""
-    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending()
+    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending()
 
 
 def _d(a: float | None, b: float | None) -> float | None:
@@ -734,7 +736,8 @@ EVENTS = """<h1>Promotions<small>{{ version }} · one calendar, two doors — th
 <div class="card stat"><b>{{ held_events|length }}</b><span>held — waiting for a mapping</span></div>
 <div class="card stat"><b>{{ refused|length }}</b><span>refused at the door</span></div>
 <div class="card stat"><b>{{ waiting }}</b><span>file{{ '' if waiting == 1 else 's' }} from the promotions system waiting</span></div></div>
-<p class="small muted">Where each account's promotions are kept: {% for a in accounts %}{{ a.account_code }} {{ 'promotions system' if a.promotions_master == 'TPM' else 'typed here' }}{{ ' · ' if not loop.last }}{% endfor %}</p>
+<p class="small muted">Where each account's promotions are kept: {% for a in accounts %}{{ a.account_code }} {{ 'promotions system' if a.promotions_master == 'TPM' else 'typed here' }}{{ ' · ' if not loop.last }}{% endfor %}.
+The mix by family: {% for f, n in families %}{{ f.replace('_', ' ') }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}. <a href="{{ url_for('plan.calendar') }}">The calendar by week</a>.</p>
 <h2 id="sender">From the promotions system<span class="count">each file is taken in by an act; a re-sent event replaces the earlier one, a cancelled one is removed</span></h2>
 <table><thead><tr><th>File</th><th class="n">Events</th><th class="n">Funding lines</th><th>State</th><th></th></tr></thead><tbody>
 {% for f in files %}<tr><td><code>{{ f.file_id }}</code></td><td class="n">{{ f.events|length if f.events else '' }}</td><td class="n">{{ f.funding|length if f.funding else '' }}</td>
@@ -743,17 +746,38 @@ EVENTS = """<h1>Promotions<small>{{ version }} · one calendar, two doors — th
 </tbody></table>
 <h2 id="calendar">The calendar<span class="count">every event the plan carries, by window — the promotions system's codes beside ours</span></h2>
 <table><thead><tr><th>Event</th><th>Source</th><th>Account</th><th>Promo group</th><th>Window</th><th>Mechanic</th><th class="n">Uplift</th><th class="n">Dip</th><th>Response</th>
-<th class="n">Price reduction / case</th><th class="n">Scan / case</th><th class="n">Fixed fee</th><th>Status</th><th>Their codes</th><th>Funding not yet priced</th></tr></thead><tbody>
-{% for e in cal %}<tr id="{{ e.event_id }}"><td>{{ e.event_id }}</td><td>{{ 'promotions system' if e.source == 'sender' else 'typed' }}</td><td>{{ e.account_code }}</td><td>{{ e.promo_group_code }}</td>
-<td>{{ e.window_start }} – {{ e.window_end }}</td><td>{{ e.mechanic }} <span class="muted small">{{ e.mechanic_family }}</span></td><td class="n">{{ e.uplift_pct|pct1 }}</td><td class="n">{{ e.dip_pct|pct1 }}</td>
-<td class="small">{{ e.response_source }}{% if e.note %} — {{ e.note }}{% endif %}</td><td class="n">{{ e.tpr_per_case|n(2) }}</td><td class="n">{{ e.scan_funding_per_case|n(2) }}</td><td class="n">{{ e.fixed_fee|n }}</td>
+<th class="n">Price reduction / case</th><th class="n">Scan / case</th><th class="n">Lump sums</th><th>Status</th><th>Their codes</th><th>Funding not yet priced</th></tr></thead><tbody>
+{% for e in cal %}<tr id="{{ e.event_id }}"><td><a href="{{ url_for('plan.calendar', account=e.account_code, event=e.event_id) }}">{{ e.event_id }}</a></td><td>{{ 'promotions system' if e.source == 'sender' else 'typed' }}</td><td>{{ e.account_code }}</td><td>{{ e.promo_group_code }}</td>
+<td>{{ e.window_start }} – {{ e.window_end }}{% if e.off_week %} <span class="state" title="{{ e.off_week_says }}">off week</span>{% endif %}</td><td>{{ e.mechanic }} <span class="muted small">{{ e.mechanic_family.replace('_', ' ') }}</span></td><td class="n">{{ e.uplift_pct|pct1 }}</td><td class="n">{{ e.dip_pct|pct1 }}</td>
+<td class="small">{{ e.response_source }}{% if e.note %} — {{ e.note }}{% endif %}</td><td class="n">{{ e.tpr_per_case|n(2) }}</td><td class="n">{{ e.scan_funding_per_case|n(2) }}</td>
+<td class="n" title="fixed fee {{ e.fixed_fee|n }} · retail media {{ e.media_fee|n }} · co-op drawdown {{ e.envelope_drawdown|n }}">{{ e.lump_sums|n }}{% if e.media_fee %}<div class="small muted">media {{ e.media_fee|n }}</div>{% endif %}{% if e.envelope_drawdown %}<div class="small muted">co-op {{ e.envelope_drawdown|n }}</div>{% endif %}</td>
 <td>{{ e.status }}</td><td class="small muted">{{ e.local_codes or '' }}</td><td class="small">{{ e.unpriced_funding or '' }}</td></tr>{% endfor %}
 </tbody></table>
+<h2 id="effect">What each event does<span class="count">gross uplift, the dip after, taken from neighbours, net incremental — and its return on the net</span></h2>
+<table><thead><tr><th>Event</th><th>Account · group</th><th class="n">Gross uplift</th><th class="n">Dip</th><th class="n">From neighbours</th><th class="n">Net incremental</th>
+<th class="n">Net sales, gross uplift</th><th class="n">From neighbours</th><th class="n">Net incremental</th><th class="n">Given on other cases</th><th class="n">Lump sums</th><th class="n">Return</th><th>Neighbours declared</th></tr></thead><tbody>
+{% for e in cal %}<tr><td>{{ e.event_id }}</td><td>{{ e.account_code }} · {{ e.promo_group_code }}</td><td class="n">{{ e.uplift_cases|n }}</td><td class="n">{{ e.dip_cases|n }}</td><td class="n">{{ e.neighbour_cases|n if e.neighbours else '' }}</td>
+<td class="n"><b>{{ e.net_incremental_cases|n }}</b></td><td class="n">{{ e.uplift_net_sales|n }}</td><td class="n">{{ e.neighbour_net_sales|n if e.neighbours else '' }}</td><td class="n"><b>{{ e.net_incremental_net_sales|n }}</b></td>
+<td class="n">{{ (-e.given_on_other_cases)|n if e.given_on_other_cases else '' }}</td><td class="n">{{ (-e.lump_sums)|n if e.lump_sums else '' }}</td><td class="n"><b>{{ e.net_return|n }}</b></td>
+<td class="small">{% if e.neighbours %}{{ e.neighbours }}{% else %}<span class="muted">none declared</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+<p class="hint">Cases, then net sales at the list and terms in force. A neighbour line moves cases only — the neighbour carries none of the event's price or funding and is priced at its own list and terms. The return is the net incremental net sales, less the price reduction and scan funding the event gives on every other case sold in its window at the promoted scope (the baseline cases sell at the reduced price too), less its lump sums. A blank under neighbours means none declared, not none assumed; competitors' and other accounts' events are not modelled.</p>
+<h2 id="neighbours">Neighbour lines<span class="count">declared on an event, never estimated — a rate on a neighbouring range's baseline in the event's window</span></h2>
+{% if nbs %}<table><thead><tr><th>Event</th><th>Neighbour</th><th>Effect</th><th class="n">Rate on its baseline</th><th class="n">Materials</th><th>By</th><th>At</th><th>Note</th></tr></thead><tbody>
+{% for n in nbs %}<tr class="{{ '' if n.event_in_calendar else 'off' }}"><td>{{ n.event_id }}</td><td>{{ n.scope_material }}</td><td>{{ n.effect_type }}</td><td class="n">{{ n.rate|pct1s }}</td><td class="n">{{ n.materials }}</td><td>{{ n.entered_by }}</td><td class="small">{{ n.entered_at }}</td><td class="small">{{ n.note or '' }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="muted">No neighbour line is declared.</p>{% endif %}
+{% if may %}<form class="entry" method="post" action="{{ url_for('plan.neighbour_new') }}" style="margin-top:1rem">
+<label>event<select name="event_id">{% for e in cal %}{% if e.owner == who %}<option value="{{ e.event_id }}">{{ e.event_id }} · {{ e.account_code }} · {{ e.promo_group_code }} · {{ e.window_start }}</option>{% endif %}{% endfor %}</select></label>
+<label>neighbour (a promo group or a material of ours)<input name="scope_material" list="nb_scopes" required placeholder="PG_VALLEY_825"><datalist id="nb_scopes">{% for g in groups %}<option value="{{ g.promo_group_code }}">{{ g.promo_group_name }}</option>{% endfor %}</datalist></label>
+<label>effect<select name="effect_type"><option value="cannibalisation">cannibalisation — takes from it</option><option value="halo">halo — lends to it</option></select></label>
+<label>rate on its baseline in the window (%)<input name="rate_pct" type="number" step="0.1" required placeholder="-12 takes 12%; 0 removes the line"></label>
+<label class="wide">note<textarea name="note" rows="2" placeholder="why the ranges interact"></textarea></label>
+<div class="actions"><button class="primary">Declare neighbour line</button><span class="hint">on events you own, from either door — recorded as ours, not the sender's; in the plan after the next run</span></div></form>{% endif %}
 <h2 id="held">Held<span class="count">sent, not in the calendar until every code is mapped — what each waits for and what it would bring</span></h2>
-{% if held_events %}<table><thead><tr><th>Event</th><th>Their codes</th><th>Ours so far</th><th>Window</th><th>Waits for</th><th class="n">Cases it would bring</th><th class="n">Net sales it would bring</th><th class="n">Fixed fee</th></tr></thead><tbody>
+{% if held_events %}<table><thead><tr><th>Event</th><th>Their codes</th><th>Ours so far</th><th>Window</th><th>Waits for</th><th class="n">Cases it would bring</th><th class="n">Net sales it would bring</th><th class="n">Lump sums</th></tr></thead><tbody>
 {% for h in held_events %}<tr id="{{ h.event_id }}"><td>{{ h.event_id }}</td><td class="small">{{ h.local_account }} · {{ h.local_product_group }} · {{ h.local_tactic }} · {{ h.local_status }}</td>
 <td class="small">{{ h.account_code or '?' }} · {{ h.promo_group_code or '?' }}</td><td>{{ h.window_start }} – {{ h.window_end }}</td><td class="small">{{ h.waits_for }}</td>
-<td class="n">{{ h.would_bring_cases|n }}</td><td class="n">{{ h.would_bring_net_sales|n }}</td><td class="n">{{ h.would_bring_fixed_fee|n }}</td></tr>{% endfor %}
+<td class="n">{{ h.would_bring_cases|n }}</td><td class="n">{{ h.would_bring_net_sales|n }}</td><td class="n">{{ h.would_bring_lump_sums|n }}</td></tr>{% endfor %}
 </tbody></table>{% if may_map %}<p class="hint"><a href="{{ url_for('plan.mapping') }}">Review the codes they wait for</a> — they enter on the next run after.</p>{% endif %}
 {% else %}<p class="muted">Nothing held.</p>{% endif %}
 <h2 id="refused">Refused<span class="count">came through the wrong door — stays on file, out of the calendar</span></h2>
@@ -764,35 +788,55 @@ EVENTS = """<h1>Promotions<small>{{ version }} · one calendar, two doors — th
 {% if cancelled %}<h2>Cancelled by the promotions system</h2><table><thead><tr><th>Event</th><th>Their codes</th><th>Window</th><th>File</th></tr></thead><tbody>
 {% for c in cancelled %}<tr><td>{{ c.event_id }}</td><td class="small">{{ c.local_account }} · {{ c.local_product_group }}</td><td>{{ c.window_start }} – {{ c.window_end }}</td><td><code>{{ c.sender_file }}</code></td></tr>{% endfor %}</tbody></table>{% endif %}
 {% if pending %}<p class="hint">{{ pending|length }} file{{ '' if pending|length == 1 else 's' }} placed since the last run — the calendar shows them after the run.</p>{% endif %}
-{% if may %}<h2 id="new">New event<span class="count">for an account whose promotions are typed here — the plan supplies the response from the mechanic unless you override it, with a note</span></h2>
-<form class="entry" method="post" action="{{ url_for('plan.event_new') }}">
-<label>account<select name="account_code">{% for a in accounts %}<option value="{{ a.account_code }}">{{ a.account_code }} · {{ a.account_name }}{{ ' (promotions system)' if a.promotions_master == 'TPM' }}</option>{% endfor %}</select></label>
+{% if may %}<h2 id="new">New event<span class="count">for an account whose promotions are typed here — the window defaults to the account's promotional week; the plan supplies the response from the mechanic unless you override it, with a note</span></h2>
+<form class="entry" method="post" action="{{ url_for('plan.event_new') }}" id="newevent">
+<label>account<select name="account_code" id="ne_account">{% for a in accounts %}<option value="{{ a.account_code }}" data-week="{{ a.promo_week_start or '' }}" data-next="{{ next_start[a.account_code] }}">{{ a.account_code }} · {{ a.account_name }}{{ ' (promotions system)' if a.promotions_master == 'TPM' }}{{ ' · weeks start ' + a.promo_week_start if a.promo_week_start }}</option>{% endfor %}</select></label>
 <label>promo group<select name="promo_group_code">{% for g in groups %}<option value="{{ g.promo_group_code }}">{{ g.promo_group_code }} · {{ g.promo_group_name }}</option>{% endfor %}</select></label>
-<label>shopper window from<input name="window_start" type="date" required></label>
-<label>to<input name="window_end" type="date" required></label>
-<label>mechanic<select name="mechanic">{% for m in mechanics %}<option value="{{ m.mechanic }}">{{ m.mechanic }} · uplift {{ m.default_uplift_pct|pct1 }}, dip {{ m.default_dip_pct|pct1 }}</option>{% endfor %}</select></label>
+<label>shopper window from<input name="window_start" id="ne_start" type="date" required></label>
+<label>promotional weeks<input name="weeks" id="ne_weeks" type="number" min="1" step="1" value="2"></label>
+<label>to<input name="window_end" id="ne_end" type="date" required></label>
+<label>mechanic<select name="mechanic">{% for m in mechanics %}<option value="{{ m.mechanic }}">{{ m.mechanic }} · {{ m.family.replace('_', ' ') }} · uplift {{ m.default_uplift_pct|pct1 }}, dip {{ m.default_dip_pct|pct1 }}</option>{% endfor %}</select></label>
 <label>status<select name="status"><option>agreed</option><option>proposed</option></select></label>
 <label>price reduction per case<input name="tpr_per_case" type="number" step="0.01" min="0" value="0"></label>
 <label>scan funding per case<input name="scan_funding_per_case" type="number" step="0.01" min="0" value="0"></label>
-<label>fixed fee<input name="fixed_fee" type="number" step="1" min="0" value="0"></label>
+<label>fixed fee — catalogue, display<input name="fixed_fee" type="number" step="1" min="0" value="0"></label>
+<label>retail media<input name="media_fee" type="number" step="1" min="0" value="0"></label>
+<label>drawn from the co-op envelope<input name="envelope_drawdown" type="number" step="1" min="0" value="0"></label>
 <label>uplift (blank: the mechanic's)<input name="uplift_pct" type="number" step="0.01" min="0" placeholder="e.g. 0.6 for +60%"></label>
 <label>dip (blank: the mechanic's)<input name="dip_pct" type="number" step="0.01" min="0" placeholder="e.g. 0.15"></label>
 <label class="wide">note<textarea name="note" rows="2" placeholder="required when the response is overridden"></textarea></label>
-<div class="actions"><button class="primary">Place event</button><span class="hint">on {{ version }} by {{ who }} as at today — in the calendar after the next run</span></div></form>{% endif %}
+<div class="actions"><button class="primary">Place event</button><span class="hint">on {{ version }} by {{ who }} as at today — in the calendar after the next run; a window off the account's promotional week is placed and flagged</span></div></form>
+<script>(()=>{const a=document.getElementById('ne_account'),s=document.getElementById('ne_start'),w=document.getElementById('ne_weeks'),e=document.getElementById('ne_end');
+const end=()=>{if(!s.value)return;const d=new Date(s.value+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+7*Math.max(1,+w.value||1)-1);e.value=d.toISOString().slice(0,10)};
+const pick=()=>{const o=a.selectedOptions[0];if(o&&o.dataset.next){s.value=o.dataset.next;end()}};a.addEventListener('change',pick);s.addEventListener('change',end);w.addEventListener('input',end);pick()})()</script>{% endif %}
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
+
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _next_promo_start(day: str | None, after: dt.date) -> dt.date:
+    """The next day on or after `after` that starts the account's promotional week; with no promotional week, the next Monday."""
+    want = WEEKDAYS.index(day) if day in WEEKDAYS else 0
+    return after + dt.timedelta(days=(want - after.weekday()) % 7)
 
 
 @plan.get("/events")
 def events():
     try:
         who = _who(); version = reads.default_version()
-        cal = reads.events()
+        cal = reads.events(); accts = reads.accounts_master()
+        fam: dict[str, int] = {}
+        for e in cal:
+            fam[e["mechanic_family"]] = fam.get(e["mechanic_family"], 0) + 1
+        after = max(dt.date.today(), reads.open_period_start() or dt.date.today())
+        next_start = {a["account_code"]: _next_promo_start(a["promo_week_start"], after).isoformat() for a in accts}
         return _page(EVENTS, title="Promotions", active="events", width="none", version=version, cal=cal,
                      n_sender=sum(1 for e in cal if e["source"] == "sender"), n_plan=sum(1 for e in cal if e["source"] == "plan"),
                      held_events=reads.events_held(), refused=reads.events_refused(), cancelled=reads.events_cancelled(),
-                     files=promotions.sender_files(), waiting=len(promotions.waiting()), accounts=reads.accounts_master(),
-                     groups=reads.promo_groups(), mechanics=reads.mechanics(), pending=promotions.pending(),
+                     files=promotions.sender_files(), waiting=len(promotions.waiting()), accounts=accts,
+                     groups=reads.promo_groups(), mechanics=reads.mechanics(), pending=promotions.pending(), nbs=reads.neighbours(),
+                     families=sorted(fam.items(), key=lambda x: -x[1]), next_start=next_start,
                      may=roles.may(who, "register.promo_calendar.maintain"),
                      may_map=roles.may(who, "mapping.accept") or roles.may(who, "mapping.alter"), last=session.last)
     except Busy as e:
@@ -853,6 +897,155 @@ def take_in():
     return redirect(url_for("plan.events") + "#sender")
 
 
+CALENDAR = """<h1>Promotions calendar<small>{{ version }} · our trading weeks as the grid, each event as a bar on its true dates{% if account %} · {{ account.account_name }}{% endif %}</small></h1>
+<form class="toolbar" method="get"><label>account<select name="account" onchange="this.form.submit()"><option value="">every account</option>
+{% for a in accounts %}<option value="{{ a.account_code }}" {{ 'selected' if account and a.account_code == account.account_code }}>{{ a.account_code }} · {{ a.account_name }}</option>{% endfor %}</select></label>
+<label>promo group<select name="group" onchange="this.form.submit()"><option value="">every group</option>{% for g in groups %}<option value="{{ g }}" {{ 'selected' if g == group }}>{{ g }}</option>{% endfor %}</select></label></form>
+<p class="lede">Our weeks run Monday to Sunday, every week in one period. A customer's promotional week need not: {% for a in weeks_of %}{{ a.account_code }} from {{ a.promo_week_start }}{{ ', ' if not loop.last }}{% else %}none of these accounts keeps one{% endfor %}{% if no_week %}; {{ no_week|join(', ') }} keep{{ 's' if no_week|length == 1 }} none{% endif %}. So a grocer's event starts mid-week and straddles two of our weeks — the plan cuts it by days, never snaps it.</p>
+{% if not rows %}<p class="muted">No event in the calendar{{ ' for this account' if account }}.</p>{% else %}
+<div class="cal" style="--n:{{ weeks|length }}">
+<div class="calrow head"><div class="lab"></div><div class="lane">{% for pp in periods %}<span class="per" style="left:{{ pp.left }}%;width:{{ pp.width }}%">{{ pp.period }}</span>{% endfor %}</div></div>
+<div class="calrow head wk"><div class="lab small muted">week starting</div><div class="lane">{% for w in weeks %}{% if loop.index0 % 2 == 0 %}<span class="wk" style="left:{{ w.left }}%">{{ w.week_start.strftime('%d %b') }}</span>{% endif %}{% endfor %}</div></div>
+{% for r in rows %}{% if r.account_head %}<div class="calrow acct"><div class="lab"><b>{{ r.account_code }}</b> <span class="small muted">{{ r.account_name }}{% if r.promo_week_start %} · promotional week from {{ r.promo_week_start }}{% endif %}</span></div><div class="lane"></div></div>{% endif %}
+<div class="calrow {{ 'sel' if r.event_id == sel }}"><div class="lab small"><a href="{{ r.href }}">{{ r.event_id }}</a> <span class="muted">{{ r.promo_group_code }}</span></div>
+<div class="lane">{% for t in r.ticks %}<i class="pw" style="left:{{ t }}%"></i>{% endfor %}
+<a class="bar fam-{{ r.mechanic_family }}{{ ' offweek' if r.off_week }}" href="{{ r.href }}" style="left:{{ r.left }}%;width:{{ r.width }}%" title="{{ r.event_id }} · {{ r.mechanic }} · {{ r.window_start }} – {{ r.window_end }}{{ ' · ' + r.off_week_says if r.off_week }}">{{ r.mechanic.replace('_', ' ') }}</a>
+{% if r.dip_width %}<span class="dipbar" style="left:{{ r.left + r.width }}%;width:{{ r.dip_width }}%" title="the dip after the window"></span>{% endif %}</div></div>{% endfor %}
+</div>
+<p class="hint">Solid rules are our weeks (Monday); the dotted rules in a grocer's row are its promotional weeks. The hatched tail after a bar is the dip in the seven days after the window. An outlined bar off the grocer's rules is off the account's promotional week — placed, flagged. Open an event for the split it produces.</p>{% endif %}
+{% if ev %}<h2 id="split">{{ ev.event_id }} on our grid<span class="count">{{ ev.account_code }} · {{ ev.promo_group_code }} · {{ ev.mechanic.replace('_', ' ') }} · {{ ev.window_start.strftime('%A %d %b') }} – {{ ev.window_end.strftime('%A %d %b %Y') }} · {{ ev.window_days }} days</span></h2>
+{% if ev.off_week %}<p class="flash bad">{{ ev.off_week_says }} — placed, flagged; the grid cuts it by days as it stands.</p>{% endif %}
+<table><thead><tr><th>Trading week</th><th>Period</th><th class="n">Days of the window</th><th class="n">Uplift, cases</th><th class="n">Days of the dip</th><th class="n">Dip, cases</th>{% if split_nb %}<th class="n">Neighbours, cases</th>{% endif %}</tr></thead><tbody>
+{% for w in split %}<tr><td>{{ w.week_start.strftime('%a %d %b') }} – {{ w.week_end.strftime('%a %d %b') }}</td><td>{{ w.period }}</td><td class="n">{{ w.window_days|n if w.window_days else '' }}</td><td class="n">{{ w.uplift_cases|n if w.uplift_cases else '' }}</td>
+<td class="n">{{ w.dip_days|n if w.dip_days else '' }}</td><td class="n">{{ w.dip_cases|n if w.dip_cases else '' }}</td>{% if split_nb %}<td class="n">{{ w.neighbour_cases|n if w.neighbour_cases else '' }}</td>{% endif %}</tr>{% endfor %}
+<tr class="total"><td>Total</td><td>{{ split_periods|join(', ') }}</td><td class="n">{{ split|sum(attribute='window_days')|n }}</td><td class="n">{{ split|sum(attribute='uplift_cases')|n }}</td><td class="n">{{ split|sum(attribute='dip_days')|n }}</td><td class="n">{{ split|sum(attribute='dip_cases')|n }}</td>{% if split_nb %}<td class="n">{{ split|sum(attribute='neighbour_cases')|n }}</td>{% endif %}</tr>
+</tbody></table>
+<p class="hint">The same event lands in {{ split|selectattr('window_days')|list|length }} of our weeks{% if split_periods|length > 1 %} and {{ split_periods|length }} periods{% endif %}, each share in proportion to its days — the uplift on the baseline of every material in the group at every ship-to of the account, day-weighted.</p>{% endif %}
+<style>.cal{background:var(--panel);border:1px solid var(--rule);border-radius:var(--radius);box-shadow:var(--shadow);padding:.6rem .8rem;overflow-x:auto}
+.calrow{display:grid;grid-template-columns:15rem minmax(36rem,1fr);align-items:center;min-height:1.9rem}.calrow+.calrow{border-top:1px solid var(--rule)}.calrow.head{border-top:0;min-height:1.4rem}
+.calrow .lab{padding-right:.6rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.calrow .lab a{text-decoration:none}.calrow.sel{background:var(--hover)}
+.lane{position:relative;height:100%;min-height:1.9rem;background-image:linear-gradient(to right,var(--rule) 1px,transparent 1px);background-size:calc(100% / var(--n)) 100%}
+.pw{position:absolute;top:0;bottom:0;border-left:1px dotted var(--faint)}
+.calrow.head .lane,.calrow.acct .lane{background-image:none}.calrow.acct{background:var(--soft)}
+.per{position:absolute;top:0;font-size:.72rem;font-weight:600;color:var(--muted);border-left:1px solid var(--faint);padding-left:.3rem;white-space:nowrap;overflow:hidden}
+.wk{position:absolute;top:0;font-size:.66rem;color:var(--muted);white-space:nowrap;padding-left:.15rem}
+.bar{position:absolute;top:.3rem;bottom:.3rem;border:1.5px solid var(--series-1);background:var(--panel);border-radius:4px;font-size:.68rem;line-height:1.1;padding:.1rem .3rem;overflow:hidden;white-space:nowrap;text-decoration:none;color:var(--ink)}
+.bar.fam-price{background:rgba(var(--ink-rgb),.10)}.bar.offweek{border-style:dashed}.bar:hover{background:var(--hover)}
+.dipbar{position:absolute;top:.55rem;bottom:.55rem;background:repeating-linear-gradient(45deg,var(--series-3) 0 2px,transparent 2px 5px);border-radius:0 3px 3px 0}</style>"""
+
+
+def _pct(d: dt.date, lo: dt.date, days: int) -> float:
+    return round((d - lo).days / days * 100, 3)
+
+
+@plan.get("/calendar")
+def calendar():
+    """The calendar as a picture: our weeks as the grid, each event a bar on its true dates, filterable by account (and
+    promo group); an event opened shows the split it produces — days and cases in each trading week it touches."""
+    try:
+        version = reads.default_version()
+        accts = reads.accounts_master(); by_code = {a["account_code"]: a for a in accts}
+        account = by_code.get(request.args.get("account") or "")
+        group = request.args.get("group") or ""
+        cal = reads.events()
+        shown = [e for e in cal if (not account or e["account_code"] == account["account_code"]) and (not group or e["promo_group_code"] == group)]
+        rows, weeks, periods, days, lo = [], [], [], 1, None
+        if shown:
+            first = min(e["window_start"] for e in shown); last = max(e["window_end"] for e in shown) + dt.timedelta(days=7)
+            weeks = reads.weeks_between(first, last)
+            lo, hi = weeks[0]["week_start"], weeks[-1]["week_end"] + dt.timedelta(days=1)
+            days = (hi - lo).days
+            for w in weeks:
+                w["left"] = _pct(w["week_start"], lo, days)
+            for pp in sorted({w["period"] for w in weeks}):
+                ws = [w for w in weeks if w["period"] == pp]
+                periods.append({"period": pp, "left": _pct(ws[0]["week_start"], lo, days), "width": round(len(ws) * 7 / days * 100, 3)})
+            prev = None
+            for e in sorted(shown, key=lambda e: (e["account_code"], e["window_start"])):
+                a = by_code.get(e["account_code"], {})
+                day = a.get("promo_week_start")
+                off = (WEEKDAYS.index(day) - lo.weekday()) % 7 if day in WEEKDAYS else 0
+                ticks = [_pct(lo + dt.timedelta(days=off + 7 * k), lo, days) for k in range(len(weeks))] if day in WEEKDAYS else []
+                rows.append({**e, "account_head": e["account_code"] != prev, "account_name": a.get("account_name"), "promo_week_start": day, "ticks": ticks,
+                             "left": _pct(e["window_start"], lo, days), "width": round(((e["window_end"] - e["window_start"]).days + 1) / days * 100, 3),
+                             "dip_width": round(7 / days * 100, 3) if e["dip_pct"] else 0,
+                             "href": url_for("plan.calendar", account=request.args.get("account") or None, group=group or None, event=e["event_id"]) + "#split"})
+                prev = e["account_code"]
+        sel = request.args.get("event")
+        ev = next((e for e in cal if e["event_id"] == sel), None)
+        split = reads.event_split(sel) if ev else []
+        in_view = [by_code[c] for c in sorted({e["account_code"] for e in shown})] if shown else ([account] if account else [])
+        return _page(CALENDAR, title="Promotions calendar", active="calendar", width="none", version=version, accounts=accts, account=account,
+                     groups=sorted({e["promo_group_code"] for e in cal}), group=group, rows=rows, weeks=weeks, periods=periods, days=days,
+                     weeks_of=[a for a in in_view if a.get("promo_week_start")], no_week=[a["account_code"] for a in in_view if not a.get("promo_week_start")],
+                     sel=sel, ev=ev, split=split, split_nb=any(w["neighbour_cases"] for w in split),
+                     split_periods=sorted({w["period"] for w in split if w["window_days"]}))
+    except Busy as e:
+        return _busy("Promotions calendar", e)
+
+
+def _week_check(acct: dict, start: dt.date | None, end: dt.date | None) -> dict:
+    """Flagged, never refused: the dates are the author's to state; the grid cuts the window by days either way."""
+    day = acct.get("promo_week_start")
+    if not day or not (start and end):
+        return {"check": "on the account's promotional week", "ok": True, "flag": True, "says": f"{acct.get('account_code') or 'the account'} keeps no promotional week"}
+    days = (end - start).days + 1
+    ok = start.strftime("%A") == day and days % 7 == 0
+    return {"check": "on the account's promotional week", "ok": ok, "flag": True,
+            "says": f"{days // 7} whole {acct['account_code']} promotional week{'s' if days // 7 != 1 else ''} from {day}" if ok
+                    else f"starts {start.strftime('%A')}, {days} days — {acct['account_code']} promotional weeks start {day}; placed, flagged"}
+
+
+def _envelope_check(account: str | None, draw: float | None, start: dt.date | None, version: str) -> dict:
+    """A drawdown spends the account's co-op envelope: there must be one in force at the window's start; drawing past what
+    remains is told, not refused (the agreement is the customer's and Finance's to settle)."""
+    if not draw:
+        return {"check": "co-op envelope", "ok": True, "says": "draws nothing from a co-op envelope"}
+    env = next((e for e in reads.envelopes(version) if e["account_code"] == account and start and e["valid_from"] <= start
+                and (e["valid_to"] is None or start <= e["valid_to"])), None)
+    if env is None:
+        return {"check": "co-op envelope", "ok": False, "says": f"{account} has no co-op envelope in force at {start} — nothing to draw on"}
+    left = env["remaining"] - draw
+    return {"check": "co-op envelope", "ok": left >= 0, "flag": True,
+            "says": f"draws {draw:,.0f} of {env['remaining']:,.0f} remaining in {env['instrument_code']}" if left >= 0
+                    else f"draws {draw:,.0f} with {env['remaining']:,.0f} remaining in {env['instrument_code']} — over the envelope by {-left:,.0f}; placed, flagged"}
+
+
+@plan.post("/events/neighbour")
+def neighbour_new():
+    """A neighbour line on an event the person owns, from either door: recorded as ours (the sender's file is never
+    expected to carry it). A rate of zero takes an existing line out."""
+    f = request.form; who = _who(); version = reads.default_version() or ""
+    ev = reads.event(f.get("event_id", ""))
+    scope = (f.get("scope_material") or "").strip()
+    rate = _num(f.get("rate_pct"))
+    rate = None if rate is None else rate / 100
+    effect = f.get("effect_type")
+    groups = {g["promo_group_code"] for g in reads.promo_groups()}
+    resolves = scope in groups or reads.is_material(scope)
+    may = roles.may(who, "register.promo_calendar.maintain")
+    existing = next((n for n in reads.neighbours() if ev and n["event_id"] == ev["event_id"] and n["scope_material"] == scope), None)
+    checks = [
+        {"check": "who may declare", "ok": may and bool(ev and ev["owner"] == who),
+         "says": f"{who} owns {ev['event_id']}" if may and ev and ev["owner"] == who else (f"{ev['event_id']} is owned by {ev['owner']}" if ev else "no such event in the calendar")},
+        {"check": "event in the calendar", "ok": ev is not None, "says": f"{ev['event_id']} at {ev['account_code']} on {ev['promo_group_code']}, {ev['window_start']} – {ev['window_end']}" if ev else "the event is not in the calendar"},
+        {"check": "neighbour is ours and resolves", "ok": resolves and bool(ev) and scope != (ev or {}).get("promo_group_code"),
+         "says": f"{scope} is a range of ours outside the promoted group" if resolves and ev and scope != ev["promo_group_code"] else f"{scope or 'nothing'} is not a promo group or material of ours outside the promoted group"},
+        {"check": "rate fits the effect", "ok": rate is not None and -1 <= rate <= 1 and (rate == 0 and existing is not None or (effect == "cannibalisation" and rate < 0) or (effect == "halo" and rate > 0)),
+         "says": ("removes the line" if rate == 0 else f"{effect} {rate:+.1%} of the neighbour's baseline in the window") if rate is not None else "not a number"},
+    ]
+    placed = receipts.judge(checks)
+    nid = f"NB-F-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+    if placed:
+        promotions.NEIGHBOURS.place([{"neighbour_id": nid, "version_id": ev["version_id"], "event_id": ev["event_id"], "scope_material": scope,
+                                      "effect_type": effect if rate else (existing or {}).get("effect_type", effect), "rate": rate,
+                                      "entered_by": who, "entered_at": dt.datetime.now().isoformat(timespec="seconds"), "note": (f.get("note") or "").strip()}], who)
+    session.last = receipts.write("neighbour", who, f"{f.get('event_id')}:{scope}", checks, placed)
+    session.say(f"neighbour line on {ev['event_id']} placed — the event reads net of it after the next run" if placed
+                else "neighbour line refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+    return redirect(url_for("plan.events") + "#neighbours")
+
+
 @plan.post("/events/new")
 def event_new():
     """An event typed in the plan: the plan's checks, then the act — a file in the landing and a receipt."""
@@ -863,12 +1056,13 @@ def event_new():
     groups = {g["promo_group_code"] for g in reads.promo_groups()}
     start, end = _date(f.get("window_start")), _date(f.get("window_end"))
     tpr, scan, fee = _num(f.get("tpr_per_case"), 0.0), _num(f.get("scan_funding_per_case"), 0.0), _num(f.get("fixed_fee"), 0.0)
+    media, draw = _num(f.get("media_fee"), 0.0), _num(f.get("envelope_drawdown"), 0.0)
     up, dip = _num(f.get("uplift_pct")), _num(f.get("dip_pct"))
     up_given, dip_given = str(f.get("uplift_pct") or "").strip() != "", str(f.get("dip_pct") or "").strip() != ""
     overridden = bool(mech) and ((up_given and up != mech["default_uplift_pct"]) or (dip_given and dip != mech["default_dip_pct"]))
     note = (f.get("note") or "").strip()
     may = roles.may(who, "register.promo_calendar.maintain")
-    numbers = all(x is not None and x >= 0 for x in (tpr, scan, fee)) and (not up_given or (up is not None and up >= 0)) and (not dip_given or (dip is not None and dip >= 0))
+    numbers = all(x is not None and x >= 0 for x in (tpr, scan, fee, media, draw)) and (not up_given or (up is not None and up >= 0)) and (not dip_given or (dip is not None and dip >= 0))
     checks = [
         {"check": "version open", "ok": bool(v and v["status"] == "open"), "says": f"{version} is {v['status'] if v else 'unknown'}"},
         {"check": "who may enter", "ok": may, "says": f"{who} holds register.promo_calendar.maintain" if may else f"{who} does not hold register.promo_calendar.maintain"},
@@ -883,6 +1077,8 @@ def event_new():
         {"check": "override carries a note", "ok": not overridden or bool(note),
          "says": ("response overridden: " + note) if overridden and note else ("response overridden without a note — say why" if overridden else
                  (f"response from the mechanic: uplift {mech['default_uplift_pct']:.0%}, dip {mech['default_dip_pct']:.0%}" if mech else "no mechanic"))},
+        _envelope_check(acct.get("account_code"), draw, start, version),
+        _week_check(acct, start, end),
         {"check": "scan funding charged", "ok": not scan or bool(acct.get("supplies_scan_data")), "flag": True,
          "says": "no scan funding" if not scan else (f"{acct.get('account_code')} supplies scan data" if acct.get("supplies_scan_data") else f"{acct.get('account_code')} supplies no scan data — the scan funding is carried and not charged")},
     ]
@@ -892,7 +1088,8 @@ def event_new():
         promotions.TYPED.place([{"event_id": eid, "version_id": version, "account_code": acct["account_code"], "promo_group_code": f["promo_group_code"],
                                  "window_start": start.isoformat(), "window_end": end.isoformat(), "mechanic": mech["mechanic"],
                                  "uplift_pct": up if up_given else "", "dip_pct": dip if dip_given else "", "tpr_per_case": tpr,
-                                 "scan_funding_per_case": scan, "fixed_fee": fee, "status": f["status"], "owner": who, "baseline_version": version,
+                                 "scan_funding_per_case": scan, "fixed_fee": fee, "media_fee": media, "envelope_drawdown": draw,
+                                 "status": f["status"], "owner": who, "baseline_version": version,
                                  "note": note, "entered_on": dt.date.today().isoformat()}], who)
     session.last = receipts.write("event", who, eid, checks, placed)
     session.say(f"{eid} placed at {acct.get('account_code')} — in the calendar after the next run" if placed
@@ -902,6 +1099,7 @@ def event_new():
 
 # ---- the mapping review ----
 MAPPING = """<h1>Mapping review<small>the promotions system's codes onto ours — accept the proposal, or alter it to another of ours with a reason; an event waits until every code it uses is accepted or altered</small></h1>
+<nav class="tabs"><a href="{{ url_for('plan.mapping') }}" class="active">Review</a><a href="{{ url_for('plan.mapping_structure') }}">Their structure to ours</a></nav>
 {% if pending %}<p class="hint">{{ pending }} act{{ '' if pending == 1 else 's' }} placed since the last run — this list shows {{ 'it' if pending == 1 else 'them' }} after the run.</p>{% endif %}
 <h2 id="waiting">Waiting for a person<span class="count">{{ review|length }} code{{ '' if review|length == 1 else 's' }} · lowest confidence first</span></h2>
 {% if review %}<table><thead><tr><th>Subject</th><th>Their code</th><th>Their description</th><th>Proposed</th><th>Confidence</th><th>Why</th><th class="n">Events held</th><th>Act</th></tr></thead><tbody>
@@ -936,6 +1134,79 @@ def mapping():
                      may_accept=roles.may(who, "mapping.accept"), may_alter=roles.may(who, "mapping.alter"), last=session.last)
     except Busy as e:
         return _busy("Mapping review", e)
+
+
+STRUCTURE = """<h1>Their structure to ours<small>how the promotions system's codes land on the plan's structure — five subjects, each code to one of ours, and what ours is</small></h1>
+<nav class="tabs"><a href="{{ url_for('plan.mapping') }}">Review</a><a href="{{ url_for('plan.mapping_structure') }}" class="active">Their structure to ours</a></nav>
+<div class="card note"><table class="pairs"><thead><tr><th>The promotions system keeps</th><th></th><th>The plan reads it as</th><th>Which places the event</th></tr></thead><tbody>
+<tr><td><b>Planning account</b> — who the event is negotiated with</td><td>→</td><td><b>Account</b></td><td>at every ship-to of the account, in its planning unit; its promotions kept in one place only</td></tr>
+<tr><td><b>Product group</b> — the range on promotion</td><td>→</td><td><b>Promo group</b></td><td>on every material in the group: the cases are planned at the material</td></tr>
+<tr><td><b>Tactic</b> — what the shopper sees</td><td>→</td><td><b>Mechanic</b>, in one of seven families</td><td>the volume shape: uplift in the window, dip after</td></tr>
+<tr><td><b>Fund type</b> — what the supplier pays and how</td><td>→</td><td><b>Funding type</b></td><td>a line of the gross-to-net: per case on invoice or off, or a lump sum on the event — or carried, not yet priced</td></tr>
+<tr><td><b>Status</b> — their word for the event's state</td><td>→</td><td><b>Status</b></td><td>whether it is in the calendar</td></tr></tbody></table></div>
+{% if example %}<h2>One event, both ways<span class="count">{{ example.event_id }} as sent, and as the plan reads it</span></h2>
+<table><thead><tr><th>Subject</th><th>Their code</th><th>Their description</th><th></th><th>Ours</th><th>What ours is</th></tr></thead><tbody>
+{% for x in example.lines %}<tr><td>{{ x.say }}</td><td><code>{{ x.local_code }}</code></td><td>{{ x.local_description or '' }}</td><td>→</td><td>{{ x.target_code or '—' }}</td><td class="small">{{ x.what }}</td></tr>{% endfor %}
+</tbody></table>{% endif %}
+{% for subj in order %}<h2 id="{{ subj }}">{{ say[subj]|capitalize }} → {{ ours_say[subj] }}<span class="count">{{ by[subj]|length }} code{{ '' if by[subj]|length == 1 else 's' }}</span></h2>
+<table><thead><tr><th>Their code</th><th>Their description</th><th></th><th>Ours</th><th>What ours is</th><th>State</th></tr></thead><tbody>
+{% for m in by[subj] %}<tr class="{{ '' if m.in_force else 'added' }}"><td><code>{{ m.local_code }}</code></td><td>{{ m.local_description or '' }}</td><td>→</td>
+<td>{% if m.target_code %}{{ m.target_code }} <span class="muted small">{{ m.target_name or '' }}</span>{% else %}<span class="muted">not mapped</span>{% endif %}</td>
+<td class="small">{{ m.what }}</td><td>{% if m.in_force %}{{ m.review_state }}{% else %}<a href="{{ url_for('plan.mapping') }}#{{ m.subject }}-{{ m.local_code }}"><span class="state">{{ 'proposed' if m.review_state == 'proposed' else 'waiting' }}</span></a>{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% endfor %}
+<p class="hint">Rows marked at the left edge are not yet in force: a proposal waiting for review, or a code seen in a file and not mapped — every event that uses one is held until it is. Our lists are fixed; a reviewer places a code on one of ours, never adds to them.</p>
+<style>table.pairs{box-shadow:none;background:transparent;border:0}table.pairs td,table.pairs th{background:transparent;border-bottom:1px solid var(--rule)}</style>"""
+
+OURS_SAY = {"customer": "account", "material": "promo group", "mechanic": "mechanic", "funding_type": "funding type", "status": "status"}
+
+
+def _what(subject: str, o: dict | None) -> str:
+    """What one of ours is, in the plan's structure, in a line."""
+    if not o:
+        return ""
+    if subject == "customer":
+        return (f"{o['name']} · {o['channel']} · planned in {o['planning_unit_name']} · promotions "
+                + ("from the promotions system" if o["promotions_master"] == "TPM" else "typed in the plan")
+                + (f" · promotional week from {o['promo_week_start']}" if o.get("promo_week_start") else ""))
+    if subject == "material":
+        names = (o["material_names"] or "").split("; ")
+        return f"{o['materials']} material{'s' if o['materials'] != 1 else ''}: " + "; ".join(names[:4]) + (f"; and {len(names) - 4} more" if len(names) > 4 else "")
+    if subject == "mechanic":
+        return f"{o['family'].replace('_', ' ')} · default uplift {o['default_uplift_pct']:.0%}, dip {o['default_dip_pct']:.0%}"
+    if subject == "funding_type":
+        col = {"tpr_per_case": "price reduction per case, on invoice", "scan_funding_per_case": "scan funding per case, off invoice",
+               "fixed_fee": "a fixed fee on the event", "media_fee": "retail media, a lump sum on the event",
+               "envelope_drawdown": "drawn from the account's co-op envelope, a lump sum on the event"}.get(o.get("event_column") or "")
+        return ("priced as " + col) if o["priced"] and col else "carried on the event and shown, not yet priced"
+    if subject == "status":
+        return "in the calendar" if o["enters_calendar"] in (True, "Y") else "out of the calendar"
+    return ""
+
+
+@plan.get("/mapping/structure")
+def mapping_structure():
+    try:
+        st = reads.mapping_structure()
+        for subj, rows in st.items():
+            for m in rows:
+                m["what"] = _what(subj, m["ours"])
+        example = None
+        sent = next((e for e in reads.events() if e["source"] == "sender" and e["local_codes"]), None)
+        if sent:
+            raw = q("select local_account, local_product_group, local_tactic, local_status, account_code, promo_group_code, mechanic, status from plan.promo_sender_event where event_id = ?", sent["event_id"])[0]
+            fund = q("select local_fund_type, funding_type from plan.promo_funding where event_id = ? order by line_no", sent["event_id"])
+            pairs = [("customer", raw["local_account"], raw["account_code"]), ("material", raw["local_product_group"], raw["promo_group_code"]),
+                     ("mechanic", raw["local_tactic"], raw["mechanic"]), ("status", raw["local_status"], raw["status"])] + \
+                    [("funding_type", f_["local_fund_type"], f_["funding_type"]) for f_ in fund]
+            lines = []
+            for subj, code, target in pairs:
+                m = next((x for x in st.get(subj, []) if x["local_code"] == code), {})
+                lines.append({"say": promotions.SAY[subj], "local_code": code, "local_description": m.get("local_description"), "target_code": target, "what": m.get("what", "")})
+            example = {"event_id": sent["event_id"], "lines": lines}
+        return _page(STRUCTURE, title="Their structure to ours", active="structure", width="none", by={k: st.get(k, []) for k in promotions.SUBJECTS},
+                     order=promotions.SUBJECTS, say=promotions.SAY, ours_say=OURS_SAY, example=example)
+    except Busy as e:
+        return _busy("Their structure to ours", e)
 
 
 @plan.post("/mapping/act")
@@ -987,45 +1258,150 @@ def mapping_propose():
     return redirect(url_for("plan.mapping"))
 
 
-TERMS = """<h1>Terms<small>the instruments in force, by account</small></h1>
-{% for a in groups %}<h2>{{ a.account_name }}<span class="count">{{ a.account_code }} · {{ a.rows|length }} instrument{{ '' if a.rows|length == 1 else 's' }}</span></h2>
-<table><thead><tr><th>Instrument</th><th>Kind</th><th>Driver basis</th><th class="n">Rate</th><th>Flow position</th><th>Conditionality</th><th>Settlement</th><th>Material scope</th><th>Valid from</th><th>Valid to</th><th>Note</th></tr></thead><tbody>
-{% for r in a.rows %}<tr><td>{{ r.instrument_code }}</td><td>{{ r.instrument_kind }}</td><td>{{ r.driver_basis }}</td><td class="n">{{ r.rate }}</td><td>{{ r.flow_position }}</td><td>{{ r.conditionality }}</td><td>{{ r.settlement_timing }}</td><td>{{ r.scope_material or '' }}</td><td>{{ r.valid_from }}</td><td>{{ r.valid_to or '' }}</td><td>{{ r.note or '' }}</td></tr>{% endfor %}
-</tbody></table>{% endfor %}"""
+MAINTAINED = """<p class="hint">{% if may_edit %}You maintain {{ what }}: an amendment is a new row from a date — the row in force is never edited — and takes effect on the next run.{% else %}You read {{ what }}; they are maintained by {{ holders|join(', ') or 'nobody yet' }} ({{ verb }}). Ask them for a change.{% endif %}</p>"""
+
+TERMS = """<h1>Terms<small>the instruments in force, by account — effective-dated; an amendment is a new row from its date</small></h1>
+""" + MAINTAINED + """
+{% if envelopes %}<h2 id="envelopes">Co-op envelopes<span class="count">{{ version }} · committed for the year, drawn by the events in the calendar, remaining</span></h2>
+<table><thead><tr><th>Envelope</th><th>Account</th><th>Year</th><th class="n">Committed</th><th class="n">Drawn</th><th class="n">Remaining</th><th>Drawn by</th></tr></thead><tbody>
+{% for e in envelopes %}<tr><td>{{ e.instrument_code }}</td><td>{{ e.account_code }}</td><td>{{ e.valid_from }} – {{ e.valid_to or 'open' }}</td><td class="n">{{ e.committed|n }}</td><td class="n">{{ e.drawn|n }}</td>
+<td class="n">{{ e.remaining|n }}{% if e.remaining < 0 %} <span class="state">over</span>{% endif %}</td><td class="small">{{ e.drawn_by or '' }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">The money is counted once, at the event: a drawdown is a lump sum on the event in the gross-to-net; the envelope itself values nothing.</p>{% endif %}
+{% for a in groups %}<h2>{{ a.account_name }}<span class="count">{{ a.account_code }} · {{ a.rows|length }} row{{ '' if a.rows|length == 1 else 's' }}</span></h2>
+<table><thead><tr><th>Instrument</th><th>Kind</th><th>Driver basis</th><th class="n">Rate</th><th>Flow position</th><th>Conditionality</th><th>Settlement</th><th>Material scope</th><th>Valid from</th><th>Valid to</th><th>Note</th>{% if may_edit %}<th>Amend from a date</th>{% endif %}</tr></thead><tbody>
+{% for r in a.rows %}<tr class="{{ 'retired' if r.valid_to and r.valid_to < today }}{{ ' added' if r.amended_by_file }}"><td>{{ r.instrument_code }}</td><td>{{ r.instrument_kind }}</td><td>{{ r.driver_basis }}</td>
+<td class="n">{{ r.rate|n if r.driver_basis == 'lump_sum' else r.rate|pct1 }}</td><td>{{ r.flow_position }}</td><td>{{ r.conditionality }}</td><td>{{ r.settlement_timing }}</td><td>{{ r.scope_material or '' }}</td><td>{{ r.valid_from }}</td><td>{{ r.valid_to or '' }}</td><td class="small">{{ r.note or '' }}</td>
+{% if may_edit %}<td class="acts">{% if not r.valid_to or r.valid_to >= today %}<form class="inline" method="post" action="{{ url_for('plan.terms_amend') }}"><input type="hidden" name="instrument_code" value="{{ r.instrument_code }}"><input type="hidden" name="row_from" value="{{ r.valid_from }}">
+<input name="rate" type="number" step="any" required placeholder="{{ 'amount' if r.driver_basis == 'lump_sum' else 'rate, e.g. 0.02' }}" style="width:7rem"> <input name="valid_from" type="date" required value="{{ next_from }}"> <input name="note" required placeholder="why" size="14"> <button class="act">Amend</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}
+</tbody></table>{% endfor %}
+{% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
 
 @plan.get("/terms")
 def terms():
     try:
+        who = _who(); version = reads.default_version()
         names = {a["account_code"]: a["account_name"] for a in q("select account_code, account_name from dims.dim_account")}
         groups: dict[str, dict] = {}
         for r in reads.terms():
             g = groups.setdefault(r["account_code"], {"account_code": r["account_code"], "account_name": names.get(r["account_code"], r["account_code"]), "rows": []})
             g["rows"].append(r)
-        return _page(TERMS, title="Terms", active="terms", groups=sorted(groups.values(), key=lambda g: g["account_name"]))
+        verb = "register.terms.maintain"
+        return _page(TERMS, title="Terms", active="terms", groups=sorted(groups.values(), key=lambda g: g["account_name"]), version=version,
+                     envelopes=reads.envelopes(version) if version else [], may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
+                     what="the terms register", today=dt.date.today(), next_from=_next_monday().isoformat(), last=session.last)
     except Busy as e:
         return _busy("Terms", e)
 
 
+def _next_monday() -> dt.date:
+    """The earliest date an amendment can usefully start: a rate is read at each week's start, so the next Monday on or
+    after both today and the first open period."""
+    after = max(dt.date.today(), reads.open_period_start() or dt.date.today())
+    return after + dt.timedelta(days=(7 - after.weekday()) % 7)
+
+
+def _from_checks(start: dt.date | None) -> list[dict]:
+    first = reads.open_period_start()
+    ok = bool(start and first and start >= first)
+    monday = bool(start and start.weekday() == 0)
+    return [{"check": "from an open period", "ok": ok, "says": f"from {start}, on or after {first}" if ok else f"{start or 'no date'} — nothing is placed before the first open period ({first})"},
+            {"check": "from a week's start", "ok": monday, "flag": True,
+             "says": f"{start} is a Monday" if monday else (f"{start} is a {start.strftime('%A')} — read from the week starting {start + dt.timedelta(days=(7 - start.weekday()) % 7)}" if start else "no date")}]
+
+
+@plan.post("/terms/amend")
+def terms_amend():
+    """Finance amends an instrument from a date: a new row in the register's layout, every attribute carried from the row
+    being amended, the new rate and a note. The row in force is never edited; the next run reads the new row from its date."""
+    f = request.form; who = _who(); verb = "register.terms.maintain"
+    row = next((r for r in reads.terms() if r["instrument_code"] == f.get("instrument_code") and str(r["valid_from"]) == f.get("row_from")), None)
+    rate, start, note = _num(f.get("rate")), _date(f.get("valid_from")), (f.get("note") or "").strip()
+    may = roles.may(who, verb)
+    within = bool(row and start and start >= row["valid_from"] and (row["valid_to"] is None or start <= row["valid_to"]))
+    checks = [
+        {"check": "who may amend", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — terms are maintained by {', '.join(reads.holders(verb))}"},
+        {"check": "instrument on file", "ok": row is not None, "says": f"{row['instrument_code']} ({row['instrument_kind']}) from {row['valid_from']}" if row else "no such instrument row"},
+        {"check": "rate is a number", "ok": rate is not None and rate >= 0 and (row is None or row["driver_basis"] == "lump_sum" or rate < 1),
+         "says": (f"{rate:,.0f}" if row and row["driver_basis"] == "lump_sum" else f"{rate:.2%}") if rate is not None and rate >= 0 else "not a number, or below zero"},
+        *_from_checks(start),
+        {"check": "within the row's validity", "ok": within, "says": f"{start} falls within {row['valid_from']} – {row['valid_to'] or 'open'}" if within else "the date is outside the row being amended"},
+        {"check": "a note says why", "ok": bool(note), "says": note or "an amendment says why"},
+    ]
+    placed = receipts.judge(checks)
+    if placed:
+        TERMS_LANDING.place([{**{k: row[k] for k in ("account_code", "instrument_code", "instrument_kind", "driver_basis", "flow_position", "conditionality",
+                                                    "settlement_timing", "scope_material")},
+                              "rate": rate, "valid_from": start.isoformat(), "valid_to": row["valid_to"].isoformat() if row["valid_to"] else "", "note": note}], who)
+    session.last = receipts.write("terms.amend", who, f.get("instrument_code", ""), checks, placed)
+    session.say(f"{row['instrument_code']} amended from {start} — in the plan after the next run" if placed
+                else "amendment refused: " + "; ".join(c["says"] for c in checks if not c["ok"] and not c.get("flag")), placed)
+    return redirect(url_for("plan.terms"))
+
+
 PRICE_LISTS = """<h1>Price lists<small>list price per case in the list's currency, effective-dated; an increase is a dated event</small></h1>
+""" + MAINTAINED + """
+{% if may_edit %}<h2 id="change">Change a price<span class="count">a new row from a date — the price in force stays on file</span></h2>
+<form class="entry" method="post" action="{{ url_for('plan.price_change') }}">
+<label>price list<select name="price_list">{% for pl in lists %}<option value="{{ pl.price_list }}">{{ pl.price_list }} · {{ pl.currency }}</option>{% endfor %}</select></label>
+<label>material<input name="material_code" list="pl_materials" required placeholder="a material on the list"><datalist id="pl_materials">{% for m in materials %}<option value="{{ m }}">{% endfor %}</datalist></label>
+<label>price per case<input name="price_per_case" type="number" step="0.01" min="0" required></label>
+<label>from<input name="valid_from" type="date" required value="{{ next_from }}"></label>
+<label class="wide">event — the increase or change it belongs to<input name="event" required placeholder="PI-2027-02 cost pass-through"></label>
+<div class="actions"><button class="primary">Place price change</button><span class="hint">by {{ who }} — read from the week it starts in, after the next run</span></div></form>{% endif %}
 {% for pl in lists %}<h2>{{ pl.price_list }}<span class="count">{{ pl.currency }} · {{ pl.materials|length }} materials · on it: {% for a in pl.accounts %}{{ a.account_name }}{{ ', ' if not loop.last }}{% else %}no account{% endfor %}</span></h2>
 {% if pl.events %}<table><thead><tr><th>Increase event</th><th>Effective</th><th class="n">Materials repriced</th><th class="n">Average change</th></tr></thead><tbody>
 {% for e in pl.events %}<tr><td>{{ e.event }}</td><td>{{ e.effective }}</td><td class="n">{{ e.n }}</td><td class="n">{{ e.avg|pct1s }}</td></tr>{% endfor %}
 </tbody></table>{% endif %}
 <table><thead><tr><th>Material</th><th class="n">Price before</th><th>Valid</th><th class="n">Price in force</th><th>Valid</th><th class="n">Change</th><th>Event</th></tr></thead><tbody>
-{% for m in pl.materials %}{% set c = m.current %}{% set p = m.prior %}<tr><td>{{ m.material_name }} <span class="muted">{{ m.material_code }}</span></td>
+{% for m in pl.materials %}{% set c = m.current %}{% set p = m.prior %}<tr class="{{ 'added' if c.placed_by_finance }}"><td>{{ m.material_name }} <span class="muted">{{ m.material_code }}</span></td>
 <td class="n">{{ p.price_per_case|n(2) if p else '' }}</td><td>{% if p %}{{ p.valid_from }} to {{ p.valid_to or 'open' }}{% endif %}</td>
 <td class="n">{{ c.price_per_case|n(2) }}</td><td>{{ c.valid_from }} to {{ c.valid_to or 'open' }}</td>
 <td class="n">{{ m.change|pct1s if m.change is not none else '' }}</td><td>{{ c.price_event or '' }}</td></tr>{% endfor %}
-</tbody></table>{% endfor %}"""
+</tbody></table>{% endfor %}
+{% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
 
 @plan.get("/price_lists")
 def price_lists():
     try:
-        return _page(PRICE_LISTS, title="Price lists", active="pricelists", lists=reads.price_lists())
+        who = _who(); verb = "register.price_list.maintain"; lists = reads.price_lists()
+        return _page(PRICE_LISTS, title="Price lists", active="pricelists", lists=lists, may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
+                     what="the price lists", next_from=_next_monday().isoformat(), last=session.last,
+                     materials=sorted({m["material_code"] for pl in lists for m in pl["materials"]}))
     except Busy as e:
         return _busy("Price lists", e)
+
+
+@plan.post("/price_lists/change")
+def price_change():
+    """Finance changes a list price from a date: a new effective-dated row in the price list's layout. The price in force
+    is never edited; the next run reads the new row from the week it starts in."""
+    f = request.form; who = _who(); verb = "register.price_list.maintain"
+    pl, mat = f.get("price_list", ""), (f.get("material_code") or "").strip()
+    price, start, label = _num(f.get("price_per_case")), _date(f.get("valid_from")), (f.get("event") or "").strip()
+    on = next((x for x in reads.price_lists() if x["price_list"] == pl), None)
+    cur = next((m["current"] for m in (on or {}).get("materials", []) if m["material_code"] == mat), None)
+    may = roles.may(who, verb)
+    chg = None if not (cur and price) else price / cur["price_per_case"] - 1
+    checks = [
+        {"check": "who may change a price", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — price lists are maintained by {', '.join(reads.holders(verb))}"},
+        {"check": "material on the list", "ok": cur is not None, "says": f"{mat} is on {pl} at {cur['price_per_case']:,.2f} {cur['currency']}" if cur else f"{mat or 'nothing'} is not on {pl}"},
+        {"check": "price is a number", "ok": price is not None and price > 0, "says": f"{price:,.2f}" + (f" ({chg:+.1%})" if chg is not None else "") if price else "not a number, or not above zero"},
+        *_from_checks(start),
+        {"check": "change is modest", "ok": chg is None or abs(chg) <= 0.25, "flag": True, "says": "within ±25% of the price in force" if chg is None or abs(chg) <= 0.25 else f"{chg:+.1%} against the price in force — placed, flagged"},
+        {"check": "an event names it", "ok": bool(label), "says": label or "a change belongs to an increase or a correction — name it"},
+    ]
+    placed = receipts.judge(checks)
+    if placed:
+        PRICES_LANDING.place([{"price_list": pl, "material_code": mat, "currency": cur["currency"], "price_per_case": price,
+                               "valid_from": start.isoformat(), "valid_to": "", "event": label}], who)
+    session.last = receipts.write("price.change", who, f"{pl}:{mat}", checks, placed)
+    session.say(f"{mat} on {pl} at {price:,.2f} from {start} — in the plan after the next run" if placed
+                else "price change refused: " + "; ".join(c["says"] for c in checks if not c["ok"] and not c.get("flag")), placed)
+    return redirect(url_for("plan.price_lists"))
 
 
 @plan.get("/versions")
@@ -1061,7 +1437,7 @@ RUN = """<h1>Run and health<small>load the landing, evaluate every model and eve
 {% if run_log %}<h2>Last run</h2><pre>{{ run_log }}</pre>{% endif %}
 {% if pending %}<h2>Waiting for the next run</h2><table><thead><tr><th>File</th></tr></thead><tbody>{% for p in pending %}<tr><td><code>{{ p.name }}</code></td></tr>{% endfor %}</tbody></table>{% endif %}
 {% if health %}<h2>Health</h2><table><thead><tr><th>Worklist</th><th>Severity</th><th class="n">Items</th><th>What to do</th><th>Whose</th></tr></thead><tbody>
-{% for h in health %}<tr><td>{{ h.name }}</td><td><span class="severity">{{ h.severity }}</span></td><td class="n">{{ h.items }}</td><td>{{ h.what_to_do }}</td><td>{{ h.whose }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% for h in health %}<tr><td>{{ h.name }}</td><td><span class="severity">{{ h.severity }}</span></td><td class="n">{{ h['items'] }}</td><td>{{ h.what_to_do }}</td><td>{{ h.whose }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 <h2>Recent acts</h2><table><thead><tr><th>At</th><th>Act</th><th>By</th><th>Subject</th><th>Placed</th></tr></thead><tbody>
 {% for r in receipts %}<tr><td>{{ r.at }}</td><td>{{ r.act }}</td><td>{{ r.by }}</td><td><code>{{ r.subject }}</code></td><td class="{{ 'ok' if r.placed else 'no' }}">{{ '✓' if r.placed else '✕' }}</td></tr>{% endfor %}</tbody></table>"""
 

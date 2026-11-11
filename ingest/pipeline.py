@@ -57,7 +57,8 @@ HISTORY = {
 }
 PLAN = {
     "layer_entry": ("layer_no", "value"),
-    "reg_promo_event": ("uplift_pct", "dip_pct", "tpr_per_case", "scan_funding_per_case", "fixed_fee"),
+    "reg_promo_event": ("uplift_pct", "dip_pct", "tpr_per_case", "scan_funding_per_case", "fixed_fee", "media_fee", "envelope_drawdown"),
+    "reg_promo_neighbour": ("rate",),
     "tpm_event": ("uplift_pct", "dip_pct"),
     "tpm_funding": ("line_no", "rate"),
     "reg_promo_mapping": (),

@@ -176,7 +176,74 @@ def bridge(version_id: str) -> dict:
 
 def events() -> list[dict]:
     """The one calendar: both doors, each event with its source and, for the sender's, its own codes beside ours."""
-    return q("select * from plan.promo_event order by window_start, account_code")
+    return q("""select e.*, x.uplift_cases, x.dip_cases, x.neighbour_cases, x.net_incremental_cases, x.uplift_net_sales, x.neighbour_net_sales,
+                       x.net_incremental_net_sales, x.given_on_other_cases, x.net_return, x.neighbours
+                from plan.promo_event e left join plan.promo_event_effect x on x.event_id = e.event_id
+                order by e.window_start, e.account_code""")
+
+
+def neighbours() -> list[dict]:
+    """Every neighbour line in force, one row per line (not per material), with how many of our materials it reaches."""
+    return q("""select version_id, event_id, scope_material, any_value(effect_type) effect_type, any_value(rate) rate, any_value(entered_by) entered_by,
+                       any_value(entered_at) entered_at, any_value(note) note, count(material_code) materials, bool_and(event_in_calendar) event_in_calendar
+                from plan.promo_neighbour group by all order by event_id, scope_material""")
+
+
+def event(event_id: str) -> dict | None:
+    return one("select * from plan.promo_event where event_id = ?", event_id)
+
+
+def event_split(event_id: str) -> list[dict]:
+    """What a dated window does to our grid: for each trading week it touches, the days of the window in it, the period it
+    falls in, and the cases each effect puts there — the uplift, the dip after, any neighbour line."""
+    return q("""select l.week_id, w.week_start, w.week_end, w.period, round(coalesce(max(case when l.effect_type = 'primary' then l.in_window end), 0) * 7) as window_days,
+                       round(coalesce(max(case when l.effect_type = 'timing_shift' then l.in_dip end), 0) * 7) as dip_days,
+                       sum(case when l.effect_type = 'primary' then l.cases else 0 end) as uplift_cases,
+                       sum(case when l.effect_type = 'timing_shift' then l.cases else 0 end) as dip_cases,
+                       sum(case when l.effect_type in ('cannibalisation', 'halo') then l.cases else 0 end) as neighbour_cases
+                from plan.promo_line l join dims.dim_week w on w.week_id = l.week_id where l.event_id = ? group by all order by w.week_start""", event_id)
+
+
+def weeks_between(start, end) -> list[dict]:
+    return q("select week_id, week_start, week_end, period from dims.dim_week where week_end >= ? and week_start <= ? order by week_start", start, end)
+
+
+def envelopes(version_id: str) -> list[dict]:
+    return q("select * from plan.terms_envelope where version_id = ? order by account_code", version_id)
+
+
+def holders(action: str) -> list[str]:
+    return [r["principal"] for r in q("select distinct principal from dims.effective_entitlements where action = ? order by 1", action)]
+
+
+def open_period_start():
+    """The first day of the first period not yet closed — nothing is placed before it."""
+    r = one("select min(period_start) d from dims.dim_period where period_state <> 'CLOSED'")
+    return r["d"] if r else None
+
+
+def mapping_structure() -> dict[str, list[dict]]:
+    """The promotions system's structure laid against ours, per subject: every code the register names (in force,
+    proposed, or seen and not yet mapped), what it lands on, and what that is in our structure."""
+    rows = q("""select subject, local_code, local_description, target_code, target_name, review_state, origin, in_force, null as events from plan.promo_mapping
+                union all
+                select subject, local_code, local_description, proposed_target, proposed_target_name, 'missing', null, false, events
+                from plan.worklist_promo_mapping_review where review_state = 'missing'
+                order by subject, target_code nulls last, local_code""")
+    ours = {
+        "customer": {r["code"]: r for r in q("""select account_code as code, account_name as name, planning_unit_name, promotions_master, promo_week_start, channel
+                                                from dims.dim_account""")},
+        "material": {r["code"]: r for r in q("""select g.promo_group_code as code, any_value(g.promo_group_name) as name, count(*) materials,
+                                                       string_agg(m.material_name, '; ' order by m.material_name) material_names
+                                                from dims.ref_promo_group g left join dims.dim_material m on m.material_code = g.material_code group by 1""")},
+        "mechanic": {r["code"]: r for r in q("select mechanic as code, mechanic_name as name, family, default_uplift_pct, default_dip_pct from dims.ref_mechanic")},
+        "funding_type": {r["code"]: r for r in q("select funding_type as code, funding_type_name as name, driver_basis, priced, event_column from dims.ref_funding_type")},
+        "status": {r["code"]: r for r in q("select status as code, status_name as name, enters_calendar from dims.ref_promo_status")},
+    }
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["subject"], []).append({**r, "ours": ours.get(r["subject"], {}).get(r["target_code"])})
+    return out
 
 
 def events_held() -> list[dict]:
@@ -192,7 +259,7 @@ def events_cancelled() -> list[dict]:
 
 
 def accounts_master() -> list[dict]:
-    return q("select account_code, account_name, promotions_master, supplies_scan_data from dims.dim_account order by promotions_master, account_code")
+    return q("select account_code, account_name, promotions_master, supplies_scan_data, promo_week_start from dims.dim_account order by promotions_master, account_code")
 
 
 def account(code: str) -> dict | None:

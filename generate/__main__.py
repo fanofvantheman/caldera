@@ -12,10 +12,10 @@ from pathlib import Path
 
 from . import calendar as cal
 from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIALS, CATEGORIES, PRODUCTS, FORMATS,
-                         PROMO_GROUPS, ACCOUNTS, PROMOTIONS_MASTER, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
+                         PROMO_GROUPS, ACCOUNTS, PROMOTIONS_MASTER, PROMO_WEEK_START, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
 from .history import forecast_snapshots, generate_demand, generate_prices, value_shipments
 from .registers import versions, period_control, roles, capacity_register, assumptions
-from .plan import business_plan_entries, latest_view_entries, promo_events, terms_register, reason_codes, submissions
+from .plan import business_plan_entries, latest_view_entries, promo_events, promo_neighbours, terms_register, reason_codes, submissions
 from .emit import emit_all, dataclass_rows
 from . import sender
 
@@ -50,7 +50,7 @@ def main() -> None:
         "dim_account": [{"account_code": a[0], "account_name": a[1], "channel": a[2], "sub_channel": a[3], "account_tier": a[4],
                          "route_to_market": a[5], "state": a[6], "price_list": a[7], "payment_terms_days": a[8],
                          "settlement_discount_pct": a[9], "collaborative_flag": a[10], "scan_flag": a[11], "status": "active",
-                         "promotions_master": PROMOTIONS_MASTER.get(a[0], "PLAN"),
+                         "promotions_master": PROMOTIONS_MASTER.get(a[0], "PLAN"), "promo_week_start": PROMO_WEEK_START.get(a[0], ""),
                          "planning_unit": UNIT_OF[a[0]][0], "planning_unit_name": UNIT_OF[a[0]][1]} for a in ACCOUNTS],
         "dim_ship_to": [{"ship_to_code": s[0], "account_code": s[1], "ship_to_name": s[2], "state": s[3], "serving_node": s[4], "stores_served": s[5]} for s in SHIP_TOS],
         "dim_node": [{"node_code": n[0], "node_name": n[1], "node_kind": n[2], "roles": n[3], "ownership": n[4], "state": n[5], "status": n[6]} for n in NODES],
@@ -79,6 +79,7 @@ def main() -> None:
     plan = {
         "layer_entry": [{"entry_id": f"LE-{i:05d}", **e} for i, e in enumerate(entries, start=1)],
         **doors,
+        "reg_promo_neighbour": promo_neighbours(events),
         "reg_terms": terms,
         "reg_submission": submissions(LATEST_CLOSED),
     }

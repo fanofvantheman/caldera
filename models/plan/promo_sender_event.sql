@@ -18,6 +18,8 @@ fund AS (
          SUM(CASE WHEN priced AND event_column = 'tpr_per_case' THEN rate ELSE 0 END) AS tpr_per_case,
          SUM(CASE WHEN priced AND event_column = 'scan_funding_per_case' THEN rate ELSE 0 END) AS scan_funding_per_case,
          SUM(CASE WHEN priced AND event_column = 'fixed_fee' THEN rate ELSE 0 END) AS fixed_fee,
+         SUM(CASE WHEN priced AND event_column = 'media_fee' THEN rate ELSE 0 END) AS media_fee,
+         SUM(CASE WHEN priced AND event_column = 'envelope_drawdown' THEN rate ELSE 0 END) AS envelope_drawdown,
          STRING_AGG(CASE WHEN mapping_in_force AND NOT priced THEN funding_type || ' ' || format('{:,.0f}', rate) || CASE rate_basis WHEN 'LUMP' THEN ' lump sum' ELSE ' per case' END END, '; ' ORDER BY line_no) AS unpriced_funding,
          STRING_AGG(CASE WHEN NOT mapping_in_force THEN 'fund type ' || local_fund_type || CASE WHEN review_state = 'proposed' THEN ' (proposed, not reviewed)' ELSE ' (not mapped)' END END, '; ' ORDER BY line_no) AS fund_waits,
          STRING_AGG(local_fund_type, ' + ' ORDER BY line_no) AS local_fund_types
@@ -34,7 +36,7 @@ resolved AS (
   LEFT JOIN plan.promo_mapping st ON st.sender = l.sender AND st.subject = 'status' AND st.local_code = l.status
 ),
 judged AS (
-  SELECT r.*, f.tpr_per_case, f.scan_funding_per_case, f.fixed_fee, f.unpriced_funding, f.local_fund_types,
+  SELECT r.*, f.tpr_per_case, f.scan_funding_per_case, f.fixed_fee, f.media_fee, f.envelope_drawdown, f.unpriced_funding, f.local_fund_types,
          a.promotions_master, rs.enters_calendar,
          CONCAT_WS('; ',
            CASE WHEN NOT COALESCE(r.customer_ok, FALSE) THEN 'planning account ' || r.planning_account || CASE WHEN r.customer_state = 'proposed' THEN ' (proposed, not reviewed)' ELSE ' (not mapped)' END END,
@@ -58,6 +60,7 @@ SELECT j.event_id::TEXT AS event_id, j.version_id::TEXT AS version_id, j.sender:
        j.tactic::TEXT AS local_tactic, j.tactic_name::TEXT AS local_tactic_name, j.status::TEXT AS local_status, j.local_fund_types,
        j.shopper_start::DATE AS window_start, j.shopper_end::DATE AS window_end, j.uplift_pct::DOUBLE AS uplift_pct, j.dip_pct::DOUBLE AS dip_pct,
        COALESCE(j.tpr_per_case, 0) AS tpr_per_case, COALESCE(j.scan_funding_per_case, 0) AS scan_funding_per_case, COALESCE(j.fixed_fee, 0) AS fixed_fee,
+       COALESCE(j.media_fee, 0) AS media_fee, COALESCE(j.envelope_drawdown, 0) AS envelope_drawdown,
        j.unpriced_funding, NULLIF(j.baseline_version::TEXT, '') AS baseline_version, j.promotions_master,
        CASE WHEN j.mapping_waits = '' AND j.mapped_status = 'cancelled' THEN 'cancelled'
             WHEN j.mapping_waits = '' AND j.promotions_master = 'PLAN' THEN 'refused'

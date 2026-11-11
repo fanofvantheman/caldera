@@ -14,7 +14,7 @@ import pathlib
 
 from chassis.landing import LogLanding
 
-from . import MAPPING_COLUMNS, PROMO_EVENT_COLUMNS, ROOT, TPM_EVENT_COLUMNS, TPM_FUNDING_COLUMNS
+from . import MAPPING_COLUMNS, NEIGHBOUR_COLUMNS, PROMO_EVENT_COLUMNS, ROOT, TPM_EVENT_COLUMNS, TPM_FUNDING_COLUMNS
 from . import reads
 
 SENDER = "TPM"
@@ -24,7 +24,8 @@ TPM_EVENTS = LogLanding("plan", "tpm_event", TPM_EVENT_COLUMNS)
 TPM_FUNDING = LogLanding("plan", "tpm_funding", TPM_FUNDING_COLUMNS)
 TYPED = LogLanding("plan", "reg_promo_event", PROMO_EVENT_COLUMNS)
 MAPPINGS = LogLanding("plan", "reg_promo_mapping", MAPPING_COLUMNS)
-LANDINGS = [TPM_EVENTS, TPM_FUNDING, TYPED, MAPPINGS]
+NEIGHBOURS = LogLanding("plan", "reg_promo_neighbour", NEIGHBOUR_COLUMNS)
+LANDINGS = [TPM_EVENTS, TPM_FUNDING, TYPED, MAPPINGS, NEIGHBOURS]
 SUBJECTS = ["customer", "material", "mechanic", "funding_type", "status"]
 SAY = {"customer": "planning account", "material": "product group", "mechanic": "tactic", "funding_type": "fund type", "status": "status"}
 
@@ -36,12 +37,17 @@ GUIDANCE = {
                 "promoted together — by brand, category and pack size.",
     "mechanic": "The sender's tactic is what the shopper sees. Map it to our mechanic: half price is 50% off the shelf; a "
                 "smaller temporary price cut is price_cut; x-for-$y and buy-one-get-one are multi_buy; a catalogue, "
-                "display or gondola end with no price change is feature_display; a bonus or on-pack offer is bonus_pack. "
-                "Use unclassified only when none fits.",
+                "catalogue page with no price change is catalogue_feature; a gondola end or off-location display with no price "
+                "change is gondola_end; a bonus or on-pack offer is bonus_pack; a Christmas, Easter or other themed display "
+                "is seasonal_event; in-store sampling is sampling; loyalty points or a personalised offer is points_offer; a "
+                "run-out of a range leaving the shelf is clearance. A price promotion supported by a catalogue or display is "
+                "still its price mechanic. Use unclassified only when none fits.",
     "funding_type": "The sender's fund type is what the supplier pays for an event and how. Map it to our funding type by "
                     "what it is charged on: an off-invoice or on-invoice deal per case in the shopper window is "
                     "price_reduction_per_case; a rebate per unit or case sold through the till is scan_per_case; a fee for "
-                    "a catalogue, display or placement is fixed_fee; retail media or advertising is media. Use "
+                    "a catalogue, display or placement is fixed_fee; retail media or advertising is media; spend drawn "
+                    "from an annual co-op fund or envelope is envelope_drawdown; a deal per case bought in a buy-in window is "
+                    "case_deal; a claim per unit after the event is bill_back; free stock is free_goods. Use "
                     "unclassified only when none fits.",
     "status": "The sender's status word for an event. Map it to our status: agreed with the customer, proposed (a "
               "candidate, draft or pending), executed, evaluated, or cancelled.",

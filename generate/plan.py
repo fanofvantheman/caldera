@@ -117,8 +117,16 @@ def latest_view_entries(plan_fy: int, latest_closed: str) -> list[dict]:
 
 
 def promo_events(weeks: list[Week], plan_fy: int, latest_closed: str, materials: list[Material]) -> list[dict]:
-    """The promotions calendar for the open version: dated windows (retailer weeks start mid-week), a mechanic,
-    an uplift assumption, the price reduction and funding per case, a fixed fee where there is a catalogue."""
+    """The promotions calendar for the open version: dated windows (the grocers' promotional week starts on a Wednesday),
+    one mechanic per event — the one that sets the volume shape — an uplift assumption, and the funding: the price
+    reduction and scan funding per case, a fixed fee where there is a catalogue page or a display, retail-media money,
+    or a drawdown on the account's annual co-op envelope.
+
+    The mix is the trade's, not a brochure: ambient grocery promotes on price, so two events in three are price-led and
+    about half of those carry a catalogue or display fee. Around them, the non-price families as they actually occur:
+    two display-only gondola ends (one funded from the co-op envelope), a Christmas seasonal display on the family-size
+    fruit cans, a points offer with retail-media funding, and a clearance run-out of the 825 g fruit salad ahead of its
+    delisting at Westbrook. Sampling and bonus packs are on the register with no event — rare on cans."""
     v = f"LV-{latest_closed}"
     mat = {m.material_code: m for m in materials}
     def avg_list(group: str) -> float:
@@ -141,18 +149,42 @@ def promo_events(weeks: list[Week], plan_fy: int, latest_closed: str, materials:
         ("WES", "PG_ROSSO_JARS", f"{plan_fy}P09", 16, 7, "multi_buy",  0.50, 0.15, False),
         ("CAR", "PG_ROSSO_JARS", f"{plan_fy + 1}P01", 9, 14, "price_cut", 0.55, 0.18, True),
     ]
+    beyond_price = [  # the other families: (account, promo group, period, offset, days, mechanic, uplift, dip, tpr % of list, funding)
+        ("WES", "PG_FRUITSAL_825", f"{plan_fy}P06", 9, 14, "clearance",      0.40, 0.00, 0.30, {}),
+        ("CAR", "PG_VALLEY_825",   f"{plan_fy}P06", 16, 14, "seasonal_event", 0.35, 0.10, 0.00, {"fixed_fee": 10000.0, "_fee_code": "GEF"}),
+        ("WES", "PG_BEANS_SPAG",   f"{plan_fy}P08", 9, 14, "gondola_end",    0.30, 0.05, 0.00, {"fixed_fee": 12000.0, "_fee_code": "GEF"}),
+        ("CAR", "PG_REDGUM",       f"{plan_fy}P09", 23, 14, "gondola_end",   0.30, 0.05, 0.00, {"envelope_drawdown": 10000.0}),
+        ("WES", "PG_ROSSO_JARS",   f"{plan_fy}P12", 9, 14, "points_offer",   0.10, 0.00, 0.00, {"media_fee": 12000.0}),
+    ]
     scan_accounts = {a[0] for a in ACCOUNTS if a[11] == "Y"}
     rows = []
-    for i, (acct, grp, period, off, days, mech, uplift, tpr_pct, catalogue) in enumerate(plan, start=1):
-        start = period_start[period].fromordinal(period_start[period].toordinal() + off)   # a Wednesday: retailer weeks start mid-week
+    def add(eid, acct, grp, period, off, days, mech, uplift, dip, tpr, scan, funding):
+        start = period_start[period].fromordinal(period_start[period].toordinal() + off)   # a Wednesday: the grocers' week
         end = start.fromordinal(start.toordinal() + days - 1)
-        rows.append({"event_id": f"EV-{plan_fy}-{i:03d}", "version_id": v, "account_code": acct, "promo_group_code": grp,
+        rows.append({"event_id": eid, "version_id": v, "account_code": acct, "promo_group_code": grp,
                      "window_start": start.isoformat(), "window_end": end.isoformat(), "mechanic": mech,
-                     "uplift_pct": uplift, "dip_pct": 0.15, "tpr_per_case": round(avg_list(grp) * tpr_pct, 2),
-                     "scan_funding_per_case": 1.50 if acct in scan_accounts else 0.0,
-                     "fixed_fee": 15000.0 if catalogue else 0.0, "status": "agreed", "owner": "trade.marketing@caldera",
-                     "baseline_version": v})
+                     "uplift_pct": uplift, "dip_pct": dip, "tpr_per_case": tpr, "scan_funding_per_case": scan,
+                     "fixed_fee": funding.get("fixed_fee", 0.0), "media_fee": funding.get("media_fee", 0.0),
+                     "envelope_drawdown": funding.get("envelope_drawdown", 0.0), "status": "agreed", "owner": "trade.marketing@caldera",
+                     "baseline_version": v, "_fee_code": funding.get("_fee_code", "CATF")})
+    for i, (acct, grp, period, off, days, mech, uplift, tpr_pct, catalogue) in enumerate(plan, start=1):
+        add(f"EV-{plan_fy}-{i:03d}", acct, grp, period, off, days, mech, uplift, 0.15, round(avg_list(grp) * tpr_pct, 2),
+            1.50 if acct in scan_accounts else 0.0, {"fixed_fee": 15000.0} if catalogue else {})
+    # numbered after the ids the promotions system's next export already uses (015–018)
+    for i, (acct, grp, period, off, days, mech, uplift, dip, tpr_pct, funding) in enumerate(beyond_price, start=19):
+        add(f"EV-{plan_fy}-{i:03d}", acct, grp, period, off, days, mech, uplift, dip, round(avg_list(grp) * tpr_pct, 2),
+            1.50 if acct in scan_accounts and tpr_pct else 0.0, funding)
     return rows
+
+
+def promo_neighbours(events: list[dict]) -> list[dict]:
+    """The neighbour lines declared on events: a promoted range taking volume from (or lending it to) a neighbouring
+    range of our own at the same account, as a rate on the neighbour's baseline in the event's window. Declared, never
+    estimated; one is seeded — the Valley Gold 410 g half price at Westbrook takes shoppers from the 825 g cans."""
+    first = next(e for e in events if e["account_code"] == "WES" and e["promo_group_code"] == "PG_VALLEY_410")
+    return [{"neighbour_id": "NB-0001", "version_id": first["version_id"], "event_id": first["event_id"], "scope_material": "PG_VALLEY_825",
+             "effect_type": "cannibalisation", "rate": -0.12, "entered_by": "trade.marketing@caldera", "entered_at": "2026-11-03T09:00:00",
+             "note": "half price on the 410 g cans takes family-size shoppers from the 825 g cans"}]
 
 
 def terms_register() -> list[dict]:
@@ -168,6 +200,10 @@ def terms_register() -> list[dict]:
             rows += [t(acct, "RR", "retro_rebate", "pct_of_invoice", 0.025, "off_invoice", "unconditional", "quarterly"),
                      t(acct, "VR", "volume_rebate", "pct_of_invoice", 0.015, "off_invoice", "volume", "annual_retro", "accrual rate; tier reached is a true-up"),
                      t(acct, "WA", "warehouse_allowance", "pct_of_invoice", 0.010, "off_invoice", "unconditional", "in_period")]
+            # the annual co-op envelope: an amount committed for the year, spent by the events that draw on it — the money
+            # is counted once, at the event; the agreement reads committed, drawn and remaining
+            rows.append({**t(acct, "COOP", "coop_envelope", "lump_sum", 120000.0 if acct == "WES" else 90000.0, "off_invoice", "event", "annual_retro",
+                             "annual co-op envelope; drawn by events, counted at the event"), "valid_to": "2027-06-27"})
         elif acct == "MER":
             rows += [t(acct, "SD", "standing_discount", "pct_of_list", 0.030, "on_invoice", "unconditional", "in_period"),
                      t(acct, "RR", "retro_rebate", "pct_of_invoice", 0.010, "off_invoice", "unconditional", "quarterly"),

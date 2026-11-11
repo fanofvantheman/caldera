@@ -7,10 +7,12 @@ its areas and pages and the verbs that make a page relevant; a person sees what 
 page is what those processes expect of them.
 
   uv run python -m face            # http://localhost:8010 — reloads on changes under face/; --no-reload for the room
+  uv run python -m face --skin     # the same face in the specimen client colours below
 """
 from __future__ import annotations
 
 import pathlib
+import sys
 
 import chassis
 from chassis.roles import WarehouseRoles
@@ -41,9 +43,12 @@ PROCESSES = [
             Section("accuracy", "Forecast accuracy", "plan.accuracy", verbs=READ),
             Section("new", "New entry", "plan.entry_new", verbs=ENTER),
             Section("events", "Promotions", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
+            Section("calendar", "Promotions calendar", "plan.calendar", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill", "read.plan"]),
             Section("mapping", "Mapping review", "plan.mapping", verbs=["mapping.accept", "mapping.alter"]),
-            Section("terms", "Terms", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill"]),
-            Section("pricelists", "Price lists", "plan.price_lists", verbs=["register.price_list.maintain", "read.drill"]),
+            Section("structure", "Their structure to ours", "plan.mapping_structure", verbs=["mapping.accept", "mapping.alter", "register.promo_calendar.maintain", "read.drill"]),
+            # the rate registers: every planner reads them; only Finance (the holders of the maintain verbs) amends them
+            Section("terms", "Terms", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill", "read.plan"]),
+            Section("pricelists", "Price lists", "plan.price_lists", verbs=["register.price_list.maintain", "read.drill", "read.plan"]),
             Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"]),
         ]),
         Area("supply", "Supply", [
@@ -89,7 +94,11 @@ PROCESSES = [
     ]),
 ]
 
-SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home", who="select", processes=PROCESSES)
+# a specimen of a client's colours: the face takes them on its named objects only (wordmark, bar, selection, edges, chart
+# series) and keeps every state mark, verdict and total in the scheme's own tones; without --skin the face is unskinned
+SPECIMEN_SKIN = {"primary": "#a8321e", "secondary": "#5b7a2e", "bar": "#2a221d"}
+SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home", who="select", processes=PROCESSES,
+              skin=SPECIMEN_SKIN if "--skin" in sys.argv[1:] else None)
 
 # the entry file's contract — every column the landing writes; the generator writes the same
 SUBMISSION_COLUMNS = ["submission_id", "action", "version_id", "subject", "scope_node", "submitted_by", "submitted_on", "note"]
@@ -103,6 +112,14 @@ TPM_EVENT_COLUMNS = ["sender", "sender_file", "version_id", "taken_in_at", "take
                      "dip_pct", "baseline_version"]
 TPM_FUNDING_COLUMNS = ["sender", "sender_file", "version_id", "taken_in_at", "event_id", "line_no", "fund_type", "fund_type_name", "rate_basis", "rate"]
 PROMO_EVENT_COLUMNS = ["event_id", "version_id", "account_code", "promo_group_code", "window_start", "window_end", "mechanic", "uplift_pct", "dip_pct",
-                       "tpr_per_case", "scan_funding_per_case", "fixed_fee", "status", "owner", "baseline_version", "note", "entered_on"]
+                       "tpr_per_case", "scan_funding_per_case", "fixed_fee", "media_fee", "envelope_drawdown", "status", "owner", "baseline_version",
+                       "note", "entered_on"]
+# a neighbour line on an event: the latest row per version × event × neighbour scope is in force; a rate of zero removes it
+NEIGHBOUR_COLUMNS = ["neighbour_id", "version_id", "event_id", "scope_material", "effect_type", "rate", "entered_by", "entered_at", "note"]
+# Finance's acts on the rate registers: an amendment is a new effective-dated row in the register's own layout, never an
+# edit of the row in force; who placed it is the file's name and the receipt
+TERMS_COLUMNS = ["account_code", "instrument_code", "instrument_kind", "driver_basis", "rate", "flow_position", "conditionality",
+                 "settlement_timing", "scope_material", "valid_from", "valid_to", "note"]
+PRICE_LIST_COLUMNS = ["price_list", "material_code", "currency", "price_per_case", "valid_from", "valid_to", "event"]
 MAPPING_COLUMNS = ["mapping_id", "sender", "subject", "local_code", "local_description", "target_code", "origin", "review_state", "confidence",
                    "rationale", "acted_by", "acted_at", "reason"]

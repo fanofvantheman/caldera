@@ -27,14 +27,23 @@ import datetime as dt
 SENDER = "TPM"
 FIRST_FILE, NEXT_FILE = "TPM-20261103", "TPM-20261112"
 
-# our mechanic register: (mechanic, name, family, default uplift on baseline, default dip after the window)
+# our mechanic register — one or more mechanics in each of the seven families, the family named as the conformed list
+# names it: (mechanic, name, family, default uplift on baseline, default dip after the window). An event has one
+# mechanic, the one that sets its volume shape; a catalogue page or display supporting a price promotion is a funding
+# line on the price event, not a second mechanic. Display and feature: modest uplift, small dip; a points offer: small
+# uplift, no dip; clearance: uplift, no dip (the range is leaving).
 MECHANICS = [
-    ("half_price",      "Half price — 50% off the shelf price",           "price",               1.00, 0.15),
-    ("price_cut",       "Temporary price reduction, less than half off",  "price",               0.50, 0.15),
-    ("multi_buy",       "Multi-buy — x for $y, buy-one-get-one",          "price",               0.45, 0.15),
-    ("feature_display", "Catalogue feature or display, no price change",  "feature_and_display", 0.25, 0.05),
-    ("bonus_pack",      "Bonus pack or on-pack offer",                    "pack",                0.30, 0.10),
-    ("unclassified",    "A mechanic nobody can place yet",                "unclassified",        0.00, 0.00),
+    ("half_price",        "Half price — 50% off the shelf price",                     "price",                    1.00, 0.15),
+    ("price_cut",         "Temporary price reduction, less than half off",            "price",                    0.50, 0.15),
+    ("multi_buy",         "Multi-buy — x for $y, buy-one-get-one",                    "price",                    0.45, 0.15),
+    ("catalogue_feature", "Catalogue feature, no price change",                       "feature_and_display",      0.20, 0.05),
+    ("gondola_end",       "Gondola end or off-location display, no price change",     "feature_and_display",      0.30, 0.05),
+    ("bonus_pack",        "Bonus pack or on-pack offer",                              "pack",                     0.30, 0.10),
+    ("seasonal_event",    "Seasonal or themed event — Christmas, Easter, back to school", "theme_and_seasonal",   0.35, 0.10),
+    ("sampling",          "In-store sampling or demonstration",                       "trial_and_experience",     0.10, 0.00),
+    ("points_offer",      "Loyalty points or personalised offer",                     "loyalty_and_personalised", 0.10, 0.00),
+    ("clearance",         "Clearance — run-out of a range leaving the shelf",         "clearance",                0.40, 0.00),
+    ("unclassified",      "A mechanic nobody can place yet",                          "unclassified",             0.00, 0.00),
 ]
 
 # our funding types: (type, name, driver basis, priced by the financialisation, event column it fills)
@@ -45,8 +54,8 @@ FUNDING_TYPES = [
     ("case_deal",                "Case deal per case bought in the buy-in window",       "per_case", "N", ""),
     ("bill_back",                "Bill-back per unit, claimed after the event",          "per_case", "N", ""),
     ("free_goods",               "Free goods — units shipped at no charge",              "units",    "N", ""),
-    ("media",                    "Media or retail-media funding",                        "lump_sum", "N", ""),
-    ("envelope_drawdown",        "Spend drawn from an annual co-op envelope",            "lump_sum", "N", ""),
+    ("media",                    "Media or retail-media funding",                        "lump_sum", "Y", "media_fee"),
+    ("envelope_drawdown",        "Spend drawn from an annual co-op envelope",            "lump_sum", "Y", "envelope_drawdown"),
     ("unclassified",             "A funding type nobody can place yet",                  "",         "N", ""),
 ]
 
@@ -63,11 +72,15 @@ STATUSES = [
 ACCOUNTS = {"PA-1001": ("Westbrook Supermarkets — national", "WES"), "PA-1002": ("Carters Supermarkets — national", "CAR")}
 GROUPS = {"PG-VG410": ("Valley Gold canned fruit 410g", "PG_VALLEY_410"), "PG-CUP4": ("Fruit snack cups 4 x 120g", "PG_CUPS_4PK"),
           "PG-BNSP": ("Baked beans & spaghetti cans", "PG_BEANS_SPAG"), "PG-RG400": ("Redgum tomatoes 400g", "PG_REDGUM"),
-          "PG-RV500": ("Rosso Vale pasta sauce 500g jar", "PG_ROSSO_JARS")}
+          "PG-RV500": ("Rosso Vale pasta sauce 500g jar", "PG_ROSSO_JARS"), "PG-VG825": ("Valley Gold canned fruit 825g", "PG_VALLEY_825"),
+          "PG-FS825": ("Valley Gold fruit salad 825g", "PG_FRUITSAL_825")}
 TACTICS = {"T50": ("Half price on shelf", "half_price"), "TPR": ("Temporary price reduction", "price_cut"),
-           "MB": ("Multibuy 2 for $X", "multi_buy")}
+           "MB": ("Multibuy 2 for $X", "multi_buy"), "GE": ("Gondola end display", "gondola_end"),
+           "XMAS": ("Christmas seasonal display", "seasonal_event"), "PTS": ("Loyalty points offer", "points_offer"),
+           "CLR": ("Clearance run-out", "clearance")}
 FUNDS = {"OI": ("Off-invoice deal per case", "price_reduction_per_case"), "SCN": ("Scan rebate per case sold", "scan_per_case"),
-         "CATF": ("Catalogue placement fee", "fixed_fee")}
+         "CATF": ("Catalogue placement fee", "fixed_fee"), "GEF": ("Display placement fee", "fixed_fee"),
+         "RMN": ("Retail media network placement", "media"), "COOP": ("Co-op fund drawdown", "envelope_drawdown")}
 STATUS_WORDS = {"Draft": "proposed", "Approved": "agreed", "Executed": "executed", "Cancelled": "cancelled"}
 ACCOUNT_OF = {ours: theirs for theirs, (_, ours) in ACCOUNTS.items()}
 GROUP_OF = {ours: theirs for theirs, (_, ours) in GROUPS.items()}
@@ -100,7 +113,8 @@ def _header(ev: dict, account: str, group: str, tactic: str, status: str = "Appr
 
 def _funding(ev: dict) -> list[dict]:
     lines = []
-    for code, col, basis in (("OI", "tpr_per_case", "CASE"), ("SCN", "scan_funding_per_case", "CASE"), ("CATF", "fixed_fee", "LUMP")):
+    for code, col, basis in (("OI", "tpr_per_case", "CASE"), ("SCN", "scan_funding_per_case", "CASE"), (ev.get("_fee_code") or "CATF", "fixed_fee", "LUMP"),
+                             ("RMN", "media_fee", "LUMP"), ("COOP", "envelope_drawdown", "LUMP")):
         if ev.get(col):
             lines.append({"event_id": ev["event_id"], "line_no": len(lines) + 1, "fund_type": code, "fund_type_name": FUNDS[code][0],
                           "rate_basis": basis, "rate": ev[col]})
@@ -126,7 +140,8 @@ def through_the_doors(events: list[dict], masters: dict[str, str]) -> dict[str, 
             fund += _funding(ev)
         else:
             u, d = defaults[ev["mechanic"]]
-            typed.append({**ev, "uplift_pct": "" if ev["uplift_pct"] == u else ev["uplift_pct"], "dip_pct": "" if ev["dip_pct"] == d else ev["dip_pct"],
+            typed.append({**{k: x for k, x in ev.items() if not k.startswith("_")},
+                          "uplift_pct": "" if ev["uplift_pct"] == u else ev["uplift_pct"], "dip_pct": "" if ev["dip_pct"] == d else ev["dip_pct"],
                           "note": "", "entered_on": "2026-11-03"})
     mapping = []
     for subject, codes in (("customer", {k: v for k, v in ACCOUNTS.items()}), ("material", GROUPS), ("mechanic", TACTICS), ("funding_type", FUNDS),
@@ -166,6 +181,6 @@ def next_export(events: list[dict], period_start: dict[str, dt.date], plan_fy: i
         _header(cancelled, ACCOUNT_OF[cancelled["account_code"]], GROUP_OF[cancelled["promo_group_code"]], TACTIC_OF[cancelled["mechanic"]], status="Cancelled"),
     ]
     fund = _funding(n1) + _funding(n2) + _funding(n3) + _funding(n4) + _funding(moved) + _funding(cancelled)
-    fund.append({"event_id": n3["event_id"], "line_no": 2, "fund_type": "RMN", "fund_type_name": "Retail media network placement",
+    fund.append({"event_id": n3["event_id"], "line_no": 2, "fund_type": "DSPA", "fund_type_name": "Display build allowance",
                  "rate_basis": "LUMP", "rate": 8000.0})
     return {f"{NEXT_FILE}_events": head, f"{NEXT_FILE}_funding": fund}

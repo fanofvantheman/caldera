@@ -17,8 +17,8 @@ table.tree tr.l1 td:first-child{padding-left:1.8rem}table.tree tr.l2 td:first-ch
 
 # the figure: the chart's frame, legend swatches, drill crumbs, small multiples and the hover read-out — shared by every page that draws chart()
 FIG_CSS = """.fig svg{display:block;width:100%;height:auto;max-height:420px;margin-top:.6rem}.fighead{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}.fighead .legend{margin-left:auto}
-.key{display:inline-flex;align-items:center;gap:.3rem}.sw{display:inline-block;width:1.1rem;height:0;border-top:2px solid var(--ink)}.sw.actual{border-top-width:4px}.sw.ref{border-top-style:dashed}.sw.py{border-top-color:var(--faint)}
-.crumbs{font-size:.85rem;color:var(--muted)}.crumbs a{text-decoration:none}.crumbs a:hover{text-decoration:underline}.crumbs b{color:var(--ink)}.crumbs .switch{margin-left:.9rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;padding:.1rem .6rem}.crumbs .seg{display:inline-flex;margin-left:.6rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;overflow:hidden}.crumbs .seg a,.crumbs .seg b{padding:.1rem .6rem}.crumbs .seg b{background:var(--ink);color:var(--paper);font-weight:500}.crumbs .seg a+a,.crumbs .seg b+a,.crumbs .seg a+b{border-left:1px solid var(--rule)}
+.key{display:inline-flex;align-items:center;gap:.3rem}.sw{display:inline-block;width:1.1rem;height:0;border-top:2px solid var(--series-1)}.sw.actual{border-top-width:4px}.sw.ref{border-top-style:dashed}.sw.py{border-top-color:var(--series-3)}
+.crumbs{font-size:.85rem;color:var(--muted)}.crumbs a{text-decoration:none}.crumbs a:hover{text-decoration:underline}.crumbs b{color:var(--ink)}.crumbs .switch{margin-left:.9rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;padding:.1rem .6rem}.crumbs .seg{display:inline-flex;margin-left:.6rem;font-size:.78rem;border:1px solid var(--rule);border-radius:999px;overflow:hidden}.crumbs .seg a,.crumbs .seg b{padding:.1rem .6rem}.crumbs .seg b{background:var(--accent);color:var(--on-accent);font-weight:500}.crumbs .seg a+a,.crumbs .seg b+a,.crumbs .seg a+b{border-left:1px solid var(--rule)}
 .multiples{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.8rem;margin-top:1rem;border-top:1px solid var(--rule);padding-top:1rem}
 .multiple{display:block;text-decoration:none;color:inherit;border:1px solid var(--rule);border-radius:var(--radius-s);padding:.5rem .7rem .3rem}.multiple:hover{background:var(--hover);border-color:var(--faint)}
 .mhead{display:flex;justify-content:space-between;font-size:.82rem;font-weight:500;gap:.5rem}.multiple svg{max-height:120px}
@@ -151,13 +151,13 @@ def chart(series: dict, fy: int, width: int = 1100, height: int = 300, small: bo
         if actual:
             out.append(f'<path d="{path(actual)}{f" L{actual[-1][0]:.1f},{mt + ph} L{actual[0][0]:.1f},{mt + ph} Z"}" fill="var(--soft)"/>')
         if pyp:
-            out.append(f'<path d="{path(pyp)}" fill="none" stroke="var(--faint)" stroke-width="1.2"/>')
+            out.append(f'<path d="{path(pyp)}" fill="none" stroke="var(--series-3)" stroke-width="1.2"/>')
         if refp:
-            out.append(f'<path d="{path(refp)}" fill="none" stroke="var(--ink)" stroke-width="1" stroke-dasharray="3 3"/>')
+            out.append(f'<path d="{path(refp)}" fill="none" stroke="var(--series-1)" stroke-width="1" stroke-dasharray="3 3"/>')
         if actual:
-            out.append(f'<path d="{path(actual)}" fill="none" stroke="var(--ink)" stroke-width="2.4" stroke-linejoin="round"/>')
+            out.append(f'<path d="{path(actual)}" fill="none" stroke="var(--series-1)" stroke-width="2.4" stroke-linejoin="round"/>')
         if join:
-            out.append(f'<path d="{path(join)}" fill="none" stroke="var(--ink)" stroke-width="1.4" stroke-linejoin="round"/>')
+            out.append(f'<path d="{path(join)}" fill="none" stroke="var(--series-1)" stroke-width="1.4" stroke-linejoin="round"/>')
         out.append("</svg>")
         return "".join(out)
     for tv in ticks:
@@ -175,16 +175,16 @@ def chart(series: dict, fy: int, width: int = 1100, height: int = 300, small: bo
         out.append(f'<path d="{area}" fill="var(--soft)"/>')
     labels = []
     if pyp:
-        out.append(f'<path d="{path(pyp)}" fill="none" stroke="var(--faint)" stroke-width="1.5"/>')
+        out.append(f'<path d="{path(pyp)}" fill="none" stroke="var(--series-3)" stroke-width="1.5"/>')
         labels.append([pyp[-1][1], f"FY{fy - 1}", "var(--muted)", "400"])
     if refp:
-        out.append(f'<path d="{path(refp)}" fill="none" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="5 4"/>')
-        labels.append([refp[-1][1], series["ref_id"], "var(--ink)", "400"])
+        out.append(f'<path d="{path(refp)}" fill="none" stroke="var(--series-1)" stroke-width="1.5" stroke-dasharray="5 4"/>')
+        labels.append([refp[-1][1], series["ref_id"], "var(--series-1)", "400"])
     if actual:
-        out.append(f'<path d="{path(actual)}" fill="none" stroke="var(--ink)" stroke-width="3.5" stroke-linejoin="round"/>')
+        out.append(f'<path d="{path(actual)}" fill="none" stroke="var(--series-1)" stroke-width="3.5" stroke-linejoin="round"/>')
     if join:
-        out.append(f'<path d="{path(join)}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/>')
-        labels.append([join[-1][1], "plan", "var(--ink)", "600"])
+        out.append(f'<path d="{path(join)}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>')
+        labels.append([join[-1][1], "plan", "var(--series-1)", "600"])
     # direct labels at the right edge, pushed apart where they would overlap
     labels.sort(key=lambda l: l[0])
     for i in range(1, len(labels)):
@@ -196,7 +196,7 @@ def chart(series: dict, fy: int, width: int = 1100, height: int = 300, small: bo
         out.append(f'<text x="{actual[-1][0]:.1f}" y="{mt + 2}" text-anchor="middle" font-size="10" fill="var(--muted)">last closed</text>')
     out.append(f'<line class="cross" style="display:none" x1="0" x2="0" y1="{mt}" y2="{mt + ph}" stroke="var(--ink)" stroke-width="1" stroke-dasharray="2 3"/>')
     for s in ("view", "ref", "py"):
-        out.append(f'<circle class="dot" data-s="{s}" style="display:none" r="4.5" fill="var(--paper)" stroke="var(--ink)" stroke-width="2"/>')
+        out.append(f'<circle class="dot" data-s="{s}" style="display:none" r="4.5" fill="var(--paper)" stroke="var(--series-1)" stroke-width="2"/>')
     out.append("</svg>")
     return "".join(out)
 
