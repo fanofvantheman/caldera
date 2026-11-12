@@ -666,7 +666,7 @@ def forecast_series(version_id: str, material: str, account: str) -> list[dict]:
                        where b.version_id = ? and b.material_code = ? and b.account_code = ? group by 1),
                  h as (select fiscal_year, cast(substr(period, 6) as int) fiscal_period, sum(cases) shipped from history.shipments
                        where material_code = ? and account_code = ? group by all)
-                select p.period, count(*) weeks, any_value(l.landed) landed, any_value(o.ours) ours, any_value(l.landed) / nullif(any_value(o.ours), 0) - 1 as departure,
+                select p.period, count(*) as "weeks", any_value(l.landed) as landed, any_value(o.ours) ours, any_value(l.landed) / nullif(any_value(o.ours), 0) - 1 as departure,
                        any_value(h.shipped) last_year
                 from wk p left join l using (period) left join o using (period)
                 left join h on h.fiscal_year = p.fiscal_year - 1 and h.fiscal_period = p.fiscal_period
