@@ -6,7 +6,7 @@ MODEL (name plan.demand_stack, kind FULL, grain (version_id, layer_no, line_sour
        audits (stack_cells_non_negative));
 WITH layer1 AS (
   SELECT version_id, 1 AS layer_no, line_source, 'primary' AS effect_type,
-         CASE WHEN line_source = 'BASELINE' THEN 'FITTED' ELSE 'BUDGET' END AS reason_code,
+         CASE WHEN line_source IN ('BASELINE', 'FORECAST') THEN 'FITTED' ELSE 'BUDGET' END AS reason_code,
          material_code, ship_to_code, account_code, week_id, cases
   FROM plan.layer1_lines
 ),

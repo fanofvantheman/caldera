@@ -41,6 +41,7 @@ PROCESSES = [
             Section("entries", "Entries", "plan.entries", verbs=READ),
             Section("submissions", "Submissions", "plan.submissions", verbs=READ),
             Section("accuracy", "Forecast accuracy", "plan.accuracy", verbs=READ),
+            Section("forecast", "Statistical forecast", "plan.forecast", verbs=["layer.1.enter", "read.drill"]),
             Section("new", "New entry", "plan.entry_new", verbs=ENTER),
             Section("events", "Promotions", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
             Section("calendar", "Promotions calendar", "plan.calendar", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill", "read.plan"]),
@@ -123,3 +124,10 @@ TERMS_COLUMNS = ["account_code", "instrument_code", "instrument_kind", "driver_b
 PRICE_LIST_COLUMNS = ["price_list", "material_code", "currency", "price_per_case", "valid_from", "valid_to", "event"]
 MAPPING_COLUMNS = ["mapping_id", "sender", "subject", "local_code", "local_description", "target_code", "origin", "review_state", "confidence",
                    "rationale", "acted_by", "acted_at", "reason"]
+# the forecasting system's door — a run's header and its series as taken in, and the log of what people decided where
+# its structures and ours disagree; the generator writes the same columns
+FCST_RUN_COLUMNS = ["sender", "run_id", "version_id", "taken_in_at", "taken_in_by", "made_on", "last_history_week", "first_week", "horizon_weeks",
+                    "grain", "content", "history_basis", "method_note"]
+FCST_SERIES_COLUMNS = ["sender", "run_id", "version_id", "taken_in_at", "material_code", "material_description", "sender_hierarchy", "account_code",
+                       "week_start", "cases"]
+FCST_RESOLUTION_COLUMNS = ["resolution_id", "sender", "kind", "item_code", "account_code", "resolution", "target_code", "reason", "acted_by", "acted_at"]

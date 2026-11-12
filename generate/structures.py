@@ -493,6 +493,10 @@ ACCOUNTS = [
 # no promotion can come in through both doors.
 PROMOTIONS_MASTER = {"WES": "TPM", "CAR": "TPM"}          # every other account: "PLAN"
 
+# where each account's statistical baseline comes from: the forecasting system for the three largest, calculated in the
+# plan for every other account ("PLAN"). Not the same split as the promotions — the two are independent.
+BASELINE_SOURCE = {"WES": "FORECAST", "CAR": "FORECAST", "MER": "FORECAST"}
+
 # the day each account's promotional week starts: the grocers' and the discounter's catalogue week runs Wednesday to
 # Tuesday; wholesale, foodservice and export run no weekly catalogue, so their events keep no week. The trading calendar
 # does not change — Monday weeks, every week in one period — this is only where an event's window is expected to sit.

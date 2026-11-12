@@ -17,6 +17,7 @@ from . import ENTRY_COLUMNS, HEALTH, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUM
 from . import reads
 from . import dashboard
 from . import promotions
+from . import forecast as fcst
 
 plan = Blueprint("plan", __name__)
 ENTRIES = LogLanding("plan", "layer_entry", ENTRY_COLUMNS)
@@ -133,6 +134,8 @@ def _where(surface: str, r: dict) -> str | None:
     submission to the matrix at its unit. A row with nothing to go to gets no link."""
     v = r.get("version_id")
     try:
+        if r.get("kind") in fcst.RESOLVE:
+            return url_for("plan.forecast") + f"#{r['item_code']}-{r['account_code']}"
         if r.get("local_code"):
             return url_for("plan.mapping") + f"#{r['subject']}-{r['local_code']}"
         if r.get("event_id"):
@@ -159,6 +162,10 @@ def _mine(who: str, held: set[str]) -> list[dict]:
         for f in promotions.waiting():
             rows.append({"item": f"{f['file_id']} from the promotions system: {len(f['events'])} events waiting to be taken in", "name": "promotions sender",
                          "what_to_do": "take the file in on the promotions page", "severity": "ACTION", "href": url_for("plan.events")})
+    if "layer.1.enter" in held:
+        for r in fcst.waiting():
+            rows.append({"item": f"{r['run_id']} from the forecasting system: {r['n_series']} series waiting to be taken in", "name": "forecasting system",
+                         "what_to_do": "take the run in on the statistical forecast page", "severity": "ACTION", "href": url_for("plan.forecast") + "#sender"})
     if "run.plan" in held:
         for f in _pending():
             rows.append({"item": f"{f.name} placed, not yet in the plan", "name": "landing", "what_to_do": "run the plan to take it in", "severity": "PENDING", "href": url_for("plan.run")})
@@ -167,7 +174,7 @@ def _mine(who: str, held: set[str]) -> list[dict]:
 
 def _pending() -> list[pathlib.Path]:
     """Every file any act has placed since the last run, across the landing's tables."""
-    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending()
+    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending()
 
 
 def _d(a: float | None, b: float | None) -> float | None:
@@ -1256,6 +1263,144 @@ def mapping_propose():
     session.last = receipts.write("mapping.propose", who, "first pass", checks, placed)
     session.say(checks[-1]["says"], placed and checks[-1]["ok"])
     return redirect(url_for("plan.mapping"))
+
+
+FORECAST = """<h1>Statistical forecast<small>{{ version }} · the baseline each account's plan stands on, where it is made, and where the forecasting system's structures and ours disagree</small></h1>
+{% if pending %}<p class="hint">{{ pending }} file{{ '' if pending == 1 else 's' }} placed since the last run — this page shows {{ 'it' if pending == 1 else 'them' }} after the run.</p>{% endif %}
+{% if run %}<div class="cards"><div class="card stat"><span>run in force</span><b>{{ run.run_id }}</b><div class="small muted">made {{ run.made_on }} · history to {{ run.last_history_week }}</div></div>
+<div class="card stat"><span>series in the plan</span><b>{{ states.in.series|n if states.in else 0 }}</b><div class="small muted">{{ states.in.cases|k if states.in else 0 }} cases over {{ run.horizon_weeks }} weeks</div></div>
+<div class="card stat"><span>against our calculation</span><b>{{ total.departure|pct1s }}</b><div class="small muted">{{ total.landed|k }} sent · {{ total.ours|k }} ours, same series and weeks</div></div>
+<div class="card stat"><span>waiting for a decision</span><b>{{ queue|length }}</b><div class="small muted">{{ held_cases|k }} cases held out · {{ gap_cases|k }} on our calculation</div></div></div>
+<h2>What the run says it is<span class="count">a run replaces the one before it whole; the latest taken in is the one the plan reads</span></h2>
+<table><tbody><tr><th>Run</th><td>{{ run.run_id }} from the forecasting system, taken in by {{ run.taken_in_by }} at {{ run.taken_in_at }}</td></tr>
+<tr><th>What the numbers are</th><td>{{ 'baseline only — promotions removed; the plan adds them from the calendar' if run.content == 'baseline_only' else run.content }}</td></tr>
+<tr><th>Fitted on</th><td>{{ run.history_basis }}, to week {{ run.last_history_week }}</td></tr>
+<tr><th>Method</th><td>{{ run.method_note }}</td></tr>
+<tr><th>Reach</th><td>{{ run.horizon_weeks }} weeks, {{ run.first_week }} to {{ run.last_day }}; past that the plan continues on our own calculation</td></tr>
+<tr><th>Grain</th><td>{{ run.grain }}; the plan spreads each series to the account's ship-tos by its own history shape</td></tr>
+<tr><th>Not sent with this run</th><td class="muted">the model chosen per series, its components, the fitted values and the interval — what follows is what the plan can read without them</td></tr></tbody></table>
+{% else %}<p class="muted">No run from the forecasting system has been taken in: every account's baseline is our own calculation.</p>{% endif %}
+<h2 id="sources">Where each account's baseline is made<span class="count">cases over the run's weeks</span></h2>
+<table><thead><tr><th>Account</th><th>Baseline</th><th class="n">Series sent</th><th class="n">From the run</th><th class="n">Our calculation, same series</th><th class="n">Departure</th><th class="n">On our calculation meanwhile</th></tr></thead><tbody>
+{% for a in sources %}<tr><td>{{ a.account_name }} <span class="muted">{{ a.account_code }}</span></td><td>{{ 'forecasting system' if a.baseline_source == 'FORECAST' else 'calculated in the plan' }}</td>
+<td class="n">{{ a.series|n if a.series else '' }}</td><td class="n">{{ a.landed|n if a.landed else '' }}</td><td class="n">{{ a.ours|n if a.ours else '' }}</td>
+<td class="n delta {{ a.departure|dir }}">{{ a.departure|pct1s if a.departure is not none else '' }}</td><td class="n">{{ a.gap|n if a.gap else '' }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">Our calculation is kept for every account as the reference: the same fiscal week averaged over the history, promotion weeks and the week after removed, carried forward at the category's growth. It is crude on purpose — a series the run cannot beat is worth a question.</p>
+<h2 id="queue">Waiting for a decision<span class="count">{{ queue|length }} item{{ '' if queue|length == 1 else 's' }} · one per series, never per week · a decision stands for later runs</span></h2>
+{% if queue %}<table><thead><tr><th>What disagrees</th><th>Item</th><th>Account</th><th>As sent</th><th class="n">Cases</th><th>Meanwhile</th>{% if may %}<th>Decide</th>{% endif %}</tr></thead><tbody>
+{% for i in queue %}<tr id="{{ i.item_code }}-{{ i.account_code }}"><td>{{ kind_say[i.kind] }}</td><td><code>{{ i.item_code }}</code><div class="small">{{ i.description or '' }}</div></td><td>{{ i.accounts }}</td>
+<td class="small">{% if i.kind == 'theirs_not_ours' %}{{ i.sender_hierarchy or 'no place in their structure sent' }}<div class="muted">{{ i.weeks }} weeks from {{ i.first_week }}</div>{% else %}{{ i.weeks_of_history or 0 }} weeks of history here{% endif %}</td>
+<td class="n">{{ i.cases|n }}</td><td>{{ i.meanwhile }}</td>
+{% if may %}<td class="acts"><form class="inline" method="post" action="{{ url_for('plan.forecast_resolve') }}"><input type="hidden" name="kind" value="{{ i.kind }}"><input type="hidden" name="item_code" value="{{ i.item_code }}"><input type="hidden" name="account_code" value="{{ i.account_code }}">
+<select name="resolution">{% for r, label, needs in resolve[i.kind] %}<option value="{{ r }}">{{ label }}</option>{% endfor %}</select>
+{% if i.kind == 'theirs_not_ours' %}<input name="target_code" list="ours-list" placeholder="one of ours, if it names one" size="22">{% endif %}
+<input name="reason" placeholder="why" required size="16"> <button class="act">Decide</button></form></td>{% endif %}</tr>{% endfor %}</tbody></table>
+<datalist id="ours-list">{% for m in materials %}<option value="{{ m.material_code }}">{{ m.material_name }}</option>{% endfor %}{% for p in products %}<option value="{{ p.product_code }}">{{ p.category_name }} › {{ p.product_name }} (product)</option>{% endfor %}</datalist>
+<p class="hint">In the run, not in the plan: it has cases and nowhere to put them — say it is the same as one of our materials (its cases join that material), place it under one of our products (recorded; it stays outside the plan until the structure carries it, because it has no price), or leave it out. In the plan, not in the run: the plan stands on our calculation — keep it, or set it to zero on purpose.</p>
+{% else %}<p class="muted">Nothing waits: the run's structures and the plan's agree, or every disagreement has been decided.</p>{% endif %}
+<h2 id="decided">Decided<span class="count">the latest decision per item, in force for this run and the next</span></h2>
+{% if resolutions %}<table><thead><tr><th>What disagreed</th><th>Item</th><th>Account</th><th>Decision</th><th class="n">Cases</th><th>Why</th><th>By</th><th>At</th></tr></thead><tbody>
+{% for r in resolutions %}<tr><td>{{ kind_say[r.kind] }}</td><td><code>{{ r.item_code }}</code><div class="small">{{ r.description or '' }}</div></td><td>{{ r.account_code }}</td>
+<td>{{ say[r.resolution] }}{% if r.target_code %} <code>{{ r.target_code }}</code> <span class="muted small">{{ r.target_name or '' }}</span>{% endif %}{% if r.resolution == 'place_under' %}<div class="small muted">outside the plan until the structure carries it</div>{% endif %}</td>
+<td class="n">{{ r.cases|n if r.cases else '' }}</td><td class="small">{{ r.reason or '' }}</td><td>{{ r.acted_by }}</td><td class="small">{{ r.acted_at }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="muted">Nothing decided yet.</p>{% endif %}
+<h2 id="sender">From the forecasting system<span class="count">runs in its outbox</span></h2>
+{% if runs %}<table><thead><tr><th>Run</th><th>Made</th><th>What the numbers are</th><th class="n">Series</th><th>State</th>{% if may %}<th></th>{% endif %}</tr></thead><tbody>
+{% for r in runs %}<tr><td>{{ r.run_id }}</td><td>{{ r.header.made_on }}</td><td>{{ 'baseline only' if r.header.content == 'baseline_only' else 'promotions left in (' ~ r.header.content ~ ')' }}</td><td class="n">{{ r.n_series }}</td>
+<td>{{ 'taken in ' ~ r.taken_in_at if r.taken_in_at else 'waiting' }}</td>
+{% if may %}<td>{% if not r.taken_in_at %}<form class="inline" method="post" action="{{ url_for('plan.forecast_take_in') }}"><input type="hidden" name="run_id" value="{{ r.run_id }}"><button class="act">Take in</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>
+{% else %}<p class="muted">Nothing in the outbox.</p>{% endif %}
+{% if run %}<h2 id="departs">Where the run departs most from our calculation<span class="count">material × account over the run's weeks · open one to read it by period</span></h2>
+<table><thead><tr><th>Material</th><th>Account</th><th class="n">From the run</th><th class="n">Our calculation</th><th class="n">Difference</th><th class="n">Departure</th></tr></thead><tbody>
+{% for d in departures %}<tr><td><a href="{{ url_for('plan.forecast', material=d.material_code, account=d.account_code) }}#series">{{ d.material_name }}</a> <span class="muted">{{ d.material_code }}</span></td><td>{{ d.account_code }}</td>
+<td class="n">{{ d.landed|n }}</td><td class="n">{{ d.ours|n if d.ours else '' }}</td><td class="n">{{ d.diff|signed }}</td><td class="n delta {{ d.departure|dir }}">{{ d.departure|pct1s if d.departure is not none else '' }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% if series %}<h2 id="series">{{ series_name }}<span class="count">{{ series_material }} at {{ series_account }} · cases by period over the run's weeks</span></h2>
+<table><thead><tr><th>Period</th><th class="n">Weeks</th><th class="n">From the run</th><th class="n">Our calculation</th><th class="n">Departure</th><th class="n">Shipped, same period last year</th></tr></thead><tbody>
+{% for p in series %}<tr><td>{{ p.period }}</td><td class="n">{{ p.weeks }}</td><td class="n">{{ p.landed|n if p.landed else '' }}</td><td class="n">{{ p.ours|n if p.ours else '' }}</td>
+<td class="n delta {{ p.departure|dir }}">{{ p.departure|pct1s if p.departure is not none else '' }}</td><td class="n">{{ p.last_year|n if p.last_year else '' }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">Last year's figure is what was shipped, promotions included; the two forecasts are baseline only.</p>{% endif %}
+{% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
+
+
+@plan.get("/forecast")
+def forecast():
+    try:
+        who = _who(); version = reads.default_version()
+        run = reads.forecast_run(version) if version else None
+        sources = reads.forecast_sources(version) if version else []
+        queue = reads.forecast_queue()
+        landed = sum(a["landed"] or 0 for a in sources); ours = sum(a["ours"] or 0 for a in sources)
+        mat, acct = request.args.get("material"), request.args.get("account")
+        series = reads.forecast_series(version, mat, acct) if run and mat and acct else []
+        names = {m["material_code"]: m["material_name"] for m in reads.materials()}
+        return _page(FORECAST, title="Statistical forecast", active="forecast", width="none", version=version, run=run, sources=sources, queue=queue,
+                     states={r["state"]: r for r in reads.forecast_states(version)} if version else {},
+                     total={"landed": landed, "ours": ours, "departure": _d(landed, ours)},
+                     held_cases=sum(i["cases"] for i in queue if i["kind"] == "theirs_not_ours"), gap_cases=sum(i["cases"] for i in queue if i["kind"] == "ours_not_theirs"),
+                     resolutions=reads.forecast_resolutions(version) if version else [], runs=fcst.sender_runs(),
+                     departures=reads.forecast_departures(version) if run else [], series=series, series_material=mat, series_account=acct,
+                     series_name=names.get(mat, mat), materials=reads.materials(), products=reads.products(), resolve=fcst.RESOLVE, say=fcst.SAY,
+                     kind_say=fcst.KIND_SAY, may=roles.may(who, "layer.1.enter"), pending=len(fcst.pending()), last=session.last)
+    except Busy as e:
+        return _busy("Statistical forecast", e)
+
+
+@plan.post("/forecast/take_in")
+def forecast_take_in():
+    """A run from the forecasting system into the landing — if it says its numbers are baseline only."""
+    who = _who(); rid = request.form["run_id"]; version = reads.default_version(); verb = "layer.1.enter"
+    r = next((x for x in fcst.sender_runs() if x["run_id"] == rid), None)
+    h = (r or {}).get("header", {}); rows = (r or {}).get("series", [])
+    may = roles.may(who, verb)
+    whole = bool(rows) and all(x.get("material_code") and x.get("account_code") and _date(x.get("week_start")) and _num(x.get("cases")) is not None for x in rows)
+    says_what = bool(h.get("made_on") and h.get("last_history_week") and _date(h.get("first_week")) and _num(h.get("horizon_weeks")) and h.get("content"))
+    checks = [
+        {"check": "who may take it in", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — the baseline's owner takes a run in"},
+        {"check": "run waiting", "ok": bool(r and not r["taken_in_at"]), "says": f"{rid}: {r['n_series']} series, {len(rows)} rows" if r and not r["taken_in_at"] else f"{rid} is not waiting"},
+        {"check": "version open", "ok": bool(version), "says": f"into {version}" if version else "no open version"},
+        {"check": "the run says what it is", "ok": says_what, "says": f"made {h.get('made_on')}, history to {h.get('last_history_week')}, {h.get('horizon_weeks')} weeks from {h.get('first_week')}" if says_what else "the header does not say when it was made, what history it used, how far it reaches or what the numbers are"},
+        {"check": "baseline only", "ok": h.get("content") == "baseline_only",
+         "says": "promotions removed — the plan adds them from the calendar" if h.get("content") == "baseline_only"
+                 else f"the run says its numbers are {h.get('content') or 'unstated'}: with promotions left in, the plan would count every event twice — ask the forecasting system for the baseline"},
+        {"check": "every row whole", "ok": whole, "says": "every row names a material, an account and a week and carries cases" if whole else "a row is missing its material, account, week or cases"},
+    ]
+    placed = receipts.judge(checks)
+    if placed:
+        fcst.take_in(r, version, who)
+    session.last = receipts.write("forecast.take_in", who, rid, checks, placed)
+    session.say(f"{rid} taken in — it replaces the run in force after the next run of the plan" if placed
+                else "take-in refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+    return redirect(url_for("plan.forecast") + "#sender")
+
+
+@plan.post("/forecast/resolve")
+def forecast_resolve():
+    """One decision about one disagreement, with a reason: a logged act, in force for this run and every later one."""
+    f = request.form; who = _who(); verb = "layer.1.enter"
+    kind, item, account, resolution = f.get("kind", ""), f.get("item_code", ""), f.get("account_code", ""), f.get("resolution", "")
+    target, reason = (f.get("target_code") or "").strip(), (f.get("reason") or "").strip()
+    row = next((i for i in reads.forecast_queue() if i["kind"] == kind and i["item_code"] == item and i["account_code"] == account), None)
+    allowed = {r: needs for r, _, needs in fcst.RESOLVE.get(kind, [])}
+    needs = allowed.get(resolution)
+    ours = ({m["material_code"] for m in reads.materials()} if needs == "material" else {p["product_code"] for p in reads.products()}) if needs else set()
+    may = roles.may(who, verb)
+    checks = [
+        {"check": "who may decide", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — the baseline's owner decides"},
+        {"check": "item waiting", "ok": row is not None, "says": f"{item} ({fcst.KIND_SAY.get(kind, kind)})" if row else f"{item} is not waiting for a decision"},
+        {"check": "a decision this kind allows", "ok": resolution in allowed, "says": fcst.SAY.get(resolution, resolution) if resolution in allowed else f"{resolution or 'nothing'} is not a decision for this kind"},
+        {"check": "names one of ours", "ok": not needs or target in ours,
+         "says": ("needs none" if not needs else f"{target} is one of our {needs}s") if not needs or target in ours else f"{target or 'nothing'} is not one of our {needs}s"},
+        {"check": "a reason says why", "ok": bool(reason), "says": reason or "a decision says why"},
+    ]
+    placed = receipts.judge(checks)
+    if placed:
+        fcst.resolve(kind, item, account, resolution, target if needs else "", reason, who)
+    session.last = receipts.write("forecast.resolve", who, f"{item}:{account}", checks, placed)
+    session.say(f"{item}: {fcst.SAY[resolution]}{' ' + target if needs else ''} — in the plan after the next run" if placed
+                else "decision refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+    return redirect(url_for("plan.forecast") + "#queue")
+
 
 
 MAINTAINED = """<p class="hint">{% if may_edit %}You maintain {{ what }}: an amendment is a new row from a date — the row in force is never edited — and takes effect on the next run.{% else %}You read {{ what }}; they are maintained by {{ holders|join(', ') or 'nobody yet' }} ({{ verb }}). Ask them for a change.{% endif %}</p>"""

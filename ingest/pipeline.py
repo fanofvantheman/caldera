@@ -64,9 +64,12 @@ PLAN = {
     "reg_promo_mapping": (),
     "reg_terms": ("rate",),
     "reg_submission": (),
+    "fcst_run": ("horizon_weeks",),
+    "fcst_series": ("cases",),
+    "reg_fcst_resolution": (),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
-           "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days"})
+           "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks"})
 
 
 def main() -> None:

@@ -12,12 +12,13 @@ from pathlib import Path
 
 from . import calendar as cal
 from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIALS, CATEGORIES, PRODUCTS, FORMATS,
-                         PROMO_GROUPS, ACCOUNTS, PROMOTIONS_MASTER, PROMO_WEEK_START, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
+                         PROMO_GROUPS, ACCOUNTS, PROMOTIONS_MASTER, BASELINE_SOURCE, PROMO_WEEK_START, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
 from .history import forecast_snapshots, generate_demand, generate_prices, value_shipments
 from .registers import versions, period_control, roles, capacity_register, assumptions
 from .plan import business_plan_entries, latest_view_entries, promo_events, promo_neighbours, terms_register, reason_codes, submissions
 from .emit import emit_all, dataclass_rows
 from . import sender
+from . import forecaster
 
 FIRST_FY, LAST_FY, PLAN_FY = 2024, 2030, 2027   # the latest view rolls 36 periods from the cycle
 LATEST_CLOSED = "2027P04"          # the last closed period: October 2026
@@ -50,7 +51,7 @@ def main() -> None:
         "dim_account": [{"account_code": a[0], "account_name": a[1], "channel": a[2], "sub_channel": a[3], "account_tier": a[4],
                          "route_to_market": a[5], "state": a[6], "price_list": a[7], "payment_terms_days": a[8],
                          "settlement_discount_pct": a[9], "collaborative_flag": a[10], "scan_flag": a[11], "status": "active",
-                         "promotions_master": PROMOTIONS_MASTER.get(a[0], "PLAN"), "promo_week_start": PROMO_WEEK_START.get(a[0], ""),
+                         "promotions_master": PROMOTIONS_MASTER.get(a[0], "PLAN"), "baseline_source": BASELINE_SOURCE.get(a[0], "PLAN"), "promo_week_start": PROMO_WEEK_START.get(a[0], ""),
                          "planning_unit": UNIT_OF[a[0]][0], "planning_unit_name": UNIT_OF[a[0]][1]} for a in ACCOUNTS],
         "dim_ship_to": [{"ship_to_code": s[0], "account_code": s[1], "ship_to_name": s[2], "state": s[3], "serving_node": s[4], "stores_served": s[5]} for s in SHIP_TOS],
         "dim_node": [{"node_code": n[0], "node_name": n[1], "node_kind": n[2], "roles": n[3], "ownership": n[4], "state": n[5], "status": n[6]} for n in NODES],
@@ -83,13 +84,17 @@ def main() -> None:
         "reg_terms": terms,
         "reg_submission": submissions(LATEST_CLOSED),
     }
+    fcst, fcst_waiting = forecaster.run(shipments, materials, weeks, LATEST_CLOSED, {a[0]: BASELINE_SOURCE.get(a[0], "PLAN") for a in ACCOUNTS},
+                                        f"LV-{LATEST_CLOSED}")       # after the last draw on rng above: it draws nothing
+    plan.update(fcst)
     waiting = sender.next_export(events, {p["period"]: p["period_start"] for p in cal.periods(weeks)}, PLAN_FY)
-    manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox=waiting)
+    manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
     c = manifest["counts"]
     print(f"generated: {c['dim_material']} materials, {c['dim_ship_to']} ship-tos, {c['dim_week']} weeks, "
           f"{c['shipments']} shipment rows, {c['forecast_snapshot']} forecast snapshot rows, {c['price_list']} price rows, {c['ref_bom']} bom lines, {c['reg_capacity_machine']} capacity rows, "
           f"{c['layer_entry']} layer entries, {c['tpm_event']} promo events from the sender and {c['reg_promo_event']} typed, "
-          f"{c['reg_promo_mapping']} mappings, {c['reg_terms']} terms; waiting from the sender: {sender.NEXT_FILE}")
+          f"{c['reg_promo_mapping']} mappings, {c['reg_terms']} terms; waiting from the sender: {sender.NEXT_FILE}; "
+          f"{c['fcst_series']} forecast rows in run {forecaster.FIRST_RUN}, waiting from the forecasting system: {forecaster.NEXT_RUN}")
 
 
 if __name__ == "__main__":

@@ -51,7 +51,11 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   mapping of their codes to ours accepted when the sender was connected, Merritt's typed in the plan — the mechanic,
   funding-type and status lists the mapping lands on, and the next export waiting in `data/generated/sender/` to be
   taken in (new events, one moved, one cancelled, one for an account whose promotions are typed here, and codes the
-  mapping has not seen). Deterministic from a seed; output is regenerated
+  mapping has not seen); `forecaster.py` the forecasting system that makes the statistical baseline of the three
+  largest accounts and sends it as a run — a header saying what the numbers are and the series by material × account ×
+  week, in the same codes as ours — with the disagreements such a system has (a renumbered pack, a product the plan has
+  not got, a display shipper, two series dropped) and a next run waiting that left promotions in.
+  Deterministic from a seed; output is regenerated
   every run and never committed.
 - `ingest/pipeline.py` — dlt: one resource per file into `bronze`, replaced whole on every load. A plan table is fed by
   the generated file and then every file the face has placed under `data/landing/plan/<table>/`, in file order —
@@ -139,7 +143,11 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   - `history/` shipments at week and period grain with gross and net sales invoiced, price lists, each earlier cycle's latest view at the plan's grain
   - `plan/` the demand plan and its money: the category trend and the history shape fitted from cleansed
     shipments; the layer entries as filed and resolved to the grid; layer 1 computed for the open version and
-    entered for the frozen one; the terms and price lists effective-dated (the latest act per date, each row running to the day before the
+    entered for the frozen one — the open version's baseline is `baseline_in_force`: our own calculation
+    (`baseline_reference`, kept for every account as the reference) for the accounts the plan calculates, the forecasting
+    system's run (`forecast_run`, `forecast_series`) for the accounts that take it, spread to ship-tos by our history
+    shape, and our calculation again wherever the run does not reach; what people decided where the two structures
+    disagree is a log (`forecast_resolution`), and what nobody has decided is the worklist `forecast_queue`; the terms and price lists effective-dated (the latest act per date, each row running to the day before the
     next); the co-op envelopes drawn (`terms_envelope`); the promotions calendar resolved from both doors (`promo_sender_event` through the
     mapping register `promo_mapping` and the funding lines `promo_funding`; `promo_typed_event` with the mechanic's
     default response; `promo_event` the one calendar, each event flagged where it is off its account's promotional week) and its uplift,

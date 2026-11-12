@@ -24,4 +24,6 @@ FROM (
          'the event came through the wrong door: the sender withdraws it, or it is entered where the account''s promotions are kept' FROM plan.worklist_promo_refused
   UNION ALL SELECT 'mappings to review', 'plan.worklist_promo_mapping_review', 'ACTION', COUNT(*),
          'accept the proposal, or alter it to another of ours with a reason' FROM plan.worklist_promo_mapping_review
+  UNION ALL SELECT 'forecast disagreements', 'plan.worklist_forecast_queue', 'ACTION', COUNT(*),
+         'decide each on the statistical forecast page: the same as one of ours, placed, left out; keep our calculation, or zero' FROM plan.worklist_forecast_queue
 ) w CROSS JOIN readers r

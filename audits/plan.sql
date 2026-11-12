@@ -108,3 +108,17 @@ AUDIT (name promo_neighbour_valid);
    cannibalisation takes (a negative rate), halo lends (a positive one) */
 SELECT version_id, event_id, scope_material, effect_type, rate FROM @this_model
 WHERE NOT scope_resolves OR effect_type NOT IN ('cannibalisation', 'halo') OR NOT sign_fits;
+
+AUDIT (name account_baseline_source_known);
+SELECT account_code, baseline_source FROM @this_model WHERE baseline_source NOT IN ('FORECAST', 'PLAN');
+
+AUDIT (name forecast_run_baseline_only);
+/* blocking: a run with promotions left in would have every event counted twice — it is refused at the door, and stops here if it got past */
+SELECT run_id, content FROM @this_model WHERE in_force AND content <> 'baseline_only';
+
+AUDIT (name forecast_resolution_vocabulary);
+SELECT resolution_id, kind, resolution FROM @this_model
+WHERE NOT ((kind = 'theirs_not_ours' AND resolution IN ('same_as', 'place_under', 'leave_out')) OR (kind = 'ours_not_theirs' AND resolution IN ('keep_ours', 'zero')));
+
+AUDIT (name forecast_resolution_target_known);
+SELECT resolution_id, resolution, target_code FROM @this_model WHERE NOT target_known;
