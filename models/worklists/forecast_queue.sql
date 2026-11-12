@@ -2,7 +2,8 @@
    per week. Theirs, not ours — a material code in the run the plan does not have: held out of the plan, with the cases
    it would bring, the description and the place in their structure it was sent with. Ours, not theirs — a material ×
    account the plan calculates and the run does not carry: the plan stands on our calculation meanwhile, marked. Routed
-   to those who own the baseline; an item leaves when a person resolves it, and the resolution stands for later runs. */
+   to those who own the baseline; an item leaves when a person resolves it, and the resolution stands for later runs. The first columns are
+   the doors' queue contract (door FCS). */
 MODEL (name plan.worklist_forecast_queue, kind FULL, grain (kind, item_code, account_code));
 WITH run AS (SELECT * FROM plan.forecast_run WHERE in_force),
 theirs AS (
@@ -26,7 +27,11 @@ ours AS (
   WHERE b.source = 'our_calculation_gap' GROUP BY ALL
 ),
 readers AS (SELECT STRING_AGG(DISTINCT principal, ', ') AS whose FROM dims.effective_entitlements WHERE action = 'layer.1.enter')
-SELECT q.*, CASE q.kind WHEN 'theirs_not_ours' THEN q.item_code || ' (' || COALESCE(q.description, 'no description') || ') is in run ' || q.run_id || ' and not in the plan — held, ' || ROUND(q.cases)::BIGINT || ' cases'
+SELECT 'FCS' AS door, q.kind, q.item_code, q.account_code AS scope_code, NULL::TEXT AS reaches, q.description,
+       CASE q.kind WHEN 'theirs_not_ours' THEN COALESCE(q.sender_hierarchy, 'no place in their structure sent') || ' · for ' || q.accounts || ' · ' || q.weeks || ' weeks from ' || q.first_week
+                   ELSE COALESCE(q.weeks_of_history, 0) || ' weeks of history here' END AS as_sent,
+       FORMAT('{:,} cases', ROUND(q.cases)::BIGINT) AS would_bring, NULL::TEXT AS proposed_target, NULL::TEXT AS proposal,
+       q.* EXCLUDE (kind, item_code, description, meanwhile), q.meanwhile, CASE q.kind WHEN 'theirs_not_ours' THEN q.item_code || ' (' || COALESCE(q.description, 'no description') || ') is in run ' || q.run_id || ' and not in the plan — held, ' || ROUND(q.cases)::BIGINT || ' cases'
                         ELSE q.item_code || ' at ' || q.account_code || ' is in the plan and not in run ' || q.run_id || ' — on our calculation, ' || ROUND(q.cases)::BIGINT || ' cases' END AS item,
        r.whose
 FROM (SELECT * FROM theirs UNION ALL SELECT * FROM ours) q CROSS JOIN readers r

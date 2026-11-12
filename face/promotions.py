@@ -12,10 +12,12 @@ import csv
 import datetime as dt
 import pathlib
 
+from chassis.door import Declaration
 from chassis.landing import LogLanding
 
-from . import MAPPING_COLUMNS, NEIGHBOUR_COLUMNS, PROMO_EVENT_COLUMNS, ROOT, TPM_EVENT_COLUMNS, TPM_FUNDING_COLUMNS
+from . import NEIGHBOUR_COLUMNS, PROMO_EVENT_COLUMNS, ROOT, TPM_EVENT_COLUMNS, TPM_FUNDING_COLUMNS
 from . import reads
+from .doors import TPM as DOOR
 
 SENDER = "TPM"
 OUTBOX = ROOT / "data" / "generated" / "sender"           # where the sender's export arrives; read here, never loaded
@@ -23,9 +25,8 @@ GENERATED = ROOT / "data" / "generated" / "plan"
 TPM_EVENTS = LogLanding("plan", "tpm_event", TPM_EVENT_COLUMNS)
 TPM_FUNDING = LogLanding("plan", "tpm_funding", TPM_FUNDING_COLUMNS)
 TYPED = LogLanding("plan", "reg_promo_event", PROMO_EVENT_COLUMNS)
-MAPPINGS = LogLanding("plan", "reg_promo_mapping", MAPPING_COLUMNS)
 NEIGHBOURS = LogLanding("plan", "reg_promo_neighbour", NEIGHBOUR_COLUMNS)
-LANDINGS = [TPM_EVENTS, TPM_FUNDING, TYPED, MAPPINGS, NEIGHBOURS]
+LANDINGS = [TPM_EVENTS, TPM_FUNDING, TYPED, NEIGHBOURS]          # the mapping's acts are the doors' register (doors.ACTS)
 SUBJECTS = ["customer", "material", "mechanic", "funding_type", "status"]
 SAY = {"customer": "planning account", "material": "product group", "mechanic": "tactic", "funding_type": "fund type", "status": "status"}
 
@@ -88,9 +89,9 @@ def waiting() -> list[dict]:
 
 
 def known_codes() -> set[tuple[str, str, str]]:
-    """Every (sender, subject, local code) the mapping register has ever named, in any state — such a code is never
+    """Every (sender, subject, local code) the door's act register has ever named, in any state — such a code is never
     proposed again."""
-    return {(r["sender"], r["subject"], r["local_code"]) for r in _csv(GENERATED / "reg_promo_mapping.csv") + MAPPINGS.rows()}
+    return {(SENDER, kind, item) for kind, item, _ in DOOR.known()}
 
 
 def codes_in(events: list[dict], funding: list[dict]) -> dict[str, dict[str, str]]:
@@ -124,7 +125,6 @@ def first_pass(codes: dict[str, dict[str, str]], who: str) -> tuple[int, str, bo
     if not credentials_present():
         return 0, f"no API key in the environment — the first pass did not run; {n_codes} code{'s' if n_codes > 1 else ''} wait for a person on the mapping review", False
     rows, said, ran = [], [], True
-    stamp = dt.datetime.now()
     for subject, cs in codes.items():
         if not cs:
             continue
@@ -133,18 +133,41 @@ def first_pass(codes: dict[str, dict[str, str]], who: str) -> tuple[int, str, bo
         except MappingUnavailable as e:
             said.append(str(e)); ran = False
             break                                       # one cause stops every subject alike
-        for g in got:
-            rows.append({"mapping_id": f"MP-F-{stamp.strftime('%Y%m%d-%H%M%S')}-{len(rows) + 1:03d}", "sender": SENDER, "subject": subject,
-                         "local_code": g["code"], "local_description": cs[g["code"]], "target_code": g["target"], "origin": "first_pass",
-                         "review_state": "proposed", "confidence": g["confidence"], "rationale": g["rationale"], "acted_by": who,
-                         "acted_at": stamp.isoformat(timespec="seconds"), "reason": ""})
-    if rows:
-        MAPPINGS.place(rows, who)
+        for g in got:                                   # each proposal is a proposed act on the item, never in force
+            rows.append({"kind": subject, "item_code": g["code"], "target_code": g["target"], "confidence": g["confidence"],
+                         "rationale": g["rationale"], "item_description": cs[g["code"]]})
+    DOOR.propose(rows, who)
     left = n_codes - len(rows)
     msg = f"first pass proposed {len(rows)} mapping{'' if len(rows) == 1 else 's'} for review"
     if left:
         msg += f"; {left} code{'s' if left > 1 else ''} wait for a person" + (f" ({'; '.join(said)})" if said else "")
     return len(rows), msg, ran
+
+
+# what a file must say about itself to be let in — checked as data at the take-in (the header is the file, the rows its events)
+DECLARATIONS = [
+    Declaration("every event dated",
+                lambda f, evs: bool(evs) and all(e.get("event_id") and _ordered(e.get("shopper_start"), e.get("shopper_end")) for e in evs),
+                "every event has an id and an ordered shopper window", "an event has no id or its window is missing or reversed"),
+    Declaration("every funding line on an event",
+                lambda f, evs: all(x.get("event_id") in {e.get("event_id") for e in evs} and _num(x.get("rate")) for x in f.get("funding", [])),
+                "every funding line names an event in the file and carries a rate", "a funding line names no event in the file, or has no rate"),
+]
+
+
+def _ordered(a: str | None, b: str | None) -> bool:
+    try:
+        return dt.date.fromisoformat(a or "") <= dt.date.fromisoformat(b or "")
+    except ValueError:
+        return False
+
+
+def _num(x) -> bool:
+    try:
+        float(x)
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def take_in(f: dict, version: str, who: str) -> None:

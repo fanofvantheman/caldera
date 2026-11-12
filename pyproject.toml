@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-chassis = { path = "99_core_clones/chassis-0.7.0-py3-none-any.whl" }
+chassis = { path = "99_core_clones/chassis-0.8.0-py3-none-any.whl" }
 coa-map = { path = "99_core_clones/coa_map-0.4.0-py3-none-any.whl" }
 
 [tool.uv]

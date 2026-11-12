@@ -8,7 +8,7 @@ import pathlib
 
 from flask import Blueprint, redirect, request, url_for
 
-from chassis import app as chassis_app, receipts
+from chassis import app as chassis_app, door, receipts
 from chassis.landing import LogLanding
 from chassis.run import Runner, attention, health
 from chassis.warehouse import Busy, q
@@ -18,6 +18,7 @@ from . import reads
 from . import dashboard
 from . import promotions
 from . import forecast as fcst
+from . import doors
 
 plan = Blueprint("plan", __name__)
 ENTRIES = LogLanding("plan", "layer_entry", ENTRY_COLUMNS)
@@ -134,10 +135,8 @@ def _where(surface: str, r: dict) -> str | None:
     submission to the matrix at its unit. A row with nothing to go to gets no link."""
     v = r.get("version_id")
     try:
-        if r.get("kind") in fcst.RESOLVE:
-            return url_for("plan.forecast") + f"#{r['item_code']}-{r['account_code']}"
-        if r.get("local_code"):
-            return url_for("plan.mapping") + f"#{r['subject']}-{r['local_code']}"
+        if r.get("door") in doors.PAGES:
+            return url_for(doors.PAGES[r["door"]]) + f"#{r['kind']}-{r['item_code']}-{r['scope_code']}"
         if r.get("event_id"):
             return url_for("plan.events") + f"#{r['event_id']}"
         if r.get("entry_id"):
@@ -174,11 +173,22 @@ def _mine(who: str, held: set[str]) -> list[dict]:
 
 def _pending() -> list[pathlib.Path]:
     """Every file any act has placed since the last run, across the landing's tables."""
-    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending()
+    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending()
 
 
 def _d(a: float | None, b: float | None) -> float | None:
     return None if not a or not b else a / b - 1
+
+
+def _views(secs, held: set[str]) -> list[tuple[str, str, str]]:
+    """Every page a person reaches in an area: an entry's own page, or each of its tabs they see — (key, label, href)."""
+    out = []
+    for s in secs:
+        if s.tabs:
+            out += [(t.key, t.label, url_for(t.endpoint, **t.args)) for t in s.shown_tabs(held)]
+        else:
+            out.append((s.key, s.label, s.href(held)))
+    return out
 
 
 def _head(who: str, held: set[str]) -> str:
@@ -214,8 +224,9 @@ def _head(who: str, held: set[str]) -> str:
     open_units = [u["unit_name"] for u in units if u["state"] not in ("submitted", "rolled_up")]
     status_line = ("plan submitted" + (f" · {st['open_below']} open beneath" if st and st.get("open_below") else "")) if st and st["state"] == "submitted" \
         else ("open: " + ", ".join(open_units) if open_units else "every unit in — ready to submit")
-    actions = [{"label": s.label, "href": url_for(s.endpoint, **s.args), "says": a.label}
-               for p, areas in SHELL.reach(held) if p.key == "ibp" for a, secs in areas for s in secs if s.key in ("demand", "submissions", "accuracy", "entries", "gap", "versions", "run")]
+    actions = [{"label": label, "href": href, "says": a.label}
+               for p, areas in SHELL.reach(held) if p.key == "ibp" for a, secs in areas for key, label, href in _views(secs, held)
+               if key in ("demand", "submissions", "accuracy", "entries", "gap", "versions", "run")]
     links = {"demand": url_for("plan.demand", version=version), "money": url_for("plan.gap", version=version), "accuracy": url_for("plan.accuracy"),
              "submissions": url_for("plan.submissions", version=version), "versions": url_for("plan.versions")}
     for u in units:
@@ -255,7 +266,7 @@ def home():
             return _head(who, held)
         reach = [{"label": p.label, "says": p.says,
                   "areas": [{"label": a.label, "lines": _expected(a.key, who, held),
-                             "sections": [{"label": s.label, "href": url_for(s.endpoint, **s.args)} for s in secs]} for a, secs in areas]}
+                             "sections": [{"label": s.label, "href": s.href(held)} for s in secs]} for a, secs in areas]}
                  for p, areas in SHELL.reach(held)]
         return _page(HOME, title="Home", active=None, reach=reach, mine=_mine(who, held))
     except Busy as e:
@@ -881,17 +892,13 @@ def take_in():
     """A file from the promotions system into the landing, then the first pass over the codes nobody has mapped."""
     who = _who(); fid = request.form["file_id"]; version = reads.default_version()
     f = next((x for x in promotions.sender_files() if x["file_id"] == fid), None)
-    ids = {e.get("event_id") for e in (f or {}).get("events", [])}
-    dated = all(_date(e.get("shopper_start")) and _date(e.get("shopper_end")) and _date(e["shopper_start"]) <= _date(e["shopper_end"]) for e in (f or {}).get("events", []))
-    lines_ok = all(x.get("event_id") in ids and _num(x.get("rate")) is not None for x in (f or {}).get("funding", []))
     may = roles.may(who, "register.promo_calendar.maintain")
     checks = [
         {"check": "who may take it in", "ok": may, "says": f"{who} holds register.promo_calendar.maintain" if may else f"{who} does not hold register.promo_calendar.maintain"},
         {"check": "file waiting", "ok": bool(f and f["events"] and not f["taken_in_at"]),
          "says": f"{fid}: {len(f['events'])} events, {len(f['funding'])} funding lines" if f and f["events"] and not f["taken_in_at"] else f"{fid} is not waiting" + (f" — taken in {f['taken_in_at']}" if f and f["taken_in_at"] else "")},
         {"check": "version open", "ok": bool(version), "says": f"into {version}" if version else "no open version"},
-        {"check": "every event dated", "ok": bool(f) and dated and all(ids), "says": "every event has an id and an ordered shopper window" if f and dated and all(ids) else "an event has no id or its window is missing or reversed"},
-        {"check": "every funding line on an event", "ok": bool(f) and lines_ok, "says": "every funding line names an event in the file and carries a rate" if f and lines_ok else "a funding line names no event in the file, or has no rate"},
+        *door.declared(promotions.DECLARATIONS, f or {}, (f or {}).get("events", [])),
     ]
     placed = receipts.judge(checks)
     if placed:
@@ -1105,28 +1112,14 @@ def event_new():
 
 
 # ---- the mapping review ----
-MAPPING = """<h1>Mapping review<small>the promotions system's codes onto ours — accept the proposal, or alter it to another of ours with a reason; an event waits until every code it uses is accepted or altered</small></h1>
-<nav class="tabs"><a href="{{ url_for('plan.mapping') }}" class="active">Review</a><a href="{{ url_for('plan.mapping_structure') }}">Their structure to ours</a></nav>
+MAPPING = """<h1>Mapping review<small>the promotions system's codes onto ours — accept the proposal, or map it to another of ours with a reason; an event waits until every code it uses is accepted or mapped</small></h1>
 {% if pending %}<p class="hint">{{ pending }} act{{ '' if pending == 1 else 's' }} placed since the last run — this list shows {{ 'it' if pending == 1 else 'them' }} after the run.</p>{% endif %}
-<h2 id="waiting">Waiting for a person<span class="count">{{ review|length }} code{{ '' if review|length == 1 else 's' }} · lowest confidence first</span></h2>
-{% if review %}<table><thead><tr><th>Subject</th><th>Their code</th><th>Their description</th><th>Proposed</th><th>Confidence</th><th>Why</th><th class="n">Events held</th><th>Act</th></tr></thead><tbody>
-{% for r in review %}<tr id="{{ r.subject }}-{{ r.local_code }}"><td>{{ say[r.subject] }}</td><td><code>{{ r.local_code }}</code></td><td>{{ r.local_description or '' }}</td>
-<td>{% if r.proposed_target %}{{ r.proposed_target }} <span class="muted small">{{ r.proposed_target_name }}</span>{% else %}<span class="muted">not mapped</span>{% endif %}</td>
-<td>{{ r.confidence or '' }}</td><td class="small">{{ r.rationale or '' }}</td><td class="n">{{ r.events }}</td>
-<td>{% if r.proposed_target and may_accept %}<form class="inline" method="post" action="{{ url_for('plan.mapping_act') }}"><input type="hidden" name="subject" value="{{ r.subject }}"><input type="hidden" name="local_code" value="{{ r.local_code }}">
-<input type="hidden" name="act" value="accept"><button class="act">Accept</button></form>{% endif %}
-{% if may_alter %}<form class="inline" method="post" action="{{ url_for('plan.mapping_act') }}"><input type="hidden" name="subject" value="{{ r.subject }}"><input type="hidden" name="local_code" value="{{ r.local_code }}">
-<input type="hidden" name="act" value="alter"><select name="target_code">{% for t in targets[r.subject] %}<option value="{{ t.code }}" {{ 'selected' if t.code == r.proposed_target }}>{{ t.code }}</option>{% endfor %}</select>
-<input name="reason" placeholder="reason" required size="18"><button class="act">{{ 'Alter' if r.proposed_target else 'Map' }}</button></form>{% endif %}</td></tr>{% endfor %}
-</tbody></table>
+<h2 id="waiting">Waiting for a decision<span class="count">{{ door_items|length }} code{{ '' if door_items|length == 1 else 's' }} · lowest confidence first · a decision stands for every later file</span></h2>
+""" + door.QUEUE + """
 {% if missing and may_alter %}<form method="post" action="{{ url_for('plan.mapping_propose') }}"><button class="act">Propose for the {{ missing }} code{{ '' if missing == 1 else 's' }} not mapped</button>
 <span class="hint">the first pass, for codes it has never proposed</span></form>{% endif %}
-{% else %}<p class="muted">Nothing waits for a person.</p>{% endif %}
-<h2 id="force">In force<span class="count">the latest act per code; a proposal is shown above until it is reviewed</span></h2>
-<table><thead><tr><th>Subject</th><th>Their code</th><th>Their description</th><th>Ours</th><th>Origin</th><th>State</th><th>By</th><th>At</th><th>Reason</th></tr></thead><tbody>
-{% for m in force %}{% if m.in_force %}<tr><td>{{ say[m.subject] }}</td><td><code>{{ m.local_code }}</code></td><td>{{ m.local_description or '' }}</td><td>{{ m.target_code }} <span class="muted small">{{ m.target_name }}</span></td>
-<td>{{ m.origin.replace('_', ' ') }}</td><td>{{ m.review_state }}</td><td>{{ m.acted_by }}</td><td class="small">{{ m.acted_at }}</td><td class="small">{{ m.reason or '' }}</td></tr>{% endif %}{% endfor %}
-</tbody></table>
+<h2 id="force">In force<span class="count">the latest decision per code</span></h2>
+""" + door.DECIDED + """
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
@@ -1135,16 +1128,14 @@ MAPPING = """<h1>Mapping review<small>the promotions system's codes onto ours �
 def mapping():
     try:
         who = _who(); review = reads.mapping_review()
-        return _page(MAPPING, title="Mapping review", active="mapping", width="none", review=review, force=reads.mapping_in_force(),
-                     targets={s: reads.mapping_targets(s) for s in promotions.SUBJECTS}, say=promotions.SAY,
-                     missing=sum(1 for r in review if r["review_state"] == "missing"), pending=len(promotions.MAPPINGS.pending()),
-                     may_accept=roles.may(who, "mapping.accept"), may_alter=roles.may(who, "mapping.alter"), last=session.last)
+        return _page(MAPPING, title="Mapping review", active="mapping", width="none", **doors.page_context("TPM", who, review),
+                     door_decided=doors.decided("TPM"), missing=sum(1 for r in review if r["review_state"] == "missing"),
+                     pending=len(doors.ACTS.pending()), may_alter=roles.may(who, "mapping.alter"), last=session.last)
     except Busy as e:
         return _busy("Mapping review", e)
 
 
 STRUCTURE = """<h1>Their structure to ours<small>how the promotions system's codes land on the plan's structure — five subjects, each code to one of ours, and what ours is</small></h1>
-<nav class="tabs"><a href="{{ url_for('plan.mapping') }}">Review</a><a href="{{ url_for('plan.mapping_structure') }}" class="active">Their structure to ours</a></nav>
 <div class="card note"><table class="pairs"><thead><tr><th>The promotions system keeps</th><th></th><th>The plan reads it as</th><th>Which places the event</th></tr></thead><tbody>
 <tr><td><b>Planning account</b> — who the event is negotiated with</td><td>→</td><td><b>Account</b></td><td>at every ship-to of the account, in its planning unit; its promotions kept in one place only</td></tr>
 <tr><td><b>Product group</b> — the range on promotion</td><td>→</td><td><b>Promo group</b></td><td>on every material in the group: the cases are planned at the material</td></tr>
@@ -1159,7 +1150,7 @@ STRUCTURE = """<h1>Their structure to ours<small>how the promotions system's cod
 <table><thead><tr><th>Their code</th><th>Their description</th><th></th><th>Ours</th><th>What ours is</th><th>State</th></tr></thead><tbody>
 {% for m in by[subj] %}<tr class="{{ '' if m.in_force else 'added' }}"><td><code>{{ m.local_code }}</code></td><td>{{ m.local_description or '' }}</td><td>→</td>
 <td>{% if m.target_code %}{{ m.target_code }} <span class="muted small">{{ m.target_name or '' }}</span>{% else %}<span class="muted">not mapped</span>{% endif %}</td>
-<td class="small">{{ m.what }}</td><td>{% if m.in_force %}{{ m.review_state }}{% else %}<a href="{{ url_for('plan.mapping') }}#{{ m.subject }}-{{ m.local_code }}"><span class="state">{{ 'proposed' if m.review_state == 'proposed' else 'waiting' }}</span></a>{% endif %}</td></tr>{% endfor %}
+<td class="small">{{ m.what }}</td><td>{% if m.in_force %}{{ m.review_state }}{% else %}<a href="{{ url_for('plan.mapping') }}#{{ m.subject }}-{{ m.local_code }}-ALL"><span class="state">{{ 'proposed' if m.review_state == 'proposed' else 'waiting' }}</span></a>{% endif %}</td></tr>{% endfor %}
 </tbody></table>{% endfor %}
 <p class="hint">Rows marked at the left edge are not yet in force: a proposal waiting for review, or a code seen in a file and not mapped — every event that uses one is held until it is. Our lists are fixed; a reviewer places a code on one of ours, never adds to them.</p>
 <style>table.pairs{box-shadow:none;background:transparent;border:0}table.pairs td,table.pairs th{background:transparent;border-bottom:1px solid var(--rule)}</style>"""
@@ -1216,33 +1207,23 @@ def mapping_structure():
         return _busy("Their structure to ours", e)
 
 
-@plan.post("/mapping/act")
-def mapping_act():
-    """Accept a proposal, or alter it (or map a code nobody proposed) to another member of our list, with a reason."""
-    f = request.form; who = _who(); subject, code, act = f["subject"], f["local_code"], f["act"]
-    row = next((r for r in reads.mapping_review() if r["subject"] == subject and r["local_code"] == code), None)
-    target = row["proposed_target"] if act == "accept" and row else f.get("target_code", "")
-    ours = {t["code"] for t in reads.mapping_targets(subject)} if subject in promotions.SUBJECTS else set()
-    verb = "mapping.accept" if act == "accept" else "mapping.alter"
-    reason = (f.get("reason") or "").strip()
-    checks = [
-        {"check": "who may " + act, "ok": roles.may(who, verb), "says": f"{who} holds {verb}" if roles.may(who, verb) else f"{who} does not hold {verb}"},
-        {"check": "code waiting for review", "ok": row is not None, "says": f"{promotions.SAY.get(subject, subject)} {code} is waiting" if row else f"{subject} {code} is not waiting for review"},
-        {"check": "a proposal to accept", "ok": act != "accept" or bool(row and row["proposed_target"]), "says": f"proposed {row['proposed_target']}" if row and row["proposed_target"] else "no proposal — map it instead"},
-        {"check": "target on our list", "ok": target in ours, "says": f"{target} is one of ours" if target in ours else f"{target or 'nothing'} is not on our {subject} list"},
-        {"check": "reason given", "ok": act == "accept" or bool(reason), "says": reason or ("not needed to accept" if act == "accept" else "an alteration says why")},
-    ]
-    placed = receipts.judge(checks)
-    if placed:
-        state = "accepted" if act == "accept" else "altered"
-        promotions.MAPPINGS.place([{"mapping_id": f"MP-F-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}", "sender": promotions.SENDER, "subject": subject,
-                                    "local_code": code, "local_description": row["local_description"] or "", "target_code": target, "origin": "person",
-                                    "review_state": state, "confidence": row["confidence"] or "", "rationale": row["rationale"] or "",
-                                    "acted_by": who, "acted_at": dt.datetime.now().isoformat(timespec="seconds"), "reason": reason}], who)
-    session.last = receipts.write("mapping." + act, who, f"{subject}:{code}", checks, placed)
-    session.say(f"{promotions.SAY.get(subject, subject)} {code} → {target} {'accepted' if act == 'accept' else 'altered'} — events waiting on it enter after the next run" if placed
-                else f"{act} refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
-    return redirect(url_for("plan.mapping"))
+@plan.post("/door/<key>/decide")
+def door_decide(key: str):
+    """One decision about one item at any door, from the shared queue: checked against the kind's resolutions and who
+    may decide it, placed as one act in the doors' register, receipted. The latest act per item is in force."""
+    f = request.form; who = _who()
+    nxt = f.get("next") or "/"
+    nxt = nxt if nxt.startswith("/") and not nxt.startswith("//") else "/"
+    d = doors.DOORS.get(key)
+    if d is None:
+        session.say(f"no door {key}", False)
+        return redirect(nxt)
+    kind, item, scope = f.get("kind", ""), f.get("item_code", ""), f.get("scope_code", "") or "ALL"
+    r = d.decide(who=who, kind=kind, item_code=item, scope_code=scope, resolution=f.get("resolution", ""), target=f.get("target_code", ""),
+                 reason=f.get("reason", ""), waiting=doors.waiting(key, kind, item, scope), ours=doors.ours, may=doors.may)
+    session.last = r["receipt"]
+    session.say(r["says"], r["placed"])
+    return redirect(nxt + "#waiting" if key == "TPM" else nxt + "#queue")
 
 
 @plan.post("/mapping/propose")
@@ -1286,24 +1267,11 @@ FORECAST = """<h1>Statistical forecast<small>{{ version }} · the baseline each 
 <td class="n">{{ a.series|n if a.series else '' }}</td><td class="n">{{ a.landed|n if a.landed else '' }}</td><td class="n">{{ a.ours|n if a.ours else '' }}</td>
 <td class="n delta {{ a.departure|dir }}">{{ a.departure|pct1s if a.departure is not none else '' }}</td><td class="n">{{ a.gap|n if a.gap else '' }}</td></tr>{% endfor %}</tbody></table>
 <p class="hint">Our calculation is kept for every account as the reference: the same fiscal week averaged over the history, promotion weeks and the week after removed, carried forward at the category's growth. It is crude on purpose — a series the run cannot beat is worth a question.</p>
-<h2 id="queue">Waiting for a decision<span class="count">{{ queue|length }} item{{ '' if queue|length == 1 else 's' }} · one per series, never per week · a decision stands for later runs</span></h2>
-{% if queue %}<table><thead><tr><th>What disagrees</th><th>Item</th><th>Account</th><th>As sent</th><th class="n">Cases</th><th>Meanwhile</th>{% if may %}<th>Decide</th>{% endif %}</tr></thead><tbody>
-{% for i in queue %}<tr id="{{ i.item_code }}-{{ i.account_code }}"><td>{{ kind_say[i.kind] }}</td><td><code>{{ i.item_code }}</code><div class="small">{{ i.description or '' }}</div></td><td>{{ i.accounts }}</td>
-<td class="small">{% if i.kind == 'theirs_not_ours' %}{{ i.sender_hierarchy or 'no place in their structure sent' }}<div class="muted">{{ i.weeks }} weeks from {{ i.first_week }}</div>{% else %}{{ i.weeks_of_history or 0 }} weeks of history here{% endif %}</td>
-<td class="n">{{ i.cases|n }}</td><td>{{ i.meanwhile }}</td>
-{% if may %}<td class="acts"><form class="inline" method="post" action="{{ url_for('plan.forecast_resolve') }}"><input type="hidden" name="kind" value="{{ i.kind }}"><input type="hidden" name="item_code" value="{{ i.item_code }}"><input type="hidden" name="account_code" value="{{ i.account_code }}">
-<select name="resolution">{% for r, label, needs in resolve[i.kind] %}<option value="{{ r }}">{{ label }}</option>{% endfor %}</select>
-{% if i.kind == 'theirs_not_ours' %}<input name="target_code" list="ours-list" placeholder="one of ours, if it names one" size="22">{% endif %}
-<input name="reason" placeholder="why" required size="16"> <button class="act">Decide</button></form></td>{% endif %}</tr>{% endfor %}</tbody></table>
-<datalist id="ours-list">{% for m in materials %}<option value="{{ m.material_code }}">{{ m.material_name }}</option>{% endfor %}{% for p in products %}<option value="{{ p.product_code }}">{{ p.category_name }} › {{ p.product_name }} (product)</option>{% endfor %}</datalist>
-<p class="hint">In the run, not in the plan: it has cases and nowhere to put them — say it is the same as one of our materials (its cases join that material), place it under one of our products (recorded; it stays outside the plan until the structure carries it, because it has no price), or leave it out. In the plan, not in the run: the plan stands on our calculation — keep it, or set it to zero on purpose.</p>
-{% else %}<p class="muted">Nothing waits: the run's structures and the plan's agree, or every disagreement has been decided.</p>{% endif %}
+<h2 id="queue">Waiting for a decision<span class="count">{{ door_items|length }} item{{ '' if door_items|length == 1 else 's' }} · one per series, never per week · a decision stands for later runs</span></h2>
+""" + door.QUEUE + """
+{% if door_items %}<p class="hint">In the run, not in the plan: it has cases and nowhere to put them — say it is the same as one of our materials (its cases join that material), place it under one of our products (recorded; it stays outside the plan until the structure carries it, because it has no price), or leave it out. In the plan, not in the run: the plan stands on our calculation — keep it, or set it to zero on purpose.</p>{% endif %}
 <h2 id="decided">Decided<span class="count">the latest decision per item, in force for this run and the next</span></h2>
-{% if resolutions %}<table><thead><tr><th>What disagreed</th><th>Item</th><th>Account</th><th>Decision</th><th class="n">Cases</th><th>Why</th><th>By</th><th>At</th></tr></thead><tbody>
-{% for r in resolutions %}<tr><td>{{ kind_say[r.kind] }}</td><td><code>{{ r.item_code }}</code><div class="small">{{ r.description or '' }}</div></td><td>{{ r.account_code }}</td>
-<td>{{ say[r.resolution] }}{% if r.target_code %} <code>{{ r.target_code }}</code> <span class="muted small">{{ r.target_name or '' }}</span>{% endif %}{% if r.resolution == 'place_under' %}<div class="small muted">outside the plan until the structure carries it</div>{% endif %}</td>
-<td class="n">{{ r.cases|n if r.cases else '' }}</td><td class="small">{{ r.reason or '' }}</td><td>{{ r.acted_by }}</td><td class="small">{{ r.acted_at }}</td></tr>{% endfor %}</tbody></table>
-{% else %}<p class="muted">Nothing decided yet.</p>{% endif %}
+""" + door.DECIDED + """
 <h2 id="sender">From the forecasting system<span class="count">runs in its outbox</span></h2>
 {% if runs %}<table><thead><tr><th>Run</th><th>Made</th><th>What the numbers are</th><th class="n">Series</th><th>State</th>{% if may %}<th></th>{% endif %}</tr></thead><tbody>
 {% for r in runs %}<tr><td>{{ r.run_id }}</td><td>{{ r.header.made_on }}</td><td>{{ 'baseline only' if r.header.content == 'baseline_only' else 'promotions left in (' ~ r.header.content ~ ')' }}</td><td class="n">{{ r.n_series }}</td>
@@ -1338,12 +1306,20 @@ def forecast():
                      states={r["state"]: r for r in reads.forecast_states(version)} if version else {},
                      total={"landed": landed, "ours": ours, "departure": _d(landed, ours)},
                      held_cases=sum(i["cases"] for i in queue if i["kind"] == "theirs_not_ours"), gap_cases=sum(i["cases"] for i in queue if i["kind"] == "ours_not_theirs"),
-                     resolutions=reads.forecast_resolutions(version) if version else [], runs=fcst.sender_runs(),
+                     door_decided=_fcst_decided(version), runs=fcst.sender_runs(), **doors.page_context("FCS", who, queue),
                      departures=reads.forecast_departures(version) if run else [], series=series, series_material=mat, series_account=acct,
-                     series_name=names.get(mat, mat), materials=reads.materials(), products=reads.products(), resolve=fcst.RESOLVE, say=fcst.SAY,
-                     kind_say=fcst.KIND_SAY, may=roles.may(who, "layer.1.enter"), pending=len(fcst.pending()), last=session.last)
+                     series_name=names.get(mat, mat), may=roles.may(who, "layer.1.enter"), pending=len(fcst.pending()) + len(doors.ACTS.pending()), last=session.last)
     except Busy as e:
         return _busy("Statistical forecast", e)
+
+
+def _fcst_decided(version: str | None) -> list[dict]:
+    """The forecast door's decisions in force, each with the cases it covers in the run in force (theirs) or on our calculation (ours)."""
+    out = []
+    for r in (reads.forecast_resolutions(version) if version else []):
+        note = ([f"covers {r['cases']:,.0f} cases"] if r.get("cases") else []) + (["outside the plan until the structure carries it"] if r["resolution"] == "place_under" else [])
+        out.append({**r, "scope_code": r["account_code"], "item_description": r.get("description"), "note": " · ".join(note)})
+    return out
 
 
 @plan.post("/forecast/take_in")
@@ -1353,17 +1329,11 @@ def forecast_take_in():
     r = next((x for x in fcst.sender_runs() if x["run_id"] == rid), None)
     h = (r or {}).get("header", {}); rows = (r or {}).get("series", [])
     may = roles.may(who, verb)
-    whole = bool(rows) and all(x.get("material_code") and x.get("account_code") and _date(x.get("week_start")) and _num(x.get("cases")) is not None for x in rows)
-    says_what = bool(h.get("made_on") and h.get("last_history_week") and _date(h.get("first_week")) and _num(h.get("horizon_weeks")) and h.get("content"))
     checks = [
         {"check": "who may take it in", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — the baseline's owner takes a run in"},
         {"check": "run waiting", "ok": bool(r and not r["taken_in_at"]), "says": f"{rid}: {r['n_series']} series, {len(rows)} rows" if r and not r["taken_in_at"] else f"{rid} is not waiting"},
         {"check": "version open", "ok": bool(version), "says": f"into {version}" if version else "no open version"},
-        {"check": "the run says what it is", "ok": says_what, "says": f"made {h.get('made_on')}, history to {h.get('last_history_week')}, {h.get('horizon_weeks')} weeks from {h.get('first_week')}" if says_what else "the header does not say when it was made, what history it used, how far it reaches or what the numbers are"},
-        {"check": "baseline only", "ok": h.get("content") == "baseline_only",
-         "says": "promotions removed — the plan adds them from the calendar" if h.get("content") == "baseline_only"
-                 else f"the run says its numbers are {h.get('content') or 'unstated'}: with promotions left in, the plan would count every event twice — ask the forecasting system for the baseline"},
-        {"check": "every row whole", "ok": whole, "says": "every row names a material, an account and a week and carries cases" if whole else "a row is missing its material, account, week or cases"},
+        *door.declared(fcst.DECLARATIONS, h, rows),
     ]
     placed = receipts.judge(checks)
     if placed:
@@ -1372,35 +1342,6 @@ def forecast_take_in():
     session.say(f"{rid} taken in — it replaces the run in force after the next run of the plan" if placed
                 else "take-in refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
     return redirect(url_for("plan.forecast") + "#sender")
-
-
-@plan.post("/forecast/resolve")
-def forecast_resolve():
-    """One decision about one disagreement, with a reason: a logged act, in force for this run and every later one."""
-    f = request.form; who = _who(); verb = "layer.1.enter"
-    kind, item, account, resolution = f.get("kind", ""), f.get("item_code", ""), f.get("account_code", ""), f.get("resolution", "")
-    target, reason = (f.get("target_code") or "").strip(), (f.get("reason") or "").strip()
-    row = next((i for i in reads.forecast_queue() if i["kind"] == kind and i["item_code"] == item and i["account_code"] == account), None)
-    allowed = {r: needs for r, _, needs in fcst.RESOLVE.get(kind, [])}
-    needs = allowed.get(resolution)
-    ours = ({m["material_code"] for m in reads.materials()} if needs == "material" else {p["product_code"] for p in reads.products()}) if needs else set()
-    may = roles.may(who, verb)
-    checks = [
-        {"check": "who may decide", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — the baseline's owner decides"},
-        {"check": "item waiting", "ok": row is not None, "says": f"{item} ({fcst.KIND_SAY.get(kind, kind)})" if row else f"{item} is not waiting for a decision"},
-        {"check": "a decision this kind allows", "ok": resolution in allowed, "says": fcst.SAY.get(resolution, resolution) if resolution in allowed else f"{resolution or 'nothing'} is not a decision for this kind"},
-        {"check": "names one of ours", "ok": not needs or target in ours,
-         "says": ("needs none" if not needs else f"{target} is one of our {needs}s") if not needs or target in ours else f"{target or 'nothing'} is not one of our {needs}s"},
-        {"check": "a reason says why", "ok": bool(reason), "says": reason or "a decision says why"},
-    ]
-    placed = receipts.judge(checks)
-    if placed:
-        fcst.resolve(kind, item, account, resolution, target if needs else "", reason, who)
-    session.last = receipts.write("forecast.resolve", who, f"{item}:{account}", checks, placed)
-    session.say(f"{item}: {fcst.SAY[resolution]}{' ' + target if needs else ''} — in the plan after the next run" if placed
-                else "decision refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
-    return redirect(url_for("plan.forecast") + "#queue")
-
 
 
 MAINTAINED = """<p class="hint">{% if may_edit %}You maintain {{ what }}: an amendment is a new row from a date — the row in force is never edited — and takes effect on the next run.{% else %}You read {{ what }}; they are maintained by {{ holders|join(', ') or 'nobody yet' }} ({{ verb }}). Ask them for a change.{% endif %}</p>"""

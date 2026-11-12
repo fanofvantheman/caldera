@@ -12,7 +12,7 @@ two years of history with promotion weeks and the week after removed, the level 
 season taken out, and the series' own year-on-year trend held within ±15%.
 
   plan/fcst_run.csv, plan/fcst_series.csv      the run already taken in
-  plan/reg_fcst_resolution.csv                 the resolutions made at onboarding
+  plan/reg_door_act.csv (door FCS)             the resolutions made at onboarding
   sender/FCS-20261109_run.csv, …_series.csv    the next run, waiting: it left promotions in, and says so
 
 The run disagrees with the plan's structures in the ways such a system does: a pack it has renumbered (so the old
@@ -137,9 +137,10 @@ def run(shipments: list[dict], materials: list[Material], weeks: list[Week], lat
     plan = {
         "fcst_run": [{**header(FIRST_RUN, "2026-11-02", "baseline_only"), **stamp}],
         "fcst_series": [{**r, "version_id": version, "taken_in_at": stamp["taken_in_at"]} for r in sent],
-        "reg_fcst_resolution": [
-            {"resolution_id": "FR-0001", "sender": SENDER, "kind": "theirs_not_ours", "item_code": SHIPPER_CODE, "account_code": "ALL",
-             "resolution": "leave_out", "target_code": "", "reason": "a pre-packed display of materials the plan already carries — counting it would count them twice",
+        "reg_door_act": [
+            {"act_id": "FR-0001", "door": SENDER, "kind": "theirs_not_ours", "item_code": SHIPPER_CODE, "scope_code": "ALL",
+             "resolution": "leave_out", "target_code": "", "state": "decided", "origin": "person", "confidence": "", "rationale": "",
+             "item_description": SHIPPER_NAME, "reason": "a pre-packed display of materials the plan already carries — counting it would count them twice",
              "acted_by": "head.demand@caldera", "acted_at": "2026-11-03T08:30:00"}],
     }
     # the next run, waiting: the same series for Westbrook's largest forty with promotions left in, and the header says so

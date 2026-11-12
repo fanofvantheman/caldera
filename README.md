@@ -132,6 +132,17 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   whoever holds `run.plan`, the log kept. Every act writes a receipt under `data/receipts/`. What a page shows is what
   the last run said: an entry placed is in the plan after the next run, and a withdrawal of an entry the warehouse has
   not yet seen is refused, honestly, until it has.
+  The navigation is process → area → entry and never deeper: an object with several views is one entry that opens on
+  tabs — the demand area's entries are *Demand plan* (plan · entries · new entry), *Submissions*, *Baseline*
+  (statistical forecast · forecast accuracy), *Promotions* (events · calendar · mapping review · their structure to
+  ours), *Prices and terms* (terms · price lists) and *Revenue bridge*; a person sees the tabs their roles reach.
+  **Every door decides the same way.** The promotions system and the forecasting system are taken in by an act whose
+  declarations are checked as data; each disagreement between what arrived and the plan's own structures is an item of
+  a declared kind (`plan.ref_door_resolution`: per door and kind, the decisions a person may make, what each names of
+  ours and the verb it needs); the mapping review and the statistical forecast page list the items the same way, a
+  decision is one checked, receipted act in one register for every door (`plan/reg_door_act`), and the latest act per
+  item stands for every later arrival. The mapping tool's first pass writes proposals there, never in force until a
+  person accepts one. What stays per door is the query that finds its disagreements.
   The face's pages and checks are here; its chrome, session, landing writer, receipts, roles, run and warehouse access
   are the **chassis** (`99_core_clones/chassis-*.whl`, a dependency in `pyproject.toml`) — the part of a face that does
   not know which method it carries, shared with the other builds. `99_core_clones/chassis_usage.md` says how it is used.
@@ -147,7 +158,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
     (`baseline_reference`, kept for every account as the reference) for the accounts the plan calculates, the forecasting
     system's run (`forecast_run`, `forecast_series`) for the accounts that take it, spread to ship-tos by our history
     shape, and our calculation again wherever the run does not reach; what people decided where the two structures
-    disagree is a log (`forecast_resolution`), and what nobody has decided is the worklist `forecast_queue`; the terms and price lists effective-dated (the latest act per date, each row running to the day before the
+    disagree is read from the doors' one act register (`door_act`, the latest act per item; `forecast_resolution` and
+    the promotions `promo_mapping` are its two doors' views), and what nobody has decided is the worklist `forecast_queue`; the terms and price lists effective-dated (the latest act per date, each row running to the day before the
     next); the co-op envelopes drawn (`terms_envelope`); the promotions calendar resolved from both doors (`promo_sender_event` through the
     mapping register `promo_mapping` and the funding lines `promo_funding`; `promo_typed_event` with the mechanic's
     default response; `promo_event` the one calendar, each event flagged where it is off its account's promotional week) and its uplift,

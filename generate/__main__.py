@@ -86,14 +86,14 @@ def main() -> None:
     }
     fcst, fcst_waiting = forecaster.run(shipments, materials, weeks, LATEST_CLOSED, {a[0]: BASELINE_SOURCE.get(a[0], "PLAN") for a in ACCOUNTS},
                                         f"LV-{LATEST_CLOSED}")       # after the last draw on rng above: it draws nothing
-    plan.update(fcst)
+    plan.update({**fcst, "reg_door_act": plan["reg_door_act"] + fcst["reg_door_act"]})     # one act register for every door
     waiting = sender.next_export(events, {p["period"]: p["period_start"] for p in cal.periods(weeks)}, PLAN_FY)
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
     c = manifest["counts"]
     print(f"generated: {c['dim_material']} materials, {c['dim_ship_to']} ship-tos, {c['dim_week']} weeks, "
           f"{c['shipments']} shipment rows, {c['forecast_snapshot']} forecast snapshot rows, {c['price_list']} price rows, {c['ref_bom']} bom lines, {c['reg_capacity_machine']} capacity rows, "
           f"{c['layer_entry']} layer entries, {c['tpm_event']} promo events from the sender and {c['reg_promo_event']} typed, "
-          f"{c['reg_promo_mapping']} mappings, {c['reg_terms']} terms; waiting from the sender: {sender.NEXT_FILE}; "
+          f"{c['reg_door_act']} door acts, {c['reg_terms']} terms; waiting from the sender: {sender.NEXT_FILE}; "
           f"{c['fcst_series']} forecast rows in run {forecaster.FIRST_RUN}, waiting from the forecasting system: {forecaster.NEXT_RUN}")
 
 

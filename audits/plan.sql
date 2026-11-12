@@ -116,9 +116,12 @@ AUDIT (name forecast_run_baseline_only);
 /* blocking: a run with promotions left in would have every event counted twice — it is refused at the door, and stops here if it got past */
 SELECT run_id, content FROM @this_model WHERE in_force AND content <> 'baseline_only';
 
-AUDIT (name forecast_resolution_vocabulary);
-SELECT resolution_id, kind, resolution FROM @this_model
-WHERE NOT ((kind = 'theirs_not_ours' AND resolution IN ('same_as', 'place_under', 'leave_out')) OR (kind = 'ours_not_theirs' AND resolution IN ('keep_ours', 'zero')));
+AUDIT (name door_act_vocabulary);
+/* blocking: every act at a door is a decision its kind allows (the reference table), or a proposal; a proposal is never in force */
+SELECT a.door, a.kind, a.item_code, a.resolution, a.state FROM @this_model a
+LEFT JOIN plan.ref_door_resolution r ON r.door = a.door AND r.kind = a.kind AND r.resolution = a.resolution
+WHERE a.state NOT IN ('proposed', 'decided') OR a.origin NOT IN ('first_pass', 'person')
+   OR (a.state = 'decided' AND r.resolution IS NULL) OR (a.state = 'proposed' AND (a.resolution <> 'propose' OR a.in_force));
 
 AUDIT (name forecast_resolution_target_known);
 SELECT resolution_id, resolution, target_code FROM @this_model WHERE NOT target_known;

@@ -61,12 +61,11 @@ PLAN = {
     "reg_promo_neighbour": ("rate",),
     "tpm_event": ("uplift_pct", "dip_pct"),
     "tpm_funding": ("line_no", "rate"),
-    "reg_promo_mapping": (),
     "reg_terms": ("rate",),
     "reg_submission": (),
     "fcst_run": ("horizon_weeks",),
     "fcst_series": ("cases",),
-    "reg_fcst_resolution": (),
+    "reg_door_act": (),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks"})

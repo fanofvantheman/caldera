@@ -10,7 +10,7 @@ This module re-issues the calendar through the doors and writes what the sender 
   plan/tpm_event.csv, plan/tpm_funding.csv   the export already taken in (Westbrook's and Carters' events)
   plan/reg_promo_event.csv                   the events typed in the plan (Merritt's), uplift and dip left to the
                                              mechanic's defaults
-  plan/reg_promo_mapping.csv                 the sender's codes mapped to ours at onboarding, every row accepted
+  plan/reg_door_act.csv                      the sender's codes mapped to ours at onboarding, every row accepted (door TPM)
   sender/TPM-20261112_events.csv, …_funding.csv
                                              the next export, waiting to be taken in: new events, one moved, one
                                              cancelled, one for an account whose promotions are mastered in the plan,
@@ -147,11 +147,11 @@ def through_the_doors(events: list[dict], masters: dict[str, str]) -> dict[str, 
     for subject, codes in (("customer", {k: v for k, v in ACCOUNTS.items()}), ("material", GROUPS), ("mechanic", TACTICS), ("funding_type", FUNDS),
                            ("status", {w: (w, s) for w, s in STATUS_WORDS.items()})):
         for code, (desc, target) in codes.items():
-            mapping.append({"mapping_id": f"MP-{len(mapping) + 1:04d}", "sender": SENDER, "subject": subject, "local_code": code, "local_description": desc,
-                            "target_code": target, "origin": "person", "review_state": "accepted", "confidence": "", "rationale": "",
-                            "acted_by": by, "acted_at": "2026-07-01T09:00:00", "reason": "mapped when the sender was connected"})
+            mapping.append({"act_id": f"MP-{len(mapping) + 1:04d}", "door": SENDER, "kind": subject, "item_code": code, "scope_code": "ALL",
+                            "resolution": "accept", "target_code": target, "state": "decided", "origin": "person", "confidence": "", "rationale": "",
+                            "item_description": desc, "reason": "mapped when the sender was connected", "acted_by": by, "acted_at": "2026-07-01T09:00:00"})
     return {"tpm_event": _stamped(head, FIRST_FILE, version, at, by), "tpm_funding": _stamped(fund, FIRST_FILE, version, at, None),
-            "reg_promo_event": typed, "reg_promo_mapping": mapping}
+            "reg_promo_event": typed, "reg_door_act": mapping}
 
 
 def next_export(events: list[dict], period_start: dict[str, dt.date], plan_fy: int) -> dict[str, list[dict]]:

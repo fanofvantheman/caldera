@@ -11,25 +11,49 @@ import csv
 import datetime as dt
 import pathlib
 
+from chassis.door import Declaration
 from chassis.landing import LogLanding
 
-from . import FCST_RESOLUTION_COLUMNS, FCST_RUN_COLUMNS, FCST_SERIES_COLUMNS, ROOT
+from . import FCST_RUN_COLUMNS, FCST_SERIES_COLUMNS, ROOT
+from .doors import FCS as DOOR
 
 SENDER = "FCS"
 OUTBOX = ROOT / "data" / "generated" / "sender"           # where the system's export arrives; read here, never loaded
 GENERATED = ROOT / "data" / "generated" / "plan"
 RUNS = LogLanding("plan", "fcst_run", FCST_RUN_COLUMNS)
 SERIES = LogLanding("plan", "fcst_series", FCST_SERIES_COLUMNS)
-RESOLUTIONS = LogLanding("plan", "reg_fcst_resolution", FCST_RESOLUTION_COLUMNS)
-LANDINGS = [RUNS, SERIES, RESOLUTIONS]
+LANDINGS = [RUNS, SERIES]
 
-# what a person may decide about each kind of disagreement: (resolution, what the button says, whether it names one of ours)
-RESOLVE = {
-    "theirs_not_ours": [("same_as", "The same as one of ours", "material"), ("place_under", "Place under a product", "product"), ("leave_out", "Leave out", None)],
-    "ours_not_theirs": [("keep_ours", "Keep our calculation", None), ("zero", "Zero on purpose", None)],
-}
-SAY = {"same_as": "the same as", "place_under": "placed under", "leave_out": "left out", "keep_ours": "our calculation kept", "zero": "zero on purpose"}
-KIND_SAY = {"theirs_not_ours": "in the run, not in the plan", "ours_not_theirs": "in the plan, not in the run"}
+
+def _d(x: str | None) -> bool:
+    try:
+        dt.date.fromisoformat(x or "")
+        return True
+    except ValueError:
+        return False
+
+
+def _f(x) -> bool:
+    try:
+        float(x)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+# what a run must say about itself to be let in — checked as data at the take-in
+DECLARATIONS = [
+    Declaration("the run says what it is",
+                lambda h, rows: bool(h.get("made_on") and h.get("last_history_week") and _d(h.get("first_week")) and _f(h.get("horizon_weeks")) and h.get("content")),
+                lambda h, rows: f"made {h.get('made_on')}, history to {h.get('last_history_week')}, {h.get('horizon_weeks')} weeks from {h.get('first_week')}",
+                "the header does not say when it was made, what history it used, how far it reaches or what the numbers are"),
+    Declaration("baseline only", lambda h, rows: h.get("content") == "baseline_only",
+                "promotions removed — the plan adds them from the calendar",
+                lambda h, rows: f"the run says its numbers are {h.get('content') or 'unstated'}: with promotions left in, the plan would count every event twice — ask the forecasting system for the baseline"),
+    Declaration("every row whole",
+                lambda h, rows: bool(rows) and all(x.get("material_code") and x.get("account_code") and _d(x.get("week_start")) and _f(x.get("cases")) for x in rows),
+                "every row names a material, an account and a week and carries cases", "a row is missing its material, account, week or cases"),
+]
 
 
 def _csv(path: pathlib.Path) -> list[dict]:
@@ -70,12 +94,6 @@ def take_in(run: dict, version: str, who: str) -> None:
     stamp = {"sender": SENDER, "run_id": run["run_id"], "version_id": version, "taken_in_at": at}
     RUNS.place([{**run["header"], **stamp, "taken_in_by": who}], who)
     SERIES.place([{**s, **stamp} for s in run["series"]], who)
-
-
-def resolve(kind: str, item: str, account: str, resolution: str, target: str, reason: str, who: str) -> None:
-    now = dt.datetime.now()
-    RESOLUTIONS.place([{"resolution_id": f"FR-F-{now.strftime('%Y%m%d-%H%M%S-%f')}", "sender": SENDER, "kind": kind, "item_code": item, "account_code": account,
-                        "resolution": resolution, "target_code": target, "reason": reason, "acted_by": who, "acted_at": now.isoformat(timespec="seconds")}], who)
 
 
 def pending() -> list[pathlib.Path]:

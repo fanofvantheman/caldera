@@ -1,6 +1,7 @@
 /* The sender's codes waiting for a person: every code an event on file uses whose mapping is a first-pass proposal not
    yet reviewed, or that has no mapping at all (the first pass did not run, or could not place it). Lowest confidence
-   first; each row says how many events it holds. Routed to those who review the mapping and keep the calendar. */
+   first; each row says how many events it holds. Routed to those who review the mapping and keep the calendar. The first
+   columns are the doors' queue contract (door TPM, one kind per subject). */
 MODEL (name plan.worklist_promo_mapping_review, kind FULL, grain (sender, subject, local_code));
 WITH used AS (
   SELECT sender, 'customer' AS subject, local_account AS local_code, local_account_name AS local_description, event_id FROM plan.promo_sender_event WHERE state <> 'cancelled'
@@ -15,7 +16,11 @@ codes AS (
 ),
 readers AS (SELECT STRING_AGG(DISTINCT principal, ', ') AS whose FROM dims.effective_entitlements
             WHERE action = 'register.promo_calendar.maintain' AND principal IN (SELECT principal FROM dims.effective_entitlements WHERE action = 'mapping.accept'))
-SELECT c.sender, c.subject, c.local_code, c.local_description, c.events,
+SELECT c.sender AS door, c.subject AS kind, c.local_code AS item_code, 'ALL' AS scope_code, NULL::TEXT AS reaches, c.local_description AS description,
+       NULL::TEXT AS as_sent, NULL::TEXT AS would_bring,
+       c.events || ' event' || CASE WHEN c.events = 1 THEN '' ELSE 's' END || ' held' AS meanwhile,
+       CASE WHEN m.review_state = 'proposed' THEN COALESCE(m.confidence, '?') || ' confidence' || COALESCE(' — ' || m.rationale, '') END AS proposal,
+       c.sender, c.subject, c.local_code, c.local_description, c.events,
        COALESCE(m.review_state, 'missing') AS review_state, m.target_code AS proposed_target, m.target_name AS proposed_target_name,
        m.confidence, m.rationale, m.origin,
        CASE m.confidence WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 ELSE -1 END AS confidence_rank,
