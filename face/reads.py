@@ -720,3 +720,39 @@ def material_node(code: str) -> bool:
 
 def slots() -> list[dict]:
     return q("select * from plan.ref_plan_slot order by ord")
+
+
+# ---- the structures as loaded: read here, maintained in the client's systems ----
+
+def structure_loads() -> list[dict]:
+    """Per structure: the system, the latest load and the one before, the members now, and how many are new, changed, gone."""
+    return q("""with l as (select structure, any_value(structure_name) structure_name, any_value(source_system) source_system,
+                              max(loaded_at) filter (where is_latest) latest, max(loaded_at) filter (where not is_latest) previous
+                       from dims.structure_load group by 1),
+                 c as (select structure, count(*) filter (where change = 'new') n_new, count(*) filter (where change = 'changed') n_changed,
+                              count(*) filter (where change = 'gone') n_gone from dims.structure_change group by 1),
+                 m as (select 'materials' structure, (select count(*) from dims.dim_material) members, 'materials' says
+                       union all select 'customers', (select count(*) from dims.dim_account) + (select count(*) from dims.dim_ship_to),
+                                        (select count(*) from dims.dim_account) || ' accounts, ' || (select count(*) from dims.dim_ship_to) || ' ship-tos'
+                       union all select 'locations', (select count(*) from dims.dim_node), 'plants, warehouses and depots'
+                       union all select 'lanes', (select count(*) from dims.ref_lane) + (select count(*) from dims.ref_route),
+                                        (select count(*) from dims.ref_lane) || ' lanes, ' || (select count(*) from dims.ref_route) || ' routes')
+                select l.*, m.members, m.says, coalesce(c.n_new, 0) n_new, coalesce(c.n_changed, 0) n_changed, coalesce(c.n_gone, 0) n_gone
+                from l join m using (structure) left join c using (structure)
+                order by case l.structure when 'materials' then 1 when 'customers' then 2 when 'locations' then 3 else 4 end""")
+
+
+def structure_changes() -> list[dict]:
+    return q("select * from dims.structure_change order by structure, case change when 'new' then 1 when 'changed' then 2 else 3 end, member_code")
+
+
+def structure_unfit() -> list[dict]:
+    return q("select * from plan.structure_unfit order by structure, lacks, member_code")
+
+
+def provisional() -> list[dict]:
+    """Members held in the plan ahead of the client's master: codes the forecasting system sent that a planner placed under one of our products."""
+    return q("""select r.item_code, r.target_code, r.target_name, r.acted_by, r.acted_at, r.reason,
+                       (select any_value(sent_description) from plan.forecast_series s where s.sent_code = r.item_code) description,
+                       (select sum(cases) from plan.forecast_series s where s.sent_code = r.item_code) cases
+                from plan.forecast_resolution r where r.resolution = 'place_under' order by r.acted_at desc""")

@@ -19,6 +19,7 @@ from .plan import business_plan_entries, latest_view_entries, promo_events, prom
 from .emit import emit_all, dataclass_rows
 from . import sender
 from . import forecaster
+from . import loads
 
 FIRST_FY, LAST_FY, PLAN_FY = 2024, 2030, 2027   # the latest view rolls 36 periods from the cycle
 LATEST_CLOSED = "2027P04"          # the last closed period: October 2026
@@ -89,6 +90,7 @@ def main() -> None:
                                         f"LV-{LATEST_CLOSED}")       # after the last draw on rng above: it draws nothing
     plan.update({**fcst, "reg_door_act": plan["reg_door_act"] + fcst["reg_door_act"]})     # one act register for every door
     waiting = sender.next_export(events, {p["period"]: p["period_start"] for p in cal.periods(weeks)}, PLAN_FY)
+    tables.update(loads.structure_loads(tables))        # the load before, and one member the client has not finished; draws nothing
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
     c = manifest["counts"]
     print(f"generated: {c['dim_material']} materials, {c['dim_ship_to']} ship-tos, {c['dim_week']} weeks, "

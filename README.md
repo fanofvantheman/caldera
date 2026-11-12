@@ -136,7 +136,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   by the model behind it or by a Finance assumption, declared per step; Caldera fills the first three from the model and
   says *not yet filled* for the rest), the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
-  whoever holds `run.plan`, the log kept. Every act writes a receipt under `data/receipts/`. What a page shows is what
+  whoever holds `run.plan`, the log kept; and under Admin the **structures as loaded** — read-only: each structure's
+  system, its latest load and the one before, what changed between them, the members not yet fit to plan with whom to
+  ask, the members held provisionally ahead of the client's master, and the open disagreements by door. The plan does
+  not maintain master data; this is what it says about the state of what it was given. Every act writes a receipt under `data/receipts/`. What a page shows is what
   the last run said: an entry placed is in the plan after the next run, and a withdrawal of an entry the warehouse has
   not yet seen is refused, honestly, until it has.
   The navigation is process → area → entry and never deeper: an object with several views is one entry that opens on

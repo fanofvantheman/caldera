@@ -863,6 +863,44 @@ def slots():
         return _busy("Where each number comes from", e)
 
 
+# ---- the structures as loaded: a view, never an editor ----
+STRUCTURES = """<h1>Structures as loaded<small>what the plan was given, from which system and when, and what changed since the load before — read here, maintained in the client's systems</small></h1>
+<div class="cards">{% for s in loads %}<div class="card"><b>{{ s.structure_name }}</b><div class="small muted">{{ s.source_system }}</div>
+<div style="font-size:1.6rem;margin:.4rem 0 .1rem">{{ s.members|n }}</div><div class="small">{{ s.says }}</div>
+<div class="small" style="margin-top:.5rem">loaded {{ s.latest }}<br><span class="muted">the load before {{ s.previous }}</span></div>
+<div class="small" style="margin-top:.4rem">{% if s.n_new or s.n_changed or s.n_gone %}<a href="#changes-{{ s.structure }}">{{ s.n_new }} new · {{ s.n_changed }} changed · {{ s.n_gone }} gone</a>{% else %}no change since the load before{% endif %}</div></div>{% endfor %}</div>
+<h2 id="unfit">Not yet fit to plan<span class="count">{{ unfit|length }} gap{{ '' if unfit|length == 1 else 's' }} · a member missing what the plan needs — fixed where the structure is kept, by its owner</span></h2>
+{% if unfit %}<table><thead><tr><th>Structure</th><th>Member</th><th>Name</th><th>Lacks</th><th>Status</th><th>Ask</th></tr></thead><tbody>
+{% for u in unfit %}<tr><td>{{ u.structure }}</td><td><code>{{ u.member_code }}</code></td><td>{{ u.member_name }}</td><td>{{ u.lacks }}</td><td class="small">{{ u.note or '' }}</td><td class="small">{{ u.owners or 'nobody holds it yet' }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="muted">Every member carries what the plan needs.</p>{% endif %}
+<h2 id="provisional">Provisional<span class="count">held in the plan ahead of the client's master — the client's master is never edited from here</span></h2>
+{% if provisional %}<table><thead><tr><th>Their code</th><th>As sent</th><th>Placed under</th><th class="n">Cases sent</th><th>By</th><th>At</th><th>Why</th></tr></thead><tbody>
+{% for p in provisional %}<tr><td><code>{{ p.item_code }}</code></td><td class="small">{{ p.description or '' }}</td><td>{{ p.target_code }} <span class="muted small">{{ p.target_name or '' }}</span></td><td class="n">{{ p.cases|n if p.cases else '' }}</td><td>{{ p.acted_by }}</td><td class="small">{{ p.acted_at }}</td><td class="small">{{ p.reason or '' }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">Placed, not yet planned: a provisional member has a place in our structure and no price or route until the client's master carries it.</p>
+{% else %}<p class="muted">Nothing is provisional.</p>{% endif %}
+<h2 id="doors">Open disagreements by door<span class="count">where what arrived and the plan's structures disagree, and nobody has decided</span></h2>
+<table><thead><tr><th>Door</th><th>Waiting</th><th class="n">Items</th><th>Decided by</th></tr></thead><tbody>
+{% for d in disagreements %}<tr><td>{{ d.door }}</td><td><a href="{{ d.href }}">{{ d.name }}</a></td><td class="n">{{ d['items'] }}</td><td class="small">{{ d.whose or '' }}</td></tr>{% endfor %}</tbody></table>
+{% for s in loads %}{% set rows = changes|selectattr('structure', 'equalto', s.structure)|list %}{% if rows %}<h2 id="changes-{{ s.structure }}">{{ s.structure_name }}: since the load before<span class="count">{{ s.previous }} → {{ s.latest }}</span></h2>
+<table><thead><tr><th>Member</th><th>Name</th><th>Change</th><th>What</th></tr></thead><tbody>
+{% for c in rows %}<tr class="{{ 'added' if c.change == 'new' else ('off' if c.change == 'gone' else '') }}"><td><code>{{ c.member_code }}</code></td><td>{{ c.member_name }}</td><td>{{ c.change }}</td><td class="small">{{ c.what or '' }}</td></tr>{% endfor %}</tbody></table>{% endif %}{% endfor %}
+<p class="hint">Nothing on this page is editable. The plan reads each structure as it is loaded and says what it needs; creating, cleansing and governing the records is done where they are kept. Ask the owner named — the plan reads the next load.</p>"""
+
+
+@plan.get("/structures")
+def structures():
+    try:
+        h = {r["surface"]: r for r in health(q, HEALTH)}
+        doors_ = [("the promotions system", "plan.worklist_promo_mapping_review", url_for("plan.mapping")),
+                  ("the promotions system", "plan.worklist_promo_held", url_for("plan.events") + "#held"),
+                  ("the forecasting system", "plan.worklist_forecast_queue", url_for("plan.forecast", accounts="all") + "#queue")]
+        dis = [{"door": d, "name": h[s]["name"], "items": h[s]["items"], "whose": h[s]["whose"], "href": href} for d, s, href in doors_ if s in h]
+        return _page(STRUCTURES, title="Structures as loaded", active="structures", loads=reads.structure_loads(), changes=reads.structure_changes(),
+                     unfit=reads.structure_unfit(), provisional=reads.provisional(), disagreements=dis)
+    except Busy as e:
+        return _busy("Structures as loaded", e)
+
+
 # ---- the rungs named but not yet built ----
 RUNGS = {
     "standard": ("Standard by plant", "The standard cost of every material at every plant for the version's standard year, derived from the routes, the BOM and the cost inputs; a new plant through to a new standard and the transition."),

@@ -49,6 +49,12 @@ REFERENCE = {
     "ctl_role_definition": (),
     "ctl_role_action": (),
     "ctl_role_assignment": (),
+    # the structures' loads, and each structure as at the load before — what changed is read against them
+    "ctl_structure_load": (),
+    "prior_dim_material": ("units_per_case", "case_net_kg", "base_cases_per_week"),
+    "prior_dim_ship_to": ("stores_served",),
+    "prior_dim_node": (),
+    "prior_ref_lane": ("transit_days", "cost_per_pallet"),
 }
 HISTORY = {
     "shipments": ("cases", "tonnes", "gross_sales", "net_sales"),
