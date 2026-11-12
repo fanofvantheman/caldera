@@ -237,3 +237,22 @@ def submissions(latest_closed: str) -> list[dict]:
     ]
     return [{"submission_id": f"SB-{i:04d}", "action": "submit", "version_id": v, "subject": subj, "scope_node": node,
              "submitted_by": by, "submitted_on": on, "note": note} for i, (subj, node, by, on, note) in enumerate(acts, start=1)]
+
+
+OVERLAY_COLUMNS = ["overlay_id", "action", "withdraws", "version_id", "kind", "reason_code", "scope_customer", "scope_material",
+                   "period_from", "period_to", "amount", "entered_by", "entered_on", "note"]
+
+
+def finance_overlay(plan_fy: int, latest_closed: str) -> list[dict]:
+    """Finance's own risk and opportunity on the latest view, in net-sales dollars: a judgement beside the consensus, never
+    a second forecast. Two to start: a range review at Westbrook on canned fruit, and a price increase at Carters that
+    Finance expects a period early."""
+    v, by, on = f"LV-{latest_closed}", "finance.manager@caldera", "2026-11-04"
+    return [
+        {"overlay_id": "FO-0001", "action": "enter", "withdraws": "", "version_id": v, "kind": "risk", "reason_code": "RANGE_REVIEW",
+         "scope_customer": "WES", "scope_material": "CANNED_FRUIT", "period_from": f"{plan_fy}P07", "period_to": f"{plan_fy}P12",
+         "amount": -420000.0, "entered_by": by, "entered_on": on, "note": "Westbrook's canned fruit range review lands in P07; two lines at risk"},
+        {"overlay_id": "FO-0002", "action": "enter", "withdraws": "", "version_id": v, "kind": "opportunity", "reason_code": "PRICE_TIMING",
+         "scope_customer": "CAR", "scope_material": "ALL", "period_from": f"{plan_fy}P08", "period_to": f"{plan_fy}P08",
+         "amount": 150000.0, "entered_by": by, "entered_on": on, "note": "Carters has signalled it will accept the February increase from P08, a period early"},
+    ]

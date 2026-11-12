@@ -80,8 +80,11 @@ PROCESSES = [
             Section("standard", "Standard by plant", RUNG, {"slug": "standard"}, verbs=["standard.derive", "standard.declare", "register.cost_input.maintain", "read.proof"]),
             Section("landed", "Landed cost", RUNG, {"slug": "landed"}, verbs=["register.supplier_price_list.maintain", "register.freight_contract.maintain", "register.hedge_book.maintain", "register.customs.maintain"]),
         ]),
+        Area("sources", "Sources", [
+            Section("slots", "Where each number comes from", "plan.slots", verbs=["register.assumptions.maintain", "overlay.finance.enter", "read.proof"]),
+        ]),
         Area("statements", "Planned statements", [
-            Section("revenue", "Revenue forecast", "plan.revenue", verbs=["register.assumptions.maintain", "read.proof"]),
+            Section("revenue", "Revenue forecast", "plan.revenue", verbs=["register.assumptions.maintain", "overlay.finance.enter", "read.proof"]),
             Section("pnl", "P&L plan", RUNG, {"slug": "pnl"}, verbs=["register.assumptions.maintain", "register.timing_policy.maintain", "read.proof"]),
             Section("balance", "Balance sheet plan", RUNG, {"slug": "balance"}, verbs=["register.timing_policy.maintain", "read.proof"]),
             Section("capex", "Capital", RUNG, {"slug": "capex"}, verbs=["capex.project.enter", "capex.approve"]),
@@ -126,6 +129,10 @@ NEIGHBOUR_COLUMNS = ["neighbour_id", "version_id", "event_id", "scope_material",
 # edit of the row in force; who placed it is the file's name and the receipt
 TERMS_COLUMNS = ["account_code", "instrument_code", "instrument_kind", "driver_basis", "rate", "flow_position", "conditionality",
                  "settlement_timing", "scope_material", "valid_from", "valid_to", "note"]
+# Finance's overlay: its own risk and opportunity on the valued plan, in net-sales dollars at any node of either structure
+# over a span of periods; a withdrawal is a later row naming the entry
+OVERLAY_COLUMNS = ["overlay_id", "action", "withdraws", "version_id", "kind", "reason_code", "scope_customer", "scope_material",
+                   "period_from", "period_to", "amount", "entered_by", "entered_on", "note"]
 PRICE_LIST_COLUMNS = ["price_list", "material_code", "currency", "price_per_case", "valid_from", "valid_to", "event"]
 # the forecasting system's door — a run's header and its series as taken in, account by account (one header row per
 # account that accepted the run); what people decide where its structures and

@@ -1,0 +1,18 @@
+/* Where each number in the financial plan comes from. The chain is the same whoever plans it: each step is a slot, filled
+   either by the operational model behind it or by a Finance assumption at a coarser grain, declared per slot. Downstream
+   reads the slot, never the source, so replacing an assumption with its model changes nothing below it. Per slot: the two
+   possible sources, the one declared, whether the build fills it, and the page that owns it. */
+MODEL (name plan.ref_plan_slot, kind FULL, grain (slot_key));
+SELECT * FROM (VALUES
+  (1,  'volume',     'Volume',                          'The demand plan (consensus), constrained where supply says so', 'Cases by account × material × period: last year ± a rate, or typed', 'model', TRUE,  'plan.demand',      'the unconstrained consensus; no supply constraint yet'),
+  (2,  'price',      'Price and terms',                 'The price lists and terms registers',                            'The same registers',                                                 'model', TRUE,  'plan.terms',       NULL),
+  (3,  'promotions', 'Promotions',                      'The calendar, event by event',                                   'Trade spend as a rate on gross sales by account',                    'model', TRUE,  'plan.events',      NULL),
+  (4,  'delivery',   'Delivery',                        'Demand routed over the network: ship-to → serving node → lane',  'A cost to serve per case by account or region',                      'none',  FALSE, NULL,               'the lanes are loaded; no cost to serve is valued'),
+  (5,  'cogs',       'Cost of goods',                   'Standard from routes, bills of material and rates, by plant',    'A standard per material (last year + inflation), sourcing share by plant', 'none', FALSE, 'plan.rung',  'routes and bills of material are loaded; no standard is derived'),
+  (6,  'inventory',  'Inventory',                       'Projected stock by node from the supply plan',                   'Weeks of cover by category × standard',                              'none',  FALSE, 'plan.rung',        NULL),
+  (7,  'labour',     'Labour',                          'The labour model',                                               'A line by cost centre × period with a declared method',              'none',  FALSE, NULL,               NULL),
+  (8,  'opex',       'Operating expenses',              'The opex schedule',                                              'A line by cost centre × period with a declared method',              'none',  FALSE, NULL,               NULL),
+  (9,  'capex',      'Capital and depreciation',        'Projects, phased and depreciated',                               'A line by cost centre × period with a declared method',              'none',  FALSE, 'plan.rung',        NULL),
+  (10, 'nonop',      'Non-operating P&L',               'Its own schedules',                                              'A line per period with a declared method',                           'none',  FALSE, NULL,               NULL),
+  (11, 'balance',    'Balance sheet',                   'Each flow × its timing policy, from opening actuals',            'The same, on the assumed flows',                                     'none',  FALSE, 'plan.rung',        'working capital first')
+) AS t(ord, slot_key, slot, from_model, as_assumption, declared, built, page, says)

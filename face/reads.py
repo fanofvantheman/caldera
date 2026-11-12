@@ -162,11 +162,12 @@ def customer_scope_resolves(code: str) -> bool:
 
 
 def bridge(version_id: str) -> dict:
-    rows = q("""select layer_no, layer_name, sum(cases) cases, sum(gross_at_list) gross_at_list, sum(on_invoice_deductions) on_invoice,
+    rows = q("""select line_kind, layer_no, layer_name, sum(cases) cases, sum(gross_at_list) gross_at_list, sum(on_invoice_deductions) on_invoice,
                        sum(gross_invoice) gross_invoice, sum(off_invoice_deductions) off_invoice, sum(net_sales) net_sales
-                from plan.revenue_bridge where version_id = ? group by all order by layer_no""", version_id)
+                from plan.revenue_bridge where version_id = ? group by all order by line_kind desc, layer_no""", version_id)
     by_period = q("""select period, sum(gross_at_list) gross_at_list, sum(on_invoice_deductions) on_invoice, sum(gross_invoice) gross_invoice,
-                            sum(off_invoice_deductions) off_invoice, sum(net_sales) net_sales
+                            sum(off_invoice_deductions) off_invoice, sum(net_sales) filter (where line_kind = 'plan') net_sales,
+                            sum(net_sales) filter (where line_kind = 'overlay') as "overlay"
                      from plan.revenue_bridge where version_id = ? group by period order by period""", version_id)
     gap = one("""select reference_version, sum(plan_cases) plan_cases, sum(reference_cases) reference_cases, sum(cases_gap) cases_gap,
                         sum(plan_net_sales) plan_net_sales, sum(reference_net_sales) reference_net_sales, sum(net_sales_gap) net_sales_gap
@@ -689,3 +690,33 @@ def products() -> list[dict]:
 
 def materials() -> list[dict]:
     return q("select material_code, material_name from dims.dim_material order by material_code")
+
+
+# ---- Finance's overlay and where each number comes from ----
+
+def overlay_entries(version_id: str) -> list[dict]:
+    return q("select * from plan.finance_overlay_entry where version_id = ? order by entered_on desc, overlay_id desc", version_id)
+
+
+def overlay_by_period(version_id: str, fy: int) -> list[dict]:
+    """The plan valued, Finance's overlay and the two together, by period of the fiscal year — always shown side by side."""
+    return q("""select period, sum(net_sales) filter (where line_kind = 'plan') plan_net_sales, coalesce(sum(net_sales) filter (where line_kind = 'overlay'), 0) as "overlay"
+                from plan.revenue_bridge where version_id = ? and fiscal_year = ? group by period order by period""", version_id, fy)
+
+
+def overlay_reasons() -> list[dict]:
+    return q("select * from plan.ref_overlay_reason order by reason_code")
+
+
+def open_periods(version_id: str) -> list[str]:
+    """The version's periods not yet closed — where an overlay may be placed."""
+    return [r["period"] for r in q("""select distinct b.period from plan.revenue_bridge b join dims.dim_period p on p.period = b.period
+                                      where b.version_id = ? and b.line_kind = 'plan' and p.period_state <> 'CLOSED' order by 1""", version_id)]
+
+
+def material_node(code: str) -> bool:
+    return one("select 1 ok from dims.dim_material_hierarchy where ancestor_code = ? limit 1", code) is not None
+
+
+def slots() -> list[dict]:
+    return q("select * from plan.ref_plan_slot order by ord")

@@ -127,7 +127,14 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   the versions, the **revenue forecast** under financial planning (net sales by fiscal year across its periods, per week —
   invoiced, the latest view and its reference laid over one another, last year faint; read against the reference only on
   the periods both value, with the gap by period; at the plan or any node of either structure, the level below as a split;
-  nothing typed), the rungs named but not yet built
+  nothing typed except **Finance's overlay**: Finance's own risks and opportunities, in money, reason-coded, at any
+  node of the customer structure × any node of the material structure over open periods, spread to account × material ×
+  period by the plan's own net sales — a measure of its own in the gross-to-net and a line of its own in the revenue
+  bridge, never in net sales, never in cases, never to supply; the page always shows the plan valued, the overlay and the
+  two together), **where each number comes from** under financial planning (the chain — volume, price and terms,
+  promotions, delivery, cost of goods, inventory, labour, opex, capital, non-operating, balance sheet — each step filled
+  by the model behind it or by a Finance assumption, declared per step; Caldera fills the first three from the model and
+  says *not yet filled* for the rest), the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
   whoever holds `run.plan`, the log kept. Every act writes a receipt under `data/receipts/`. What a page shows is what
   the last run said: an entry placed is in the plan after the next run, and a withdrawal of an entry the warehouse has

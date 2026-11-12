@@ -13,7 +13,7 @@ from chassis.landing import LogLanding
 from chassis.run import Runner, attention, health
 from chassis.warehouse import Busy, q
 
-from . import ENTRY_COLUMNS, HEALTH, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUMNS, TERMS_COLUMNS, roles, session
+from . import ENTRY_COLUMNS, HEALTH, OVERLAY_COLUMNS, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUMNS, TERMS_COLUMNS, roles, session
 from . import reads
 from . import dashboard
 from . import promotions
@@ -25,6 +25,7 @@ ENTRIES = LogLanding("plan", "layer_entry", ENTRY_COLUMNS)
 TERMS_LANDING = LogLanding("plan", "reg_terms", TERMS_COLUMNS)
 PRICES_LANDING = LogLanding("history", "price_list", PRICE_LIST_COLUMNS)
 SUBMISSIONS = LogLanding("plan", "reg_submission", SUBMISSION_COLUMNS)
+OVERLAY = LogLanding("plan", "reg_finance_overlay", OVERLAY_COLUMNS)
 SPREADS = ["baseline_shape", "history_shape", "catchment"]
 KINDS = ["cases", "rate_on_baseline"]
 EFFECTS = ["primary", "cannibalisation"]
@@ -176,7 +177,7 @@ def _mine(who: str, held: set[str]) -> list[dict]:
 
 def _pending() -> list[pathlib.Path]:
     """Every file any act has placed since the last run, across the landing's tables."""
-    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending()
+    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending() + OVERLAY.pending()
 
 
 def _d(a: float | None, b: float | None) -> float | None:
@@ -629,11 +630,11 @@ MONEY = VERSION_PICKER + """
 <div class="card stat"><b>{{ b.gap.cases_gap|n }}</b><span>cases gap</span></div></div>{% endif %}
 <h2>By layer</h2>
 <table><thead><tr><th>Layer</th><th class="n">Cases</th><th class="n">Gross at list</th><th class="n">On-invoice</th><th class="n">Gross invoice</th><th class="n">Off-invoice</th><th class="n">Net sales</th></tr></thead><tbody>
-{% for r in b.by_layer %}<tr><td>{{ r.layer_no }} {{ r.layer_name }}</td><td class="n">{{ r.cases|n }}</td><td class="n">{{ r.gross_at_list|n }}</td><td class="n">{{ r.on_invoice|n }}</td><td class="n">{{ r.gross_invoice|n }}</td><td class="n">{{ r.off_invoice|n }}</td><td class="n">{{ r.net_sales|n }}</td></tr>{% endfor %}
+{% for r in b.by_layer %}<tr class="{{ 'added' if r.line_kind == 'overlay' }}"><td>{{ r.layer_no or '' }} {{ r.layer_name }}{% if r.line_kind == 'overlay' %} <span class="small muted">Finance's own, money only — beside the plan, never in it</span>{% endif %}</td><td class="n">{{ r.cases|n }}</td><td class="n">{{ r.gross_at_list|n }}</td><td class="n">{{ r.on_invoice|n }}</td><td class="n">{{ r.gross_invoice|n }}</td><td class="n">{{ r.off_invoice|n }}</td><td class="n">{{ r.net_sales|n }}</td></tr>{% endfor %}
 </tbody></table>
 <h2>By period</h2>
-<table><thead><tr><th>Period</th><th class="n">Gross at list</th><th class="n">On-invoice</th><th class="n">Gross invoice</th><th class="n">Off-invoice</th><th class="n">Net sales</th></tr></thead><tbody>
-{% for r in b.by_period %}<tr><td>{{ r.period }}</td><td class="n">{{ r.gross_at_list|n }}</td><td class="n">{{ r.on_invoice|n }}</td><td class="n">{{ r.gross_invoice|n }}</td><td class="n">{{ r.off_invoice|n }}</td><td class="n">{{ r.net_sales|n }}</td></tr>{% endfor %}
+<table><thead><tr><th>Period</th><th class="n">Gross at list</th><th class="n">On-invoice</th><th class="n">Gross invoice</th><th class="n">Off-invoice</th><th class="n">Net sales</th><th class="n">Finance overlay</th><th class="n">With the overlay</th></tr></thead><tbody>
+{% for r in b.by_period %}<tr><td>{{ r.period }}</td><td class="n">{{ r.gross_at_list|n }}</td><td class="n">{{ r.on_invoice|n }}</td><td class="n">{{ r.gross_invoice|n }}</td><td class="n">{{ r.off_invoice|n }}</td><td class="n">{{ r.net_sales|n }}</td><td class="n">{{ r.overlay|n if r.overlay else '' }}</td><td class="n">{{ ((r.net_sales or 0) + (r.overlay or 0))|n }}</td></tr>{% endfor %}
 </tbody></table>"""
 
 
@@ -713,12 +714,153 @@ def revenue():
         ref_kind = (reads.version(ref_id) or {}).get("cycle") if ref_id else (f"{series['ref_id']} does not carry FY{fy}" if series["ref_id"] else None)
         drill = {"dim": dim, "label": reads.node_label(dim, node), "path": [{**n, "href": L(node=n["code"])} for n in reads.node_path(dim, node)],
                  "other": L(dim=("material" if dim == "customer" else "customer"), node="ALL")}
-        return _page(dashboard.REVENUE_PAGE, title="Revenue forecast", active="revenue", width="none", version=version, versions=reads.versions(), fy=fy,
+        ov = _overlay_ctx(version, fy)
+        return _page(dashboard.REVENUE_PAGE.replace("<h2>By period<", OVERLAY_SECTION + "<h2>By period<", 1), title="Revenue forecast", active="revenue", width="none",
+                     version=version, versions=reads.versions(), fy=fy, ov=ov, last=session.last,
                      years=[{"fy": y, "href": L(fy=y)} for y in years], grain=grain, grains=[{"label": g, "on": g == grain, "href": L(grain=g)} for g in ("period", "week")],
                      series=series, chart=dashboard.chart(shown, fy), lfl=lfl, d=d, table=table, split=split, split_of=split_of, drill=drill,
                      ref_id=ref_id, ref_kind=ref_kind)
     except Busy as e:
         return _busy("Revenue forecast", e)
+
+
+# ---- Finance's overlay: a layer of money on the valued plan, never a second forecast ----
+OVERLAY_SECTION = """<h2 id="overlay">Finance's overlay<span class="count">FY{{ fy }} · Finance's own risks and opportunities, in money, beside the plan valued — never in it, never in cases, never to supply</span></h2>
+<div class="cards tiles"><div class="card stat"><span>The plan valued · FY{{ fy }}</span><b>{{ ov.plan|m }}</b><div class="small muted">the consensus at the list and terms in force</div></div>
+<div class="card stat"><span>Finance's overlay</span><b>{{ ov.overlay|aud if ov.overlay else '—' }}</b><div class="small muted">{{ ov.n_in_force }} entr{{ 'y' if ov.n_in_force == 1 else 'ies' }} in force · risks {{ ov.risks|aud }}, opportunities {{ ov.opps|aud }}</div></div>
+<div class="card stat"><span>With the overlay</span><b>{{ (ov.plan + ov.overlay)|m }}</b><div class="small delta {{ ov.d|dir }}">{{ ov.d|pct }} on the plan valued</div></div>
+<div class="card stat"><span>Difference</span><b>{{ ov.overlay|aud if ov.overlay else '0' }}</b><div class="small muted">the two figures are always read together</div></div></div>
+{% if ov.periods %}<table><thead><tr><th>Period</th><th class="n">The plan valued</th><th class="n">Overlay</th><th class="n">With the overlay</th></tr></thead><tbody>
+{% for r in ov.periods %}<tr><td>{{ r.period }}</td><td class="n">{{ r.plan_net_sales|aud }}</td><td class="n">{{ r.overlay|aud if r.overlay else '' }}</td><td class="n">{{ ((r.plan_net_sales or 0) + r.overlay)|aud }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+<table><thead><tr><th>Entry</th><th>Kind</th><th>Reason</th><th>Customer</th><th>Material</th><th>Periods</th><th class="n">Amount</th><th>By</th><th>On</th><th>State</th><th>Note</th><th></th></tr></thead><tbody>
+{% for e in ov.entries %}<tr id="{{ e.overlay_id }}" class="{{ 'off' if e.state == 'withdrawn' }}"><td><code>{{ e.overlay_id }}</code></td><td>{{ e.kind }}</td><td title="{{ e.reason or '' }}">{{ e.reason_code }}</td><td>{{ e.scope_customer }}</td><td>{{ e.scope_material }}</td>
+<td>{{ e.period_from }}{% if e.period_to != e.period_from %} – {{ e.period_to }}{% endif %}</td><td class="n">{{ e.amount|aud }}</td><td>{{ e.entered_by }}</td><td class="small">{{ e.entered_on }}</td>
+<td>{% if e.state == 'in_force' %}in force{% else %}<span class="state">{{ e.state }}</span>{% endif %}</td><td class="small">{{ e.note or '' }}</td>
+<td class="acts">{% if ov.may and ov.open and e.state != 'withdrawn' %}<form class="inline" method="post" action="{{ url_for('plan.overlay_withdraw') }}"><input type="hidden" name="overlay_id" value="{{ e.overlay_id }}"><input type="hidden" name="version" value="{{ version }}"><button class="act">withdraw</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="12" class="muted">No overlay on {{ version }}.</td></tr>{% endfor %}</tbody></table>
+{% if ov.may and ov.open %}<form class="entry" method="post" action="{{ url_for('plan.overlay_new') }}" id="overlay-new"><input type="hidden" name="version" value="{{ version }}">
+<label>kind<select name="kind"><option value="risk">risk — takes from the plan</option><option value="opportunity">opportunity — adds to it</option></select></label>
+<label>reason<select name="reason_code">{% for r in ov.reasons %}<option value="{{ r.reason_code }}">{{ r.reason_code }} · {{ r.description }}</option>{% endfor %}</select></label>
+<label>customer (a node of the customer structure)<input name="scope_customer" list="ov_customers" required placeholder="ALL, a unit or an account"><datalist id="ov_customers">{% for c in ov.customers %}<option value="{{ c.code }}">{{ c.lvl }}</option>{% endfor %}</datalist></label>
+<label>material (a node of the material structure)<input name="scope_material" list="ov_materials" required placeholder="ALL, a category, a product or a material"><datalist id="ov_materials">{% for m in ov.materials %}<option value="{{ m.code }}">{{ m.lvl }}</option>{% endfor %}</datalist></label>
+<label>from<select name="period_from">{% for p in ov.open_periods %}<option>{{ p }}</option>{% endfor %}</select></label>
+<label>to<select name="period_to">{% for p in ov.open_periods %}<option>{{ p }}</option>{% endfor %}</select></label>
+<label>net sales, AUD<input name="amount" type="number" step="1000" min="0" required placeholder="the size; the kind gives the sign"></label>
+<label class="wide">note<textarea name="note" rows="2" placeholder="what Finance knows that the plan does not"></textarea></label>
+<div class="actions"><button class="primary">Place overlay</button><span class="hint">on {{ version }} — spread over the scope by the plan's own net sales, after the next run</span></div></form>
+{% elif not ov.may %}<p class="hint">The overlay is Finance's: entered by {{ ov.holders|join(', ') or 'nobody yet' }}.</p>{% endif %}
+{% if last and last.act and last.act.startswith('overlay') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+"""
+
+
+def _overlay_ctx(version: str | None, fy: int) -> dict:
+    who = _who(); v = reads.version(version) or {}
+    entries = reads.overlay_entries(version) if version else []
+    periods = reads.overlay_by_period(version, fy) if version else []
+    plan_ns = sum(r["plan_net_sales"] or 0 for r in periods); ov = sum(r["overlay"] or 0 for r in periods)
+    live = [e for e in entries if e["state"] == "in_force"]
+    return {"entries": entries, "periods": [r for r in periods if r["plan_net_sales"]], "plan": plan_ns, "overlay": ov, "d": ov / plan_ns if plan_ns else None,
+            "n_in_force": len(live), "risks": sum(e["amount"] for e in live if e["kind"] == "risk"), "opps": sum(e["amount"] for e in live if e["kind"] == "opportunity"),
+            "may": roles.may(who, "overlay.finance.enter"), "open": v.get("status") == "open", "holders": reads.holders("overlay.finance.enter"),
+            "reasons": reads.overlay_reasons(), "customers": reads.customer_scopes(), "materials": [m for m in reads.material_scopes() if m["lvl"] != "promo_group"],
+            "open_periods": reads.open_periods(version) if version else []}
+
+
+@plan.post("/overlay/new")
+def overlay_new():
+    """Finance places a risk or an opportunity on the valued plan: money at any node of either structure over open periods,
+    with a reason — spread by the plan's own net sales on the next run. Cases and the demand stack are untouched."""
+    f = request.form; who = _who(); version = f.get("version") or reads.default_version(); verb = "overlay.finance.enter"
+    v = reads.version(version) or {}
+    kind, reason, note = f.get("kind", ""), f.get("reason_code", ""), (f.get("note") or "").strip()
+    cust, mat = (f.get("scope_customer") or "").strip(), (f.get("scope_material") or "").strip()
+    p0, p1 = f.get("period_from", ""), f.get("period_to", "")
+    amount = _num(f.get("amount"))
+    reasons = {r["reason_code"]: r for r in reads.overlay_reasons()}
+    opens = reads.open_periods(version) if version else []
+    may = roles.may(who, verb)
+    cs, ms = bool(cust) and reads.customer_scope_resolves(cust), bool(mat) and reads.material_node(mat)
+    checks = [
+        {"check": "who may place it", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — the overlay is Finance's ({', '.join(reads.holders(verb))})"},
+        {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
+        {"check": "a risk or an opportunity", "ok": kind in ("risk", "opportunity"), "says": kind or "say which"},
+        {"check": "a reason we know", "ok": reason in reasons, "says": (reasons[reason]["description"] if reason in reasons else f"{reason or 'no reason'} is not one of the overlay's reasons")},
+        {"check": "customer scope resolves", "ok": cs, "says": f"{cust} is a node of the customer structure" if cs else f"{cust or 'nothing'} is not a node of the customer structure"},
+        {"check": "material scope resolves", "ok": ms, "says": f"{mat} is a node of the material structure" if ms else f"{mat or 'nothing'} is not a node of the material structure"},
+        {"check": "open periods, in order", "ok": p0 in opens and p1 in opens and p0 <= p1, "says": f"{p0} – {p1}" if p0 in opens and p1 in opens and p0 <= p1 else "the periods must be open and in order"},
+        {"check": "an amount", "ok": amount is not None and amount > 0, "says": f"{amount:,.0f}" if amount else "a size above zero; the kind gives the sign"},
+        {"check": "a note where the reason needs one", "ok": bool(note) or not (reasons.get(reason) or {}).get("note_required"), "says": note or "not needed for this reason"},
+    ]
+    placed = receipts.judge(checks)
+    oid = f"FO-F-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+    if placed:
+        OVERLAY.place([{"overlay_id": oid, "action": "enter", "withdraws": "", "version_id": version, "kind": kind, "reason_code": reason,
+                        "scope_customer": cust, "scope_material": mat, "period_from": p0, "period_to": p1,
+                        "amount": -amount if kind == "risk" else amount, "entered_by": who, "entered_on": dt.date.today().isoformat(), "note": note}], who)
+    session.last = receipts.write("overlay.enter", who, oid, checks, placed)
+    session.say(f"{oid} placed — a {kind} of {amount:,.0f} on {cust} × {mat}, beside the plan after the next run" if placed
+                else "overlay refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+    return redirect(url_for("plan.revenue", version=version) + "#overlay")
+
+
+@plan.post("/overlay/withdraw")
+def overlay_withdraw():
+    f = request.form; who = _who(); oid = f.get("overlay_id", ""); version = f.get("version") or reads.default_version(); verb = "overlay.finance.enter"
+    e = next((x for x in reads.overlay_entries(version) if x["overlay_id"] == oid), None) if version else None
+    v = reads.version(version) or {}
+    may = roles.may(who, verb)
+    checks = [
+        {"check": "who may withdraw", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb}"},
+        {"check": "entry on file", "ok": e is not None, "says": f"{oid} on {version}" if e else f"{oid} is not on {version}"},
+        {"check": "not already withdrawn", "ok": bool(e and e["state"] != "withdrawn"), "says": "stands" if e and e["state"] != "withdrawn" else "already withdrawn"},
+        {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
+    ]
+    placed = receipts.judge(checks)
+    if placed:
+        OVERLAY.place([{"overlay_id": f"FO-W-{dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}", "action": "withdraw", "withdraws": oid, "version_id": version,
+                        "entered_by": who, "entered_on": dt.date.today().isoformat()}], who)
+    session.last = receipts.write("overlay.withdraw", who, oid, checks, placed)
+    session.say(f"{oid} withdrawn — out of the overlay after the next run" if placed else "withdrawal refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+    return redirect(url_for("plan.revenue", version=version) + "#overlay")
+
+
+# ---- where each number comes from: the slot register ----
+SLOTS = """<h1>Where each number comes from<small>the financial plan is one chain; each step is filled by the model behind it or by a Finance assumption, declared per step — what reads a step never knows which</small></h1>
+<table><thead><tr><th></th><th>Step</th><th>From the operational model</th><th>As a Finance assumption</th><th>Declared</th><th>Today</th></tr></thead><tbody>
+{% for s in slots %}<tr class="{{ '' if s.built else 'off' }}"><td class="n">{{ s.ord }}</td><td><b>{% if s.href %}<a href="{{ s.href }}">{{ s.slot }}</a>{% else %}{{ s.slot }}{% endif %}</b></td>
+<td class="small {{ '' if s.declared == 'model' else 'muted' }}">{{ s.from_model }}</td><td class="small {{ '' if s.declared == 'assumption' else 'muted' }}">{{ s.as_assumption }}</td>
+<td>{% if s.declared == 'model' %}the model{% elif s.declared == 'assumption' %}an assumption{% else %}<span class="state">not yet filled</span>{% endif %}</td>
+<td class="small">{{ s.today or '' }}{% if s.says %}<div class="muted">{{ s.says }}</div>{% endif %}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">A business early in its planning runs the right-hand column — a rate on last year, a standard per material, weeks of cover — and each move replaces one assumption with its model; nothing downstream changes, because downstream reads the step. Where both exist, the assumption is read against the model.</p>
+<h2>Beside the chain<span class="count">not a step</span></h2>
+<p>Finance's overlay — its own risks and opportunities, in money, on the valued plan at account × material × period — is a line beside the plan valued, never a source for a step: {{ overlay_line }}. <a href="{{ url_for('plan.revenue') }}#overlay">The revenue forecast</a> shows both figures together.</p>"""
+SLOT_RUNG = {"cogs": "standard", "inventory": "inventory", "capex": "capex", "balance": "balance"}
+
+
+@plan.get("/slots")
+def slots():
+    try:
+        version = reads.default_version()
+        today = {}
+        if version:
+            fy = int((reads.version(version) or {}).get("fiscal_year") or 0)
+            vol = q("select sum(cases) c from plan.revenue_bridge where version_id = ? and fiscal_year = ? and line_kind = 'plan'", version, fy)[0]["c"]
+            today["volume"] = f"{vol:,.0f} cases in FY{fy} on {version}" if vol else None
+            ti = q("select count(*) n from plan.terms")[0]["n"]
+            pl = q("select count(distinct price_list) n from history.price_list")[0]["n"]
+            today["price"] = f"{pl} price lists, {ti} terms instruments"
+            ev = q("select count(*) n from plan.promo_event")[0]["n"]
+            today["promotions"] = f"{ev} events in the calendar"
+        rows = []
+        for s_ in reads.slots():
+            href = url_for("plan.rung", slug=SLOT_RUNG[s_["slot_key"]]) if s_["page"] == "plan.rung" and s_["slot_key"] in SLOT_RUNG else (url_for(s_["page"]) if s_["page"] else None)
+            rows.append({**s_, "href": href, "today": today.get(s_["slot_key"]) if s_["built"] else None})
+        ent = [e for e in (reads.overlay_entries(version) if version else []) if e["state"] == "in_force"]
+        line = f"{len(ent)} entr{'y' if len(ent) == 1 else 'ies'} in force on {version}, {sum(e['amount'] for e in ent):+,.0f}" if ent else f"none in force on {version}"
+        return _page(SLOTS, title="Where each number comes from", active="slots", slots=rows, overlay_line=line)
+    except Busy as e:
+        return _busy("Where each number comes from", e)
 
 
 # ---- the rungs named but not yet built ----

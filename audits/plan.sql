@@ -125,3 +125,8 @@ WHERE a.state NOT IN ('proposed', 'decided') OR a.origin NOT IN ('first_pass', '
 
 AUDIT (name forecast_resolution_target_known);
 SELECT resolution_id, resolution, target_code FROM @this_model WHERE NOT target_known;
+
+AUDIT (name finance_overlay_spread_ties);
+/* blocking: every overlay entry in force is spread whole over its scope — the money Finance typed is the money read */
+SELECT e.overlay_id, e.amount, SUM(o.overlay) AS spread FROM plan.finance_overlay_entry e LEFT JOIN @this_model o ON o.overlay_id = e.overlay_id
+WHERE e.state = 'in_force' GROUP BY ALL HAVING ABS(e.amount - COALESCE(SUM(o.overlay), 0)) > 0.01;
