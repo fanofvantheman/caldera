@@ -11,9 +11,11 @@ material × account × week, cases. It forecasts each series the classical way: 
 two years of history with promotion weeks and the week after removed, the level of the last twenty-six weeks with the
 season taken out, and the series' own year-on-year trend held within ±15%.
 
-  plan/fcst_run.csv, plan/fcst_series.csv      the run already taken in
+  plan/fcst_run.csv, plan/fcst_series.csv      the run already taken in, one header row per account that accepted it
   plan/reg_door_act.csv (door FCS)             the resolutions made at onboarding
   sender/FCS-20261109_run.csv, …_series.csv    the next run, waiting: it left promotions in, and says so
+  sender/FCS-20261110_run.csv, …_series.csv    the same run re-issued as baseline only, waiting: each account's planner
+                                               accepts their own account's series from it
 
 The run disagrees with the plan's structures in the ways such a system does: a pack it has renumbered (so the old
 code is missing and a new one arrives), a product the plan has not got yet, a pre-packed display shipper the plan
@@ -29,7 +31,7 @@ from .calendar import Week
 from .structures import CATEGORIES, PRODUCTS, Material
 
 SENDER = "FCS"
-FIRST_RUN, NEXT_RUN = "FCS-20261102", "FCS-20261109"
+FIRST_RUN, NEXT_RUN, REISSUE = "FCS-20261102", "FCS-20261109", "FCS-20261110"
 HORIZON_WEEKS = 78
 METHOD = "seasonal index by fiscal week on two years, level of the last 26 weeks, own trend within ±15%"
 
@@ -125,17 +127,19 @@ def run(shipments: list[dict], materials: list[Material], weeks: list[Week], lat
                 "horizon_weeks": len(future), "grain": "material × account × week", "content": content,
                 "history_basis": "shipments, promotion weeks and the week after removed", "method_note": METHOD}
 
-    sent = series(FIRST_RUN, [k for k in fitted if k not in dropped])
-    for w in future[8:]:
-        sent.append({"sender": SENDER, "run_id": FIRST_RUN, "material_code": NEW_CODE, "material_description": NEW_NAME, "sender_hierarchy": NEW_HIERARCHY,
-                     "account_code": NEW_ACCOUNT, "week_start": w.week_start.isoformat(), "cases": NEW_CASES})
-    for acct in ("WES", "CAR"):
-        for w in future[3:9]:
-            sent.append({"sender": SENDER, "run_id": FIRST_RUN, "material_code": SHIPPER_CODE, "material_description": SHIPPER_NAME,
-                         "sender_hierarchy": SHIPPER_HIERARCHY, "account_code": acct, "week_start": w.week_start.isoformat(), "cases": 120.0})
+    def extras(run_id: str) -> list[dict]:
+        """The codes the plan has not got: the new product for Westbrook, the display shipper for Westbrook and Carters."""
+        rows = [{"sender": SENDER, "run_id": run_id, "material_code": NEW_CODE, "material_description": NEW_NAME, "sender_hierarchy": NEW_HIERARCHY,
+                 "account_code": NEW_ACCOUNT, "week_start": w.week_start.isoformat(), "cases": NEW_CASES} for w in future[8:]]
+        for acct in ("WES", "CAR"):
+            rows += [{"sender": SENDER, "run_id": run_id, "material_code": SHIPPER_CODE, "material_description": SHIPPER_NAME,
+                      "sender_hierarchy": SHIPPER_HIERARCHY, "account_code": acct, "week_start": w.week_start.isoformat(), "cases": 120.0} for w in future[3:9]]
+        return rows
+
+    sent = series(FIRST_RUN, [k for k in fitted if k not in dropped]) + extras(FIRST_RUN)
     stamp = {"version_id": version, "taken_in_at": "2026-11-03T08:10:00", "taken_in_by": "head.demand@caldera"}
     plan = {
-        "fcst_run": [{**header(FIRST_RUN, "2026-11-02", "baseline_only"), **stamp}],
+        "fcst_run": [{**header(FIRST_RUN, "2026-11-02", "baseline_only"), **stamp, "account_code": a} for a in takes],
         "fcst_series": [{**r, "version_id": version, "taken_in_at": stamp["taken_in_at"]} for r in sent],
         "reg_door_act": [
             {"act_id": "FR-0001", "door": SENDER, "kind": "theirs_not_ours", "item_code": SHIPPER_CODE, "scope_code": "ALL",
@@ -147,5 +151,8 @@ def run(shipments: list[dict], materials: list[Material], weeks: list[Week], lat
     waiting = {
         f"{NEXT_RUN}_run": [header(NEXT_RUN, "2026-11-09", "total_forecast")],
         f"{NEXT_RUN}_series": series(NEXT_RUN, by_volume.get("WES", [])[:40], scale=1.09),
+        # re-issued a day later as baseline only, for every account it serves: the file arrives once, each planner takes in their own
+        f"{REISSUE}_run": [header(REISSUE, "2026-11-10", "baseline_only")],
+        f"{REISSUE}_series": series(REISSUE, [k for k in fitted if k not in dropped], scale=1.02) + extras(REISSUE),
     }
     return plan, waiting

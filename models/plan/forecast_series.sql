@@ -1,4 +1,4 @@
-/* The series of the run in force, as sent — material × account × week, cases — each with what the plan makes of it.
+/* The series of the run in force for each account, as sent — material × account × week, cases — each with what the plan makes of it.
    The codes are the ERP's, as ours are, so a series either names a material the plan has or it does not. in: the
    material is ours (or a person has said it is the same as one of ours) and the account takes its baseline from the
    forecasting system. held: the plan has no such material and nobody has decided — it has cases and nowhere to put
@@ -11,7 +11,7 @@ sent AS (
   SELECT r.version_id, r.run_id, s.material_code::TEXT AS sent_code, ANY_VALUE(s.material_description::TEXT) AS sent_description,
          ANY_VALUE(s.sender_hierarchy::TEXT) AS sender_hierarchy, s.account_code::TEXT AS account_code, s.week_start::DATE AS week_start,
          SUM(s.cases::DOUBLE) AS cases
-  FROM bronze.fcst_series s JOIN run r ON r.run_id = s.run_id::TEXT AND r.taken_in_at = s.taken_in_at::TIMESTAMP
+  FROM bronze.fcst_series s JOIN run r ON r.run_id = s.run_id::TEXT AND r.account_code = s.account_code::TEXT AND r.taken_in_at = s.taken_in_at::TIMESTAMP
   GROUP BY ALL
 )
 SELECT s.version_id, s.run_id, s.sent_code, s.sent_description, s.sender_hierarchy, s.account_code, s.week_start, w.week_id, w.period, s.cases,

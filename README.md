@@ -142,7 +142,11 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   ours and the verb it needs); the mapping review and the statistical forecast page list the items the same way, a
   decision is one checked, receipted act in one register for every door (`plan/reg_door_act`), and the latest act per
   item stands for every later arrival. The mapping tool's first pass writes proposals there, never in force until a
-  person accepts one. What stays per door is the query that finds its disagreements.
+  person accepts one. What stays per door is the query that finds its disagreements. A forecasting run arrives once
+  and is **taken in account by account**: the **statistical forecast** page opens on the person's own accounts, reads
+  each waiting run against our calculation before it is taken in, and the planner whose scope reaches the account takes
+  it in for that account (the head of demand for any) — so a run is in force for one account and still waiting for
+  another; the run's disagreements are routed to the planners of the accounts they reach and decided once.
   The face's pages and checks are here; its chrome, session, landing writer, receipts, roles, run and warehouse access
   are the **chassis** (`99_core_clones/chassis-*.whl`, a dependency in `pyproject.toml`) — the part of a face that does
   not know which method it carries, shared with the other builds. `99_core_clones/chassis_usage.md` says how it is used.
@@ -156,7 +160,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
     shipments; the layer entries as filed and resolved to the grid; layer 1 computed for the open version and
     entered for the frozen one — the open version's baseline is `baseline_in_force`: our own calculation
     (`baseline_reference`, kept for every account as the reference) for the accounts the plan calculates, the forecasting
-    system's run (`forecast_run`, `forecast_series`) for the accounts that take it, spread to ship-tos by our history
+    system's run (`forecast_run`, in force per account, and `forecast_series`) for the accounts that take it, spread to ship-tos by our history
     shape, and our calculation again wherever the run does not reach; what people decided where the two structures
     disagree is read from the doors' one act register (`door_act`, the latest act per item; `forecast_resolution` and
     the promotions `promo_mapping` are its two doors' views), and what nobody has decided is the worklist `forecast_queue`; the terms and price lists effective-dated (the latest act per date, each row running to the day before the

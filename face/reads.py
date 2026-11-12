@@ -600,8 +600,16 @@ def like_for_like(series: dict) -> dict:
 
 # ---- the statistical forecast: the run in force, where each account's baseline comes from, and where the two structures disagree ----
 
-def forecast_run(version_id: str) -> dict | None:
-    return one("select * from plan.forecast_run where version_id = ? and in_force", version_id)
+def forecast_runs(version_id: str) -> list[dict]:
+    """The run in force for each account that has taken one in — a run can be in force for one account and waiting for another."""
+    return q("select * from plan.forecast_run where version_id = ? and in_force order by account_code", version_id)
+
+
+def reference_cases(version_id: str, account: str, first, last, materials: list[str]) -> float:
+    """Our own calculation for one account's materials over a span of weeks — what a waiting run is read against."""
+    r = one("""select sum(cases) c from plan.baseline_reference where version_id = ? and account_code = ? and week_start between ? and ?
+               and list_contains(?, material_code)""", version_id, account, first, last, materials)
+    return (r or {}).get("c") or 0.0
 
 
 def forecast_sources(version_id: str) -> list[dict]:
@@ -614,19 +622,20 @@ def forecast_sources(version_id: str) -> list[dict]:
                               sum(case when source = 'calculated' then cases end) calculated
                        from plan.baseline_in_force where version_id = ? group by 1),
                  s as (select account_code, count(distinct material_code) series from plan.forecast_series where version_id = ? and state = 'in' group by 1),
-                 o as (select f.account_code, sum(f.cases) ours from plan.baseline_reference f join r on f.week_start between r.first_week and r.last_day
+                 o as (select f.account_code, sum(f.cases) ours from plan.baseline_reference f join r on r.account_code = f.account_code and f.week_start between r.first_week and r.last_day
                        join (select distinct material_code, account_code from plan.forecast_series where version_id = ? and state = 'in') x
                          on x.material_code = f.material_code and x.account_code = f.account_code
                        where f.version_id = ? group by 1)
                 select a.account_code, a.account_name, a.baseline_source, s.series, b.landed, o.ours, b.landed / nullif(o.ours, 0) - 1 as departure,
-                       b.gap, b.beyond, b.calculated
+                       b.gap, b.beyond, b.calculated, r.run_id, r.taken_in_by, r.taken_in_at
                 from dims.dim_account a left join b using (account_code) left join s using (account_code) left join o using (account_code)
+                left join r using (account_code)
                 order by a.baseline_source, b.landed desc nulls last, b.calculated desc nulls last""", version_id, version_id, version_id, version_id, version_id)
 
 
-def forecast_states(version_id: str) -> list[dict]:
+def forecast_states(version_id: str, accounts: list[str]) -> list[dict]:
     return q("""select state, count(distinct sent_code || '|' || account_code) series, sum(cases) cases
-                from plan.forecast_series where version_id = ? group by 1 order by 1""", version_id)
+                from plan.forecast_series where version_id = ? and list_contains(?, account_code) group by 1 order by 1""", version_id, accounts)
 
 
 def forecast_queue() -> list[dict]:
@@ -637,7 +646,7 @@ def forecast_resolutions(version_id: str) -> list[dict]:
     """Every resolution in force, with the cases it covers in the run in force (theirs) or on our calculation (ours)."""
     return q("""select r.*, case r.kind when 'theirs_not_ours'
                          then (select sum(s.cases) from plan.forecast_series s where s.version_id = ? and s.sent_code = r.item_code)
-                         else (select sum(b.cases) from plan.baseline_reference b join plan.forecast_run fr on fr.version_id = b.version_id and fr.in_force
+                         else (select sum(b.cases) from plan.baseline_reference b join plan.forecast_run fr on fr.version_id = b.version_id and fr.account_code = b.account_code and fr.in_force
                                where b.version_id = ? and b.material_code = r.item_code and b.account_code = r.account_code
                                  and b.week_start between fr.first_week and fr.last_day) end as cases,
                        coalesce((select any_value(s.sent_description) from plan.forecast_series s where s.sent_code = r.item_code),
@@ -645,20 +654,21 @@ def forecast_resolutions(version_id: str) -> list[dict]:
                 from plan.forecast_resolution r order by r.acted_at desc""", version_id, version_id)
 
 
-def forecast_departures(version_id: str, limit: int = 12) -> list[dict]:
+def forecast_departures(version_id: str, accounts: list[str], limit: int = 12) -> list[dict]:
     """Where the run departs most from our own calculation, by material × account over the run's weeks."""
     return q("""with r as (select * from plan.forecast_run where version_id = ? and in_force),
                  l as (select material_code, account_code, sum(cases) landed from plan.baseline_in_force where version_id = ? and source = 'forecast_run' group by all),
-                 o as (select b.material_code, b.account_code, sum(b.cases) ours from plan.baseline_reference b join r on b.week_start between r.first_week and r.last_day
+                 o as (select b.material_code, b.account_code, sum(b.cases) ours from plan.baseline_reference b join r on r.account_code = b.account_code and b.week_start between r.first_week and r.last_day
                        where b.version_id = ? group by all)
                 select l.material_code, m.material_name, l.account_code, l.landed, o.ours, l.landed - coalesce(o.ours, 0) as diff, l.landed / nullif(o.ours, 0) - 1 as departure
                 from l left join o using (material_code, account_code) join dims.dim_material m using (material_code)
-                order by abs(l.landed - coalesce(o.ours, 0)) desc limit ?""", version_id, version_id, version_id, limit)
+                where list_contains(?, l.account_code)
+                order by abs(l.landed - coalesce(o.ours, 0)) desc limit ?""", version_id, version_id, version_id, accounts, limit)
 
 
 def forecast_series(version_id: str, material: str, account: str) -> list[dict]:
     """One series by period over the run's weeks: what the run says, our own calculation, and the same period last year as shipped."""
-    return q("""with r as (select * from plan.forecast_run where version_id = ? and in_force),
+    return q("""with r as (select * from plan.forecast_run where version_id = ? and in_force and account_code = ?),
                  wk as (select w.week_id, w.period, w.fiscal_year, w.fiscal_period from dims.dim_week w join r on w.week_start between r.first_week and r.last_day),
                  l as (select w.period, sum(b.cases) landed from plan.baseline_in_force b join wk w using (week_id)
                        where b.version_id = ? and b.material_code = ? and b.account_code = ? and b.source = 'forecast_run' group by 1),
@@ -670,7 +680,7 @@ def forecast_series(version_id: str, material: str, account: str) -> list[dict]:
                        any_value(h.shipped) last_year
                 from wk p left join l using (period) left join o using (period)
                 left join h on h.fiscal_year = p.fiscal_year - 1 and h.fiscal_period = p.fiscal_period
-                group by p.period order by p.period""", version_id, version_id, material, account, version_id, material, account, material, account)
+                group by p.period order by p.period""", version_id, account, version_id, material, account, version_id, material, account, material, account)
 
 
 def products() -> list[dict]:

@@ -162,9 +162,12 @@ def _mine(who: str, held: set[str]) -> list[dict]:
             rows.append({"item": f"{f['file_id']} from the promotions system: {len(f['events'])} events waiting to be taken in", "name": "promotions sender",
                          "what_to_do": "take the file in on the promotions page", "severity": "ACTION", "href": url_for("plan.events")})
     if "layer.1.enter" in held:
-        for r in fcst.waiting():
-            rows.append({"item": f"{r['run_id']} from the forecasting system: {r['n_series']} series waiting to be taken in", "name": "forecasting system",
-                         "what_to_do": "take the run in on the statistical forecast page", "severity": "ACTION", "href": url_for("plan.forecast") + "#sender"})
+        _, mine = _fcst_accounts(who)
+        for r in fcst.waiting(set(mine)):
+            left = ", ".join(a["account_code"] for a in r["left"])
+            rows.append({"item": f"{r['run_id']} from the forecasting system: waiting to be taken in for {left}", "name": "forecasting system",
+                         "what_to_do": "read it against our calculation and take it in for your accounts on the statistical forecast page", "severity": "ACTION",
+                         "href": url_for("plan.forecast") + "#sender"})
     if "run.plan" in held:
         for f in _pending():
             rows.append({"item": f"{f.name} placed, not yet in the plan", "name": "landing", "what_to_do": "run the plan to take it in", "severity": "PENDING", "href": url_for("plan.run")})
@@ -1247,23 +1250,26 @@ def mapping_propose():
 
 
 FORECAST = """<h1>Statistical forecast<small>{{ version }} · the baseline each account's plan stands on, where it is made, and where the forecasting system's structures and ours disagree</small></h1>
+{% if mine %}<p class="small">{% if showing_all %}All accounts · <a href="{{ url_for('plan.forecast') }}">only yours ({{ mine|join(', ') }})</a>{% else %}Your accounts: {{ mine|join(', ') }} · <a href="{{ url_for('plan.forecast', accounts='all') }}">all accounts</a>{% endif %} — each planner takes in the run for their own accounts and decides what disagrees there.</p>{% endif %}
 {% if pending %}<p class="hint">{{ pending }} file{{ '' if pending == 1 else 's' }} placed since the last run — this page shows {{ 'it' if pending == 1 else 'them' }} after the run.</p>{% endif %}
-{% if run %}<div class="cards"><div class="card stat"><span>run in force</span><b>{{ run.run_id }}</b><div class="small muted">made {{ run.made_on }} · history to {{ run.last_history_week }}</div></div>
+{% if run %}<div class="cards"><div class="card stat"><span>run{{ 's' if in_force_ids|length > 1 }} in force</span><b>{{ in_force_ids|join(' · ') }}</b><div class="small muted">{{ runs_in_force|length }} account{{ '' if runs_in_force|length == 1 else 's' }}{% if in_force_ids|length > 1 %} · not every account has taken the latest{% endif %}</div></div>
 <div class="card stat"><span>series in the plan</span><b>{{ states.in.series|n if states.in else 0 }}</b><div class="small muted">{{ states.in.cases|k if states.in else 0 }} cases over {{ run.horizon_weeks }} weeks</div></div>
 <div class="card stat"><span>against our calculation</span><b>{{ total.departure|pct1s }}</b><div class="small muted">{{ total.landed|k }} sent · {{ total.ours|k }} ours, same series and weeks</div></div>
-<div class="card stat"><span>waiting for a decision</span><b>{{ queue|length }}</b><div class="small muted">{{ held_cases|k }} cases held out · {{ gap_cases|k }} on our calculation</div></div></div>
-<h2>What the run says it is<span class="count">a run replaces the one before it whole; the latest taken in is the one the plan reads</span></h2>
-<table><tbody><tr><th>Run</th><td>{{ run.run_id }} from the forecasting system, taken in by {{ run.taken_in_by }} at {{ run.taken_in_at }}</td></tr>
-<tr><th>What the numbers are</th><td>{{ 'baseline only — promotions removed; the plan adds them from the calendar' if run.content == 'baseline_only' else run.content }}</td></tr>
+<div class="card stat"><span>waiting for a decision</span><b>{{ door_items|length }}</b><div class="small muted">{{ held_cases|k }} cases held out · {{ gap_cases|k }} on our calculation</div></div></div>
+<h2 id="inforce">In force, account by account<span class="count">the file arrives once; each account's planner takes in their own series, and the latest taken in for an account is the one its plan reads</span></h2>
+<table><thead><tr><th>Account</th><th>Run in force</th><th>Made</th><th>History to</th><th>Taken in by</th><th>At</th></tr></thead><tbody>
+{% for r in runs_in_force %}<tr><td>{{ r.account_code }}</td><td>{{ r.run_id }}</td><td>{{ r.made_on }}</td><td>{{ r.last_history_week }}</td><td>{{ r.taken_in_by }}</td><td class="small">{{ r.taken_in_at }}</td></tr>{% endfor %}</tbody></table>
+<h2>What the run says it is<span class="count">{{ run.run_id }}, the latest in force here</span></h2>
+<table><tbody><tr><th>What the numbers are</th><td>{{ 'baseline only — promotions removed; the plan adds them from the calendar' if run.content == 'baseline_only' else run.content }}</td></tr>
 <tr><th>Fitted on</th><td>{{ run.history_basis }}, to week {{ run.last_history_week }}</td></tr>
 <tr><th>Method</th><td>{{ run.method_note }}</td></tr>
 <tr><th>Reach</th><td>{{ run.horizon_weeks }} weeks, {{ run.first_week }} to {{ run.last_day }}; past that the plan continues on our own calculation</td></tr>
 <tr><th>Grain</th><td>{{ run.grain }}; the plan spreads each series to the account's ship-tos by its own history shape</td></tr>
 <tr><th>Not sent with this run</th><td class="muted">the model chosen per series, its components, the fitted values and the interval — what follows is what the plan can read without them</td></tr></tbody></table>
-{% else %}<p class="muted">No run from the forecasting system has been taken in: every account's baseline is our own calculation.</p>{% endif %}
-<h2 id="sources">Where each account's baseline is made<span class="count">cases over the run's weeks</span></h2>
-<table><thead><tr><th>Account</th><th>Baseline</th><th class="n">Series sent</th><th class="n">From the run</th><th class="n">Our calculation, same series</th><th class="n">Departure</th><th class="n">On our calculation meanwhile</th></tr></thead><tbody>
-{% for a in sources %}<tr><td>{{ a.account_name }} <span class="muted">{{ a.account_code }}</span></td><td>{{ 'forecasting system' if a.baseline_source == 'FORECAST' else 'calculated in the plan' }}</td>
+{% else %}<p class="muted">No run from the forecasting system has been taken in for these accounts: their baseline is our own calculation.</p>{% endif %}
+<h2 id="sources">Where each account's baseline is made<span class="count">cases over the weeks of each account's run in force</span></h2>
+<table><thead><tr><th>Account</th><th>Baseline</th><th>Run in force</th><th class="n">Series sent</th><th class="n">From the run</th><th class="n">Our calculation, same series</th><th class="n">Departure</th><th class="n">On our calculation meanwhile</th></tr></thead><tbody>
+{% for a in sources %}<tr><td>{{ a.account_name }} <span class="muted">{{ a.account_code }}</span></td><td>{{ 'forecasting system' if a.baseline_source == 'FORECAST' else 'calculated in the plan' }}</td><td>{{ a.run_id or '' }}</td>
 <td class="n">{{ a.series|n if a.series else '' }}</td><td class="n">{{ a.landed|n if a.landed else '' }}</td><td class="n">{{ a.ours|n if a.ours else '' }}</td>
 <td class="n delta {{ a.departure|dir }}">{{ a.departure|pct1s if a.departure is not none else '' }}</td><td class="n">{{ a.gap|n if a.gap else '' }}</td></tr>{% endfor %}</tbody></table>
 <p class="hint">Our calculation is kept for every account as the reference: the same fiscal week averaged over the history, promotion weeks and the week after removed, carried forward at the category's growth. It is crude on purpose — a series the run cannot beat is worth a question.</p>
@@ -1272,11 +1278,12 @@ FORECAST = """<h1>Statistical forecast<small>{{ version }} · the baseline each 
 {% if door_items %}<p class="hint">In the run, not in the plan: it has cases and nowhere to put them — say it is the same as one of our materials (its cases join that material), place it under one of our products (recorded; it stays outside the plan until the structure carries it, because it has no price), or leave it out. In the plan, not in the run: the plan stands on our calculation — keep it, or set it to zero on purpose.</p>{% endif %}
 <h2 id="decided">Decided<span class="count">the latest decision per item, in force for this run and the next</span></h2>
 """ + door.DECIDED + """
-<h2 id="sender">From the forecasting system<span class="count">runs in its outbox</span></h2>
-{% if runs %}<table><thead><tr><th>Run</th><th>Made</th><th>What the numbers are</th><th class="n">Series</th><th>State</th>{% if may %}<th></th>{% endif %}</tr></thead><tbody>
-{% for r in runs %}<tr><td>{{ r.run_id }}</td><td>{{ r.header.made_on }}</td><td>{{ 'baseline only' if r.header.content == 'baseline_only' else 'promotions left in (' ~ r.header.content ~ ')' }}</td><td class="n">{{ r.n_series }}</td>
-<td>{{ 'taken in ' ~ r.taken_in_at if r.taken_in_at else 'waiting' }}</td>
-{% if may %}<td>{% if not r.taken_in_at %}<form class="inline" method="post" action="{{ url_for('plan.forecast_take_in') }}"><input type="hidden" name="run_id" value="{{ r.run_id }}"><button class="act">Take in</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>
+<h2 id="sender">From the forecasting system<span class="count">runs in its outbox, account by account · read each against our calculation before taking it in</span></h2>
+{% if runs %}<table><thead><tr><th>Run</th><th>Made</th><th>What the numbers are</th><th>Account</th><th class="n">Series</th><th class="n">Cases sent</th><th class="n">Our calculation, same weeks</th><th class="n">Departure</th><th>State</th><th></th></tr></thead><tbody>
+{% for r in runs %}{% for a in r.shown %}<tr>{% if loop.first %}<td rowspan="{{ r.shown|length }}">{{ r.run_id }}</td><td rowspan="{{ r.shown|length }}">{{ r.header.made_on }}</td><td rowspan="{{ r.shown|length }}">{{ 'baseline only' if r.header.content == 'baseline_only' else 'promotions left in (' ~ r.header.content ~ ')' }}</td>{% endif %}
+<td>{{ a.account_code }}</td><td class="n">{{ a.n_series }}</td><td class="n">{{ a.cases|n }}</td><td class="n">{{ a.ours|n if a.ours else '' }}</td><td class="n delta {{ a.departure|dir }}">{{ a.departure|pct1s if a.departure is not none else '' }}</td>
+<td>{{ 'taken in ' ~ a.taken_in_at ~ ' by ' ~ a.taken_in_by if a.taken_in_at else 'waiting' }}</td>
+<td>{% if not a.taken_in_at and a.may %}<form class="inline" method="post" action="{{ url_for('plan.forecast_take_in') }}"><input type="hidden" name="run_id" value="{{ r.run_id }}"><input type="hidden" name="account_code" value="{{ a.account_code }}"><button class="act">Take in for {{ a.account_code }}</button></form>{% elif not a.taken_in_at %}<span class="small muted">{{ a.whose }}</span>{% endif %}</td></tr>{% endfor %}{% endfor %}</tbody></table>
 {% else %}<p class="muted">Nothing in the outbox.</p>{% endif %}
 {% if run %}<h2 id="departs">Where the run departs most from our calculation<span class="count">material × account over the run's weeks · open one to read it by period</span></h2>
 <table><thead><tr><th>Material</th><th>Account</th><th class="n">From the run</th><th class="n">Our calculation</th><th class="n">Difference</th><th class="n">Departure</th></tr></thead><tbody>
@@ -1291,24 +1298,54 @@ FORECAST = """<h1>Statistical forecast<small>{{ version }} · the baseline each 
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
 
+def _fcst_accounts(who: str) -> tuple[list[str], list[str]]:
+    """The accounts whose baseline comes from the forecasting system, and those of them this person takes in and decides for."""
+    accts = [r["account_code"] for r in q("select account_code from dims.dim_account where baseline_source = 'FORECAST' order by 1")]
+    return accts, [a for a in accts if roles.may(who, "layer.1.enter", a, dimension="customer")]
+
+
 @plan.get("/forecast")
 def forecast():
+    """The statistical forecast, opening on the person's own accounts: their runs in force, their sources, their
+    departures, their items; every account on request."""
     try:
         who = _who(); version = reads.default_version()
-        run = reads.forecast_run(version) if version else None
-        sources = reads.forecast_sources(version) if version else []
-        queue = reads.forecast_queue()
+        fc_accts, mine = _fcst_accounts(who)
+        showing_all = request.args.get("accounts") == "all" or not mine
+        shown = set(fc_accts) if showing_all else set(mine)
+        runs_in_force = [r for r in (reads.forecast_runs(version) if version else []) if r["account_code"] in shown]
+        run = max(runs_in_force, key=lambda r: (r["taken_in_at"], r["run_id"])) if runs_in_force else None
+        sources = [a for a in (reads.forecast_sources(version) if version else []) if showing_all or a["account_code"] in shown]
+        reach = lambda i: {x.strip() for x in str(i.get("reaches") or i.get("scope_code") or "").split(",")}
+        queue = [i for i in reads.forecast_queue() if showing_all or reach(i) & shown]
         landed = sum(a["landed"] or 0 for a in sources); ours = sum(a["ours"] or 0 for a in sources)
         mat, acct = request.args.get("material"), request.args.get("account")
         series = reads.forecast_series(version, mat, acct) if run and mat and acct else []
         names = {m["material_code"]: m["material_name"] for m in reads.materials()}
-        return _page(FORECAST, title="Statistical forecast", active="forecast", width="none", version=version, run=run, sources=sources, queue=queue,
-                     states={r["state"]: r for r in reads.forecast_states(version)} if version else {},
+        holders = {a: ", ".join(p for p in reads.holders("layer.1.enter") if roles.may(p, "layer.1.enter", a, dimension="customer")) for a in fc_accts}
+        runs = []
+        for r in fcst.sender_runs():
+            h = r["header"]; first = _date(h.get("first_week")); n = int(_num(h.get("horizon_weeks")) or 0)
+            last = first + dt.timedelta(days=7 * n - 1) if first and n else None
+            show = []
+            for a in r["accounts"]:
+                if a["account_code"] not in shown:
+                    continue
+                ours_a = reads.reference_cases(version, a["account_code"], first, last, a["materials"]) if version and first and last else None
+                show.append({**a, "ours": ours_a, "departure": _d(a["cases"], ours_a), "whose": holders.get(a["account_code"], ""),
+                             "may": roles.may(who, "layer.1.enter", a["account_code"], dimension="customer")})
+            if show:
+                runs.append({**r, "shown": show})
+        door_ctx = doors.page_context("FCS", who, queue, url_for("plan.forecast", accounts="all") if showing_all and mine else "")
+        return _page(FORECAST, title="Statistical forecast", active="forecast", width="none", version=version, run=run, runs_in_force=runs_in_force,
+                     in_force_ids=sorted({r["run_id"] for r in runs_in_force}), sources=sources, mine=mine, showing_all=showing_all,
+                     states={r["state"]: r for r in reads.forecast_states(version, sorted(shown))} if version else {},
                      total={"landed": landed, "ours": ours, "departure": _d(landed, ours)},
                      held_cases=sum(i["cases"] for i in queue if i["kind"] == "theirs_not_ours"), gap_cases=sum(i["cases"] for i in queue if i["kind"] == "ours_not_theirs"),
-                     door_decided=_fcst_decided(version), runs=fcst.sender_runs(), **doors.page_context("FCS", who, queue),
-                     departures=reads.forecast_departures(version) if run else [], series=series, series_material=mat, series_account=acct,
-                     series_name=names.get(mat, mat), may=roles.may(who, "layer.1.enter"), pending=len(fcst.pending()) + len(doors.ACTS.pending()), last=session.last)
+                     door_decided=[d for d in _fcst_decided(version) if showing_all or d["scope_code"] == "ALL" or d["scope_code"] in shown],
+                     runs=runs, **door_ctx,
+                     departures=reads.forecast_departures(version, sorted(shown)) if run else [], series=series, series_material=mat, series_account=acct,
+                     series_name=names.get(mat, mat), pending=len(fcst.pending()) + len(doors.ACTS.pending()), last=session.last)
     except Busy as e:
         return _busy("Statistical forecast", e)
 
@@ -1324,22 +1361,27 @@ def _fcst_decided(version: str | None) -> list[dict]:
 
 @plan.post("/forecast/take_in")
 def forecast_take_in():
-    """A run from the forecasting system into the landing — if it says its numbers are baseline only."""
-    who = _who(); rid = request.form["run_id"]; version = reads.default_version(); verb = "layer.1.enter"
+    """One account's series from a run into the landing, by the planner whose scope reaches the account (or anyone above
+    them) — if the run says its numbers are baseline only and the account takes its baseline from the forecasting system."""
+    f = request.form; who = _who(); rid = f.get("run_id", ""); acct = f.get("account_code", ""); version = reads.default_version(); verb = "layer.1.enter"
     r = next((x for x in fcst.sender_runs() if x["run_id"] == rid), None)
-    h = (r or {}).get("header", {}); rows = (r or {}).get("series", [])
-    may = roles.may(who, verb)
+    a = next((x for x in (r or {}).get("accounts", []) if x["account_code"] == acct), None)
+    h = (r or {}).get("header", {}); rows = [x for x in (r or {}).get("series", []) if x.get("account_code") == acct]
+    may = roles.may(who, verb, acct, dimension="customer") if acct else False
+    source = (reads.account(acct) or {}).get("baseline_source") if acct else None
     checks = [
-        {"check": "who may take it in", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — the baseline's owner takes a run in"},
-        {"check": "run waiting", "ok": bool(r and not r["taken_in_at"]), "says": f"{rid}: {r['n_series']} series, {len(rows)} rows" if r and not r["taken_in_at"] else f"{rid} is not waiting"},
+        {"check": "who may take it in", "ok": may, "says": f"{who} holds {verb} at {acct}" if may else f"{who} does not hold {verb} at {acct or 'that account'} — the account's planner takes its run in"},
+        {"check": "run waiting for the account", "ok": bool(a and not a["taken_in_at"]),
+         "says": f"{rid} for {acct}: {a['n_series']} series, {len(rows)} rows" if a and not a["taken_in_at"] else (f"{rid} was taken in for {acct} at {a['taken_in_at']}" if a else f"{rid} sends nothing for {acct or 'that account'}")},
+        {"check": "account takes the forecast", "ok": source == "FORECAST", "says": f"{acct}'s baseline comes from the forecasting system" if source == "FORECAST" else f"{acct or 'that account'}'s baseline is calculated in the plan"},
         {"check": "version open", "ok": bool(version), "says": f"into {version}" if version else "no open version"},
         *door.declared(fcst.DECLARATIONS, h, rows),
     ]
     placed = receipts.judge(checks)
     if placed:
-        fcst.take_in(r, version, who)
-    session.last = receipts.write("forecast.take_in", who, rid, checks, placed)
-    session.say(f"{rid} taken in — it replaces the run in force after the next run of the plan" if placed
+        fcst.take_in(r, acct, version, who)
+    session.last = receipts.write("forecast.take_in", who, f"{rid}:{acct}", checks, placed)
+    session.say(f"{rid} taken in for {acct} — it replaces {acct}'s run in force after the next run of the plan" if placed
                 else "take-in refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
     return redirect(url_for("plan.forecast") + "#sender")
 

@@ -127,10 +127,11 @@ NEIGHBOUR_COLUMNS = ["neighbour_id", "version_id", "event_id", "scope_material",
 TERMS_COLUMNS = ["account_code", "instrument_code", "instrument_kind", "driver_basis", "rate", "flow_position", "conditionality",
                  "settlement_timing", "scope_material", "valid_from", "valid_to", "note"]
 PRICE_LIST_COLUMNS = ["price_list", "material_code", "currency", "price_per_case", "valid_from", "valid_to", "event"]
-# the forecasting system's door — a run's header and its series as taken in; what people decide where its structures and
+# the forecasting system's door — a run's header and its series as taken in, account by account (one header row per
+# account that accepted the run); what people decide where its structures and
 # ours disagree is an act in the doors' register (chassis door.ACT_COLUMNS), as the promotions mapping is; the generator
 # writes the same columns
-FCST_RUN_COLUMNS = ["sender", "run_id", "version_id", "taken_in_at", "taken_in_by", "made_on", "last_history_week", "first_week", "horizon_weeks",
+FCST_RUN_COLUMNS = ["sender", "run_id", "account_code", "version_id", "taken_in_at", "taken_in_by", "made_on", "last_history_week", "first_week", "horizon_weeks",
                     "grain", "content", "history_basis", "method_note"]
 FCST_SERIES_COLUMNS = ["sender", "run_id", "version_id", "taken_in_at", "material_code", "material_description", "sender_hierarchy", "account_code",
                        "week_start", "cases"]

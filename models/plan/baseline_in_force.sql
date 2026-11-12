@@ -44,7 +44,7 @@ ours AS (
               ELSE 'our_calculation_gap' END AS source
   FROM plan.baseline_reference b
   JOIN dims.dim_account a ON a.account_code = b.account_code
-  LEFT JOIN run r ON r.version_id = b.version_id
+  LEFT JOIN run r ON r.version_id = b.version_id AND r.account_code = b.account_code
   LEFT JOIN sent s ON s.version_id = b.version_id AND s.material_code = b.material_code AND s.account_code = b.account_code
   LEFT JOIN plan.forecast_resolution res ON res.kind = 'ours_not_theirs' AND res.item_code = b.material_code AND res.account_code = b.account_code
 )
