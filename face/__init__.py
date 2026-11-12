@@ -17,6 +17,8 @@ import sys
 import chassis
 from chassis.roles import WarehouseRoles
 from chassis.session import Session, default_holder
+from dataclasses import dataclass, field
+
 from chassis.ui import Area, Process, Section, Shell, Tab
 from chassis.warehouse import q
 
@@ -111,7 +113,56 @@ PROCESSES = [
 # a specimen of a client's colours: the face takes them on its named objects only (wordmark, bar, selection, edges, chart
 # series) and keeps every state mark, verdict and total in the scheme's own tones; without --skin the face is unskinned
 SPECIMEN_SKIN = {"primary": "#a8321e", "secondary": "#5b7a2e", "bar": "#2a221d"}
-SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home", who="select", processes=PROCESSES,
+# ---- the map: what sends, the plan, what is read — a register beside the process register, drawn on one page ----
+@dataclass
+class Node:
+    key: str
+    band: str                       # sends | plan | made | read — left to right
+    label: str
+    says: str
+    endpoint: str | None = None
+    args: dict = field(default_factory=dict)
+    anchor: str = ""
+    surfaces: list[str] = field(default_factory=list)       # worklists whose waiting items are this node's
+    built: bool = True
+
+
+MAP_NODES = [
+    Node("erp", "sends", "The ERP", "structures, history, prices, terms", "plan.structures"),
+    Node("fcs", "sends", "The forecasting system", "the baseline, run by run", "plan.forecast", anchor="sender"),
+    Node("tpm", "sends", "The promotions system", "events for the accounts it keeps", "plan.events", anchor="sender"),
+    Node("people", "sends", "People who enter", "planners, marketing, Finance", "plan.entries"),
+    Node("structures", "plan", "Structures", "materials, customers, lanes", "plan.structures"),
+    Node("baseline", "plan", "Baseline", "ours and the run, by account", "plan.forecast", surfaces=["plan.worklist_forecast_queue"]),
+    Node("calendar", "plan", "Promotions calendar", "one calendar, two doors", "plan.events",
+         surfaces=["plan.worklist_promo_mapping_review", "plan.worklist_promo_held", "plan.worklist_promo_refused"]),
+    Node("layers", "plan", "Layer entries", "adjustments, launches, exits", "plan.entries",
+         surfaces=["plan.worklist_entry_refused", "plan.worklist_withdrawal_refused", "plan.worklist_entry_unresolved", "plan.worklist_reason_unknown",
+                   "plan.worklist_entry_after_submission"]),
+    Node("submissions", "plan", "Submissions", "by unit, then the plan", "plan.submissions", surfaces=["plan.worklist_open_submissions"]),
+    Node("versions", "plan", "Versions", "open, frozen, the reference", "plan.versions"),
+    Node("rates", "plan", "Prices and terms", "lists and terms in force", "plan.terms"),
+    Node("overlay", "plan", "Finance's overlay", "risks and opportunities, in money", "plan.revenue", anchor="overlay"),
+    Node("stack", "made", "The demand plan", "every layer, by version", "plan.demand", surfaces=["plan.worklist_stack_negative"]),
+    Node("supply", "made", "Supply plan", "stock, lines and purchases", "plan.rung", {"slug": "supply"}, built=False),
+    Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),
+    Node("accuracy", "read", "Forecast accuracy", "the plan judged as a forecast", "plan.accuracy"),
+    Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
+    Node("revenue", "read", "Revenue forecast", "the versions over one another", "plan.revenue"),
+    Node("statements", "read", "Planned statements", "P&L and balance sheet", "plan.rung", {"slug": "pnl"}, built=False),
+]
+# (from, to, what flows); a flow from the first band is a door — something made elsewhere taken in
+MAP_FLOWS = [
+    ("erp", "structures", "loaded"), ("erp", "baseline", "shipments"), ("erp", "rates", "lists, terms"),
+    ("fcs", "baseline", "runs"), ("tpm", "calendar", "events in their codes"),
+    ("people", "layers", "entries"), ("people", "calendar", "typed events"), ("people", "submissions", "acts"), ("people", "overlay", "Finance"),
+    ("structures", "stack", ""), ("baseline", "stack", ""), ("calendar", "stack", ""), ("layers", "stack", ""), ("submissions", "stack", ""),
+    ("versions", "stack", ""), ("rates", "valued", ""), ("overlay", "valued", "beside"),
+    ("stack", "valued", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
+    ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "statements", ""), ("supply", "statements", ""),
+]
+
+SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map")],
               skin=SPECIMEN_SKIN if "--skin" in sys.argv[1:] else None)
 
 # the entry file's contract — every column the landing writes; the generator writes the same

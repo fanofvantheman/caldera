@@ -13,7 +13,7 @@ from chassis.landing import LogLanding
 from chassis.run import Runner, attention, health
 from chassis.warehouse import Busy, q
 
-from . import ENTRY_COLUMNS, HEALTH, OVERLAY_COLUMNS, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUMNS, TERMS_COLUMNS, roles, session
+from . import ENTRY_COLUMNS, HEALTH, MAP_FLOWS, MAP_NODES, OVERLAY_COLUMNS, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUMNS, TERMS_COLUMNS, roles, session
 from . import reads
 from . import dashboard
 from . import promotions
@@ -79,7 +79,7 @@ def _busy(title: str, e: Busy) -> str:
 
 
 # ---- the role's home: what the processes you reach expect of you ----
-HOME = """<h1>{{ who }}<small>what the processes you reach expect of you today</small></h1>
+HOME = """<h1>{{ who }}<small>what the processes you reach expect of you today · <a href="{{ url_for('plan.map') }}">the map of the plan</a></small></h1>
 <h2 id="attention">My attention<span class="count">{{ mine|length }} item{{ '' if mine|length == 1 else 's' }} the last run routed to you</span></h2>
 {% if mine %}<table><thead><tr><th>Activity</th><th>Context</th><th>What to do</th><th>Status</th></tr></thead><tbody>
 {% for m in mine %}<tr><td>{% if m.href %}<a href="{{ m.href }}">{{ m.item }}</a>{% else %}{{ m.item }}{% endif %}</td><td>{{ m.name }}</td><td class="small muted">{{ m.what_to_do }}</td><td><span class="severity">{{ m.severity }}</span></td></tr>{% endfor %}
@@ -228,7 +228,7 @@ def _head(who: str, held: set[str]) -> str:
     open_units = [u["unit_name"] for u in units if u["state"] not in ("submitted", "rolled_up")]
     status_line = ("plan submitted" + (f" · {st['open_below']} open beneath" if st and st.get("open_below") else "")) if st and st["state"] == "submitted" \
         else ("open: " + ", ".join(open_units) if open_units else "every unit in — ready to submit")
-    actions = [{"label": label, "href": href, "says": a.label}
+    actions = [{"label": "Map", "href": url_for("plan.map"), "says": "the whole"}] + [{"label": label, "href": href, "says": a.label}
                for p, areas in SHELL.reach(held) if p.key == "ibp" for a, secs in areas for key, label, href in _views(secs, held)
                if key in ("demand", "submissions", "accuracy", "entries", "gap", "versions", "run")]
     links = {"demand": url_for("plan.demand", version=version), "money": url_for("plan.gap", version=version), "accuracy": url_for("plan.accuracy"),
@@ -899,6 +899,91 @@ def structures():
                      unfit=reads.structure_unfit(), provisional=reads.provisional(), disagreements=dis)
     except Busy as e:
         return _busy("Structures as loaded", e)
+
+
+# ---- the map: drawn from the register beside the process register, with each node's state from the last run ----
+MAP = """<h1>The plan, end to end<small>what sends, what the plan holds, what it makes and what is read — every box opens the page that owns it and says what waits there after the last run</small></h1>
+<div class="card fig mapfig">{{ svg|safe }}</div>
+<p class="hint">A heavy line from the left is a door: something made elsewhere taken into the plan, read against its own structures, every disagreement waiting for a person. A dashed box is named and not yet built. The boxes and lines are a register beside the menu, so a new door is a new line here.</p>
+<style>.mapfig{padding:1rem;overflow-x:auto}.mapfig svg{width:100%;min-width:1000px;height:auto;display:block}
+.map .node rect{fill:var(--panel);stroke:var(--ink);stroke-width:1}.map .node.off rect{fill:none;stroke:var(--muted);stroke-dasharray:4 3}
+.map .node:hover rect{stroke-width:2}.map .node text{fill:var(--ink);font-size:13px}.map .node .says{fill:var(--muted);font-size:11px}
+.map .node .state{font-size:11px;font-weight:600}.map .node.off text{fill:var(--muted)}.map .node .state.quiet{fill:var(--muted);font-weight:400}
+.map .flow{fill:none;stroke:var(--muted);stroke-width:1}.map .flow.door{stroke:var(--ink);stroke-width:2.2}
+.map .flowlabel{fill:var(--muted);font-size:10px;paint-order:stroke;stroke:var(--panel);stroke-width:3px}.map .band{fill:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase}</style>"""
+BANDS = [("sends", "What sends"), ("plan", "What the plan holds"), ("made", "What it makes"), ("read", "What is read")]
+
+
+def _esc(s: str) -> str:
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def _node_state(n, items: dict, pend: dict) -> tuple[str, bool]:
+    """What a node says after the last run: items waiting, files not yet in the plan, or not built. (text, waiting?)"""
+    if not n.built:
+        return "named, not yet built", False
+    bits = []
+    waiting = sum(items.get(s, 0) for s in n.surfaces)
+    if waiting:
+        bits.append(f"{waiting} waiting")
+    if pend.get(n.key):
+        bits.append(pend[n.key])
+    return (" · ".join(bits), True) if bits else ("nothing waiting", False)
+
+
+def _map_svg(items: dict, pend: dict) -> str:
+    W, NW, NH, GAP, TOP = 1280, 210, 62, 14, 40
+    xs = {b: 20 + i * ((W - 40 - NW) / (len(BANDS) - 1)) for i, (b, _) in enumerate(BANDS)}
+    pos, cols = {}, {b: [n for n in MAP_NODES if n.band == b] for b, _ in BANDS}
+    H = TOP + max(len(c) for c in cols.values()) * (NH + GAP) + 10
+    for b, ns in cols.items():
+        off = TOP + ((H - TOP - 10) - len(ns) * (NH + GAP)) / 2
+        for i, n in enumerate(ns):
+            pos[n.key] = (xs[b], off + i * (NH + GAP))
+    out = [f'<svg class="map" viewBox="0 0 {W} {H:.0f}" role="img" aria-label="the plan, end to end">']
+    for b, label in BANDS:
+        out.append(f'<text class="band" x="{xs[b]:.0f}" y="18">{_esc(label)}</text>')
+    band = {n.key: n.band for n in MAP_NODES}
+    for a, z, what in MAP_FLOWS:
+        (x1, y1), (x2, y2) = pos[a], pos[z]
+        x1 += NW; y1 += NH / 2; y2 += NH / 2
+        mx = (x1 + x2) / 2
+        door = band[a] == "sends"
+        out.append(f'<path class="flow{" door" if door else ""}" d="M{x1:.0f},{y1:.0f} C{mx:.0f},{y1:.0f} {mx:.0f},{y2:.0f} {x2:.0f},{y2:.0f}"/>')
+        if what:
+            out.append(f'<text class="flowlabel" x="{mx:.0f}" y="{(y1 + y2) / 2 - 4:.0f}" text-anchor="middle">{_esc(what)}</text>')
+    for n in MAP_NODES:
+        x, y = pos[n.key]
+        href = url_for(n.endpoint, **n.args) + (f"#{n.anchor}" if n.anchor else "") if n.endpoint else ""
+        state, hot = _node_state(n, items, pend)
+        out.append(f'<a href="{_esc(href)}" class="node{"" if n.built else " off"}"><title>{_esc(n.label)} — {_esc(state)}</title>'
+                   f'<rect x="{x:.0f}" y="{y:.0f}" width="{NW}" height="{NH}" rx="6"/>'
+                   f'<text x="{x + 12:.0f}" y="{y + 20:.0f}" font-weight="600">{_esc(n.label)}</text>'
+                   f'<text class="says" x="{x + 12:.0f}" y="{y + 36:.0f}">{_esc(n.says)}</text>'
+                   f'<text class="state{"" if hot else " quiet"}" x="{x + 12:.0f}" y="{y + 52:.0f}">{_esc(state)}</text></a>')
+    out.append("</svg>")
+    return "".join(out)
+
+
+@plan.get("/map", endpoint="map")
+def plan_map():
+    try:
+        items = {h["surface"]: int(h["items"] or 0) for h in health(q, HEALTH)}
+    except Busy:
+        items = {}
+    def files(n: int) -> str:
+        return f"{n} file{'s' if n != 1 else ''} not yet in the plan" if n else ""
+    pend = {"tpm": f"{len(promotions.waiting())} file{'s' if len(promotions.waiting()) != 1 else ''} waiting to be taken in" if promotions.waiting() else "",
+            "fcs": f"{len(fcst.waiting())} run{'s' if len(fcst.waiting()) != 1 else ''} waiting for an account" if fcst.waiting() else "",
+            "layers": files(len(ENTRIES.pending())), "calendar": files(len(promotions.pending())),
+            "baseline": files(len(fcst.pending()) + len(doors.ACTS.pending())), "submissions": files(len(SUBMISSIONS.pending())),
+            "rates": files(len(TERMS_LANDING.pending()) + len(PRICES_LANDING.pending())), "overlay": files(len(OVERLAY.pending()))}
+    try:
+        unfit = q("select count(distinct member_code) n from plan.structure_unfit")[0]["n"]
+        pend["structures"] = f"{unfit} member{'s' if unfit != 1 else ''} not yet fit to plan" if unfit else ""
+    except Busy:
+        pass
+    return _page(MAP, title="Map", active="map", width="none", svg=_map_svg(items, pend))
 
 
 # ---- the rungs named but not yet built ----
