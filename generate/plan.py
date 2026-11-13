@@ -239,10 +239,11 @@ def submissions(latest_closed: str) -> list[dict]:
              "submitted_by": by, "submitted_on": on, "note": note} for i, (subj, node, by, on, note) in enumerate(acts, start=1)]
 
 
-# Finance's figures: one row per figure typed — a node of each structure, a period, volume or price, the value, and the
-# demand plan at that node when it was typed (blank where Finance builds and nothing feeds); a release names a save
+# Finance's figures: one `enter` row per figure typed — a node of each structure, a period, volume or price, the value,
+# and the demand plan at that node when it was typed (blank where Finance builds and nothing feeds) — and one `cell` row
+# per account × material it wrote at that moment, naming the figure in `typed`; a release names a save
 FINANCE_COLUMNS = ["edit_id", "action", "withdraws", "save_id", "version_id", "scope_customer", "scope_material", "period", "measure", "value",
-                   "source_at_entry", "reason_code", "entered_by", "entered_on", "note"]
+                   "source_at_entry", "reason_code", "entered_by", "entered_on", "note", "typed"]
 # fed or built, per account × material: the account's row (material ALL) is its default, a material row is an exception
 FINANCE_SOURCE_COLUMNS = ["account_code", "material_code", "source", "declared_by", "declared_on", "note"]
 BUILT_ACCOUNT = "EXPJ"                                                  # Export: Finance builds it from scratch
@@ -266,8 +267,8 @@ def finance_edits(shipments: list[dict], materials: list[Material], plan_fy: int
     grain — last year's same period, cases +4% and net sales per case +3%. Fed: one figure typed at Merritt × pear cups ×
     P08 on 2 Nov, when the demand plan had nothing there; the listing entry of 3 Nov has since moved the source, so the
     figure is marked. A built figure is kept at the standard material: a variant's history (a bonus pack, a private
-    label) is folded into the material it rolls to, since a figure there spans its variants. Draws nothing from the
-    random stream."""
+    label) is folded into the material it rolls to, since a figure there spans its variants. Each figure is typed at the
+    grain where nothing stood, so the one cell it wrote is itself. Draws nothing from the random stream."""
     standard = {m.material_code: (m.parent_material or m.material_code) for m in materials}
     v, by = f"LV-{latest_closed}", "finance.manager@caldera"
     last = int(latest_closed[-2:])
@@ -279,9 +280,11 @@ def finance_edits(shipments: list[dict], materials: list[Material], plan_fy: int
             c[0] += r["cases"]; c[1] += r["net_sales"]
     rows: list[dict] = []
     def add(save: str, acct: str, mat: str, period: str, measure: str, value: float, src, reason: str, on: str, note: str = "") -> None:
-        rows.append({"edit_id": f"FE-{len(rows) + 1:05d}", "action": "enter", "withdraws": "", "save_id": save, "version_id": v,
-                     "scope_customer": acct, "scope_material": mat, "period": period, "measure": measure, "value": value,
-                     "source_at_entry": "" if src is None else src, "reason_code": reason, "entered_by": by, "entered_on": on, "note": note})
+        eid = f"FE-{len(rows) // 2 + 1:05d}"
+        row = {"edit_id": eid, "action": "enter", "withdraws": "", "save_id": save, "version_id": v,
+               "scope_customer": acct, "scope_material": mat, "period": period, "measure": measure, "value": value,
+               "source_at_entry": "" if src is None else src, "reason_code": reason, "entered_by": by, "entered_on": on, "note": note, "typed": ""}
+        rows.extend([row, {**row, "edit_id": f"{eid}-C0001", "action": "cell", "note": "", "typed": eid}])
     add("FS-0001", "MER", "CUP_PEAR-CUP_4x120", f"{plan_fy}P08", "volume", 800.0, 0.0, "CUSTOMER", "2026-11-02T16:10:00",
         "Merritt will range pear cups from P08 at about 800 cases; the account team's listing is not in yet")
     for (acct, mat, p), (cases, ns) in sorted(ly.items()):

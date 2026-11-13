@@ -1,7 +1,8 @@
 /* Each of Finance's figures read against the plan after the last run: what stands at its node now, what the demand plan
-   is there now and what it was when the figure was typed. A figure holds unless a later figure of the same measure has
-   overwritten it where their scopes meet; a figure whose source has moved since it was typed is marked — the value
-   does not change. The price at a node is always revenue ÷ volume. */
+   is there now and what it was when the figure was typed. A figure was spread to the cells beneath its node when it was
+   typed and is not held at the node: it reads as typed until a later figure reaches some of those cells — a later volume
+   where the scopes meet moves a volume; a later volume or price moves a price, which at a node is revenue ÷ volume. A
+   figure whose source has moved since it was typed is marked — the value does not change. */
 MODEL (name plan.finance_edit_reading, kind FULL, grain (edit_id), audits (finance_figure_holds, finance_revenue_is_volume_times_price));
 WITH e AS (SELECT * FROM plan.finance_edit),
 node AS (
@@ -16,7 +17,7 @@ node AS (
 ),
 overwritten AS (
   SELECT a.edit_id, ARG_MIN(b.edit_id, b.entered_on || b.edit_id) AS overwritten_by
-  FROM e a JOIN e b ON b.version_id = a.version_id AND b.period = a.period AND b.measure = a.measure AND a.state = 'in_force' AND b.state = 'in_force'
+  FROM e a JOIN e b ON b.version_id = a.version_id AND b.period = a.period AND (b.measure = a.measure OR (a.measure = 'price' AND b.measure = 'volume')) AND a.state = 'in_force' AND b.state = 'in_force'
        AND (b.entered_on > a.entered_on OR (b.entered_on = a.entered_on AND b.edit_id > a.edit_id))
        AND EXISTS (SELECT 1 FROM dims.dim_customer_hierarchy h WHERE (h.ancestor_code = a.scope_customer AND h.descendant_code = b.scope_customer)
                                                                OR (h.ancestor_code = b.scope_customer AND h.descendant_code = a.scope_customer))
@@ -34,8 +35,9 @@ r AS (
 SELECT *,
        CASE WHEN state <> 'in_force' THEN state
             WHEN COALESCE(n_cells, 0) = 0 THEN 'unplaced: nothing at this node in this period'
+            WHEN now_at_node IS NULL OR ABS(now_at_node - value) <= CASE measure WHEN 'volume' THEN 0.01 ELSE 0.000001 * value END THEN 'held'
             WHEN overwritten_by IS NOT NULL THEN 'overwritten'
-            ELSE 'held' END AS standing,
+            ELSE 'drifted' END AS standing,
        state = 'in_force' AND source_at_entry IS NOT NULL
          AND ABS(COALESCE(source_now, 0) - source_at_entry) > CASE measure WHEN 'volume' THEN 0.5 ELSE 0.005 END AS source_moved
 FROM r

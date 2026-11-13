@@ -133,10 +133,15 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   and beneath it the **financial forecast**: Finance's own volume × price = revenue at account × material × period, on a
   grid — the material structure down (a node and the level beneath it), periods across, cases, net per case and net sales
   per row — read three ways: Finance's plan with the demand plan under every figure, the demand plan, and the variance.
-  Finance types volume and price at any node (all, a unit or an account × any material node) in open periods, one reason
-  per save; a volume at a node is spread by the shape beneath it, a price moves every price beneath by one proportion so
-  the node's calculated price is what was typed; a figure holds its value, the variance moves when the demand plan moves,
-  and a figure whose demand plan has moved since it was typed is marked. Fed or built is declared per account ×
+  Finance types volume and price at any node (all, a unit or an account × any material node) in open periods, and the
+  grid recalculates on Enter or Tab with no run — totals above, children beneath, revenue, the variance and the year — in
+  a working copy that is Finance's alone until saved (hatched as unsaved, kept while they move about the grid, dropped by
+  Discard, lost on a restart); a volume at a node is written down to its children by the demand plan's shape at the
+  moment it is typed, a price moves every price beneath by one proportion so the node's calculated price is what was
+  typed, and the last figure typed wins at every level. Save asks one reason, writes one file — each figure as typed and
+  where, and the cells it wrote — and carries it into the plan with the run scoped to Finance's part. The app and the
+  model call the same function (`calc/finance.py`). A figure holds its value against the demand plan, the variance moves
+  when the demand plan moves, and a figure whose demand plan has moved since it was typed is marked. Fed or built is declared per account ×
   material: Export and three foodservice cans at Bradfield are built by Finance, with nothing beneath; the rest is fed.
   It never enters the demand stack or the gross-to-net), **where each number comes from** under financial planning (the chain —
   volume, price and terms,

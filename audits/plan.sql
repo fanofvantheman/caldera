@@ -127,10 +127,9 @@ AUDIT (name forecast_resolution_target_known);
 SELECT resolution_id, resolution, target_code FROM @this_model WHERE NOT target_known;
 
 AUDIT (name finance_figure_holds);
-/* blocking: every figure Finance typed that still holds reads, at its node, exactly what was typed — volume as typed, price
-   as revenue ÷ volume */
-SELECT edit_id, measure, value, now_at_node FROM @this_model
-WHERE standing = 'held' AND now_at_node IS NOT NULL AND ABS(now_at_node - value) > CASE measure WHEN 'volume' THEN 0.01 ELSE 0.000001 * value END;
+/* blocking: every figure Finance typed that is in force reads, at its node, exactly what was typed — volume as typed, price
+   as revenue ÷ volume — or names the later figure that has since reached its cells */
+SELECT edit_id, measure, value, now_at_node FROM @this_model WHERE standing = 'drifted';
 
 AUDIT (name finance_revenue_is_volume_times_price);
 /* blocking: in Finance's plan revenue is always volume × price at the grain */

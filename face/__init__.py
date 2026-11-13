@@ -188,7 +188,7 @@ TERMS_COLUMNS = ["account_code", "instrument_code", "instrument_kind", "driver_b
 # Finance's figures: one row per figure typed — a customer node at account or above × a material node × a period, volume
 # or price, and the demand plan at that node when typed; the figures of one save share its reason; a release names a save
 FINANCE_COLUMNS = ["edit_id", "action", "withdraws", "save_id", "version_id", "scope_customer", "scope_material", "period", "measure", "value",
-                   "source_at_entry", "reason_code", "entered_by", "entered_on", "note"]
+                   "source_at_entry", "reason_code", "entered_by", "entered_on", "note", "typed"]
 PRICE_LIST_COLUMNS = ["price_list", "material_code", "currency", "price_per_case", "valid_from", "valid_to", "event"]
 # the forecasting system's door — a run's header and its series as taken in, account by account (one header row per
 # account that accepted the run); what people decide where its structures and
