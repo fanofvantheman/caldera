@@ -208,6 +208,18 @@ def _customers(who, chosen) -> list[dict]:
     return [{"value": n["code"], "label": n["label"], "depth": n["depth"]} for n in reads.finance_customer_nodes() if mine is None or n["code"] in mine]
 
 
+def _customer_default(who, chosen, opts) -> str | None:
+    """With nothing chosen: the one account, when the nodes a person is offered reach exactly one (a planner whose unit
+    is a single account lands where the demand plan's cells open); otherwise the first node offered."""
+    mine = _scope(who, "customer")
+    if mine:
+        accounts = {r["d"] for r in q(f"""select distinct descendant_code d from dims.dim_customer_hierarchy
+                                           where descendant_level = 'account' and ancestor_code in ({','.join('?' * len(mine))})""", *sorted(mine))}
+        if len(accounts) == 1 and any(o["value"] == next(iter(accounts)) for o in opts):
+            return next(iter(accounts))
+    return opts[0]["value"] if opts else None
+
+
 def _materials(who, chosen) -> list[dict]:
     """All, every category and its products, and the materials of the product in play — the one chosen, or the chosen
     material's — so the list stays short and a material is reached through its product."""
@@ -230,7 +242,7 @@ def _materials(who, chosen) -> list[dict]:
 CONTEXT = [
     Choice("version", "Version", _versions, default=lambda who, chosen, opts: reads.default_version(), strict=True),
     Choice("fy", "Year", _years, default=_year_default, strict=True),
-    Choice("customer", "Customer", _customers, note=lambda who, opts: _bounded(who, "customer", opts)),
+    Choice("customer", "Customer", _customers, default=_customer_default, note=lambda who, opts: _bounded(who, "customer", opts)),
     Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts)),
 ]
 
