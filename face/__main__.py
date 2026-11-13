@@ -3,6 +3,7 @@ is what the last run said. The checks an entry must pass to be placed live here 
 know them."""
 from __future__ import annotations
 
+import csv
 import datetime as dt
 import pathlib
 
@@ -775,6 +776,7 @@ FINANCE_SECTION = """<h2 id="finance">Financial forecast<span class="count">FY{{
 <span class="crumbs">{% for n in fin.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}</span></form>
 <nav class="tabs">{% for t in fin.readings %}<a href="{{ t.href }}" class="{{ 'active' if t.on }}">{{ t.label }}</a>{% endfor %}</nav>
 {% if fin.editable %}<form method="post" action="{{ url_for('plan.finance_save') }}" id="finance-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}{% endif %}
+{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} figure{{ 's' if fin.n_waiting != 1 }} typed at {{ fin.customer_label }} {{ 'are' if fin.n_waiting != 1 else 'is' }} waiting for the next run, shown hatched where typed. The run spreads each beneath its row and carries it into the totals — <a href="{{ url_for('plan.run') }}">run the plan</a>.</p>{% endif %}
 <div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}<th class="n {{ 'closed' if p.closed }}">{{ p.label }}</th>{% endfor %}<th class="n">FY{{ fy }}</th></tr></thead><tbody>
 {% for r in fin.rows %}{% for m in fin.measures %}<tr class="{{ 'first' if loop.first }} {{ 'total' if r.current and loop.first }}">
 {% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node">{% if r.href %}<a href="{{ r.href }}">{{ r.label }}</a>{% else %}<b>{{ r.label }}</b>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></td>{% endif %}
@@ -804,7 +806,7 @@ FINANCE_SECTION = """<h2 id="finance">Financial forecast<span class="count">FY{{
 <td class="acts">{% if s.released %}<span class="state">released</span>{% elif fin.may and fin.open %}<form class="inline" method="post" action="{{ url_for('plan.finance_release') }}">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}<input type="hidden" name="save_id" value="{{ s.save_id }}"><button class="act">release</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="11" class="muted">Nothing typed on {{ version }}: Finance's plan is the demand plan valued{% if fin.any_built %}, and the built accounts are empty{% endif %}.</td></tr>{% endfor %}</tbody></table>
 <style>.finwrap{overflow-x:auto;margin-bottom:.6rem}table.fin td.n{vertical-align:top;white-space:nowrap}table.fin td.node{vertical-align:top;min-width:11rem}
-table.fin tr.first td{border-top:1px solid var(--rule)}table.fin .src{display:block;font-size:.72rem;color:var(--muted)}table.fin td.typed{box-shadow:inset 0 0 0 1px var(--ink)}
+table.fin tr.first td{border-top:1px solid var(--rule)}table.fin .src{display:block;font-size:.72rem;color:var(--muted)}table.fin td.typed{box-shadow:inset 0 0 0 1px var(--ink)}table.fin td.waiting{box-shadow:inset 0 0 0 1px var(--muted);background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 14%,transparent) 5px 6px)}table.fin td.waiting input.cell{font-style:italic}
 table.fin td.closed,table.fin th.closed{color:var(--muted)}table.fin input.cell{width:5.6rem;text-align:right;font-size:.85rem;padding:.15rem .35rem}
 .moved{font-size:.7rem;margin-left:.15rem}table.fin td.down{color:var(--muted)}.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}
 .form-row label{display:flex;flex-direction:column;gap:.2rem}</style>
@@ -885,6 +887,13 @@ def _finance_ctx(version: str | None, fy: int, L) -> dict:
     for e in edits:                       # latest first: the first in force is the one standing at the cell
         if e["state"] == "in_force":
             typed.setdefault((e["scope_material"], e["period"], e["measure"]), e)
+    waiting: dict[tuple, dict] = {}       # placed since the last run: shown where typed, spread beneath by the next run
+    for path in sorted(FINANCE.pending()):
+        with open(path, newline="") as fh:
+            for w in csv.DictReader(fh):
+                if w["action"] == "enter" and w["version_id"] == version and w["scope_customer"] == fc:
+                    waiting[(w["scope_material"], w["period"], w["measure"])] = w
+    n_waiting = len(waiting)
     fm_label = reads.node_label("material", fm)
     levels = {"category": "category", "product": "product", "material": "material", "all": "all materials"}
     rows = []
@@ -912,8 +921,18 @@ def _finance_ctx(version: str | None, fy: int, L) -> dict:
                         e = typed.get((code, p["period"], k))
                         if e:
                             x["cls"] += " typed"; x["title"] = _edit_title(e); x["moved"] = bool(e["source_moved"])
+                        wv, wp = waiting.get((code, p["period"], "volume")), waiting.get((code, p["period"], "price"))
+                        w = waiting.get((code, p["period"], k))
+                        wval = float(w["value"]) if w else None
+                        if k == "revenue" and (wv or wp):
+                            vol = float(wv["value"]) if wv else F["fin"]["volume"]; price = float(wp["value"]) if wp else F["fin"]["price"]
+                            wval = vol * price if vol is not None and price is not None else None
+                        if wval is not None:
+                            x["show"] = _show(k, wval); x["cls"] += " waiting"
+                            x["title"] = (f"typed {_show(k, wval)} by {w['entered_by']} at {w['entered_on'][11:16]}" if w else "from the figures typed here") \
+                                + " — waiting for the next run, which spreads it beneath this row and into the totals"
                         if editable and k != "revenue" and p["period"] in opens:
-                            val = F["fin"][k]
+                            val = wval if wval is not None else F["fin"][k]
                             x["input"] = f"{k[0]}|{code}|{p['period']}"
                             x["value"] = "" if val is None else (f"{val:.0f}" if k == "volume" else f"{val:.2f}")
                     elif reading == "source":
@@ -937,7 +956,7 @@ def _finance_ctx(version: str | None, fy: int, L) -> dict:
     return {"fc": fc, "fm": fm, "reading": reading, "customers": customers, "customer_label": next((x["label"] for x in customers if x["code"] == fc), fc), "source_of": decl,
             "path": [{**n, "href": L(fm=n["code"]) + "#finance"} for n in reads.node_path("material", fm)] or [{"code": "ALL", "label": "All materials", "href": L(fm="ALL") + "#finance"}],
             "readings": [{"label": lab, "on": key == reading, "href": L(reading=key) + "#finance"} for key, lab in READINGS],
-            "row_head": fm_label, "periods": periods, "measures": MEASURES, "rows": rows, "tot": tot,
+            "n_waiting": n_waiting, "row_head": fm_label, "periods": periods, "measures": MEASURES, "rows": rows, "tot": tot,
             "any_built": any(r["built"] for r in rows) or any(s == "built" for s in decl.values()),
             "editable": editable, "may": may, "open": is_open, "status": v.get("status", "unknown"), "holders": reads.holders("overlay.finance.enter"),
             "keep": keep, "post_keep": {"version": version or "", "fy": fy, "fc": fc, "fm": fm, "reading": reading},
