@@ -29,6 +29,7 @@ from . import finance_live
 from . import costs
 from . import schedule
 from . import headcount
+from . import assumptions
 from .words import said
 
 plan = Blueprint("plan", __name__)
@@ -233,7 +234,7 @@ def _mine(who: str, held: set[str]) -> list[dict]:
 
 def _pending() -> list[pathlib.Path]:
     """Every file any act has placed since the last run, across the landing's tables."""
-    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending() + FINANCE.pending() \
+    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending() + FINANCE.pending() + assumptions.LANDING.pending() \
         + [f for scope in SCOPED.values() for f in scope["pending"]() if scope["pending"] is not FINANCE.pending]
 
 
@@ -1501,7 +1502,6 @@ RUNGS = {
     "capex": ("Projects and depreciation", "Projects entered, approved and phased, and depreciated; the maintenance deferral that raises unplanned downtime into the capacity analysis. Waits on four questions about how capital is planned here."),
     "nonop": ("Interest, tax and other", "The non-operating lines of the P&L — interest, tax, other income and expense — each a schedule of its own or a line per period with a declared method."),
     "cash": ("Cash", "Cash by period, rolled from the opening balance through the P&L and the movements in working capital, capital and financing."),
-    "assumptions": ("Assumptions", "The one set of assumptions every plan is valued with — exchange rate, inflation, wage and energy indices — by version and period, each with what reads it."),
     "cycle": ("Period control", "Periods opened and closed; the latest closed period that every version's baseline is read from."),
     "proof": ("Proof", "The identities and reconciliations that let a number be trusted: stack to total, gross to net, plan to reference."),
     "supply": ("Supply plan", "Unconstrained demand met from stock, production and purchases by week and node; the rough-cut against the lines; what cannot be made and the shaping that answers it."),
@@ -1514,6 +1514,8 @@ RUNGS = {
 
 @plan.get("/rung/<slug>")
 def rung(slug: str):
+    if slug == "assumptions":                     # named here before it was built; the page now has its own address
+        return redirect(url_for("plan.assumptions"))
     title, says = RUNGS.get(slug, ("Not here", "No such page."))
     return _page(f"<h1>{title}<small>named, not yet built</small></h1><p class='lede'>{says}</p>", title=title, active=slug)
 
@@ -2417,6 +2419,7 @@ def run_now():
 costs.register(plan, _page, _who, _ctx, _busy, session, roles)
 schedule.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED)
 headcount.register(plan, _page, _who, _ctx, _busy, session, roles)
+assumptions.register(plan, _page, _who, _ctx, _busy, session, roles)
 
 
 def main() -> None:

@@ -137,7 +137,8 @@ PROCESSES = [
                 Tab("cc_entities", "Entities and ledgers", "plan.cost_entities", verbs=COST_READ),
                 Tab("cc_actuals", "Actuals", "plan.cost_actuals", verbs=COST_READ),
                 Tab("cc_mapping", "Mapping review", "plan.cost_mapping", verbs=["register.cost_centre_map.maintain", "read.proof"])]),
-            Section("assumptions", "Assumptions", RUNG, {"slug": "assumptions"}, verbs=FIN_READ),
+            # the one set every plan is valued with — everyone who plans reads it; Finance amends it (DEC-20261113-10)
+            Section("assumptions", "Assumptions", "plan.assumptions", uses=("version", "fy"), verbs=sorted(set(READ + FIN_READ + COST_READ))),
         ]),
     ]),
     Process("actuals", "Actuals", says="What happened, closed and proved, for the plan to be read against.", areas=[
@@ -191,6 +192,7 @@ MAP_NODES = [
     Node("submissions", "plan", "Submissions", "by unit, then the plan", "plan.submissions", surfaces=["plan.worklist_open_submissions"]),
     Node("versions", "plan", "Versions", "open, frozen, the reference", "plan.versions"),
     Node("rates", "plan", "Prices and terms", "lists and terms in force", "plan.terms"),
+    Node("assumptions", "plan", "Assumptions", "one set by period; what reads each", "plan.assumptions"),
     Node("costcentres", "plan", "Cost centres", "ours over each entity's own", "plan.cost_centres", surfaces=["plan.worklist_cost_centre_unmapped"]),
     Node("stack", "made", "The demand plan", "every layer, by version", "plan.demand", surfaces=["plan.worklist_stack_negative"]),
     Node("supply", "made", "Supply plan", "stock, lines and purchases", "plan.rung", {"slug": "supply"}, built=False),
@@ -209,7 +211,7 @@ MAP_FLOWS = [
     ("fcs", "baseline", "runs"), ("tpm", "calendar", "events in their codes"), ("ledgers", "costcentres", "actuals in their cost centres"), ("people", "schedule", "typed months and rates"),
     ("people", "layers", "entries"), ("people", "calendar", "typed events"), ("people", "submissions", "acts"), ("people", "finance", "Finance's figures"),
     ("structures", "stack", ""), ("baseline", "stack", ""), ("calendar", "stack", ""), ("layers", "stack", ""), ("submissions", "stack", ""),
-    ("versions", "stack", ""), ("rates", "valued", ""),
+    ("versions", "stack", ""), ("rates", "valued", ""), ("assumptions", "valued", "FX, returns, claims"), ("assumptions", "schedule", "CPI"),
     ("stack", "valued", ""), ("costcentres", "schedule", ""), ("labour", "schedule", "labour lines"), ("people", "labour", "positions, people"), ("stack", "schedule", "drivers"), ("schedule", "statements", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
     ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "finance", "feeds"), ("valued", "statements", ""), ("supply", "statements", ""),
 ]

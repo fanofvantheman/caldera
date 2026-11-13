@@ -14,7 +14,7 @@ from . import calendar as cal
 from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIALS, CATEGORIES, PRODUCTS, FORMATS,
                          PROMO_GROUPS, ACCOUNTS, PROMOTIONS_MASTER, BASELINE_SOURCE, PROMO_WEEK_START, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
 from .history import forecast_snapshots, generate_demand, generate_prices, value_shipments
-from .registers import versions, period_control, roles, capacity_register, assumptions
+from .registers import versions, period_control, roles, capacity_register, assumptions, assumption_amendments
 from .plan import business_plan_entries, latest_view_entries, promo_events, promo_neighbours, terms_register, reason_codes, submissions, finance_edits, finance_sources
 from .emit import emit_all, dataclass_rows
 from . import sender
@@ -89,6 +89,7 @@ def main() -> None:
         "reg_submission": submissions(LATEST_CLOSED),
         "reg_finance_overlay": finance_edits(shipments, materials, PLAN_FY, LATEST_CLOSED),     # Finance's figures; draws nothing
         "reg_finance_source": finance_sources(),
+        "reg_assumption_amend": assumption_amendments(LATEST_CLOSED),       # Finance's acts on the assumptions; draws nothing
     }
     fcst, fcst_waiting = forecaster.run(shipments, materials, weeks, LATEST_CLOSED, {a[0]: BASELINE_SOURCE.get(a[0], "PLAN") for a in ACCOUNTS},
                                         f"LV-{LATEST_CLOSED}")       # after the last draw on rng above: it draws nothing

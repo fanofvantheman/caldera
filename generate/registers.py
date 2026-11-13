@@ -167,3 +167,15 @@ def assumptions() -> list[dict]:
             rows.append({"assumption_code": code, "assumption_name": name, "kind": kind, "version_id": version_id,
                          "period": "", "value": value, "owner": "finance.manager@caldera", "note": note})
     return rows
+
+
+# Finance's acts on the assumptions: an amendment is a value from a period on one version, never an edit of the value in
+# force; the latest act per version × assumption × period stands, and runs until the next one starts
+ASSUMPTION_AMEND_COLUMNS = ["amend_id", "version_id", "assumption_code", "valid_from", "value", "note", "entered_by", "entered_on"]
+
+
+def assumption_amendments(latest_closed: str) -> list[dict]:
+    """One amendment on the latest view, as Finance placed it this cycle: the energy index from the period the new contract
+    starts (January 2027). Nothing calculated reads the energy index yet — the standard it values is not built."""
+    return [{"amend_id": "AA-00001", "version_id": f"LV-{latest_closed}", "assumption_code": "ENERGY_IDX", "valid_from": "2027P07", "value": 108.0,
+             "note": "new energy contract from 1 January 2027", "entered_by": "finance.manager@caldera", "entered_on": "2026-11-02T10:00:00"}]

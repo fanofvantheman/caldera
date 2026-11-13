@@ -6,11 +6,17 @@
    have no quantity and sit in the long form. */
 MODEL (name plan.demand_financialised, kind FULL, grain (version_id, layer_no, line_source, effect_type, material_code, ship_to_code, week_id),
        audits (every_cell_priced, gross_to_net_identity));
-WITH fx AS (
+WITH fx_version AS (                -- the version's own value: a period outside its horizon (a closed one) reads it
   SELECT version_id, MAX(CASE WHEN assumption_code = 'FX_AUDUSD' THEN value END) AS aud_usd,
          MAX(CASE WHEN assumption_code = 'RETURNS_RATE' THEN value END) AS returns_rate,
          MAX(CASE WHEN assumption_code = 'CLAIMS_RATE' THEN value END) AS claims_rate
   FROM dims.reg_assumption WHERE period = 'ALL' GROUP BY version_id
+),
+fx_period AS (                       -- in force in the period, amendments included (plan.assumption_in_force)
+  SELECT version_id, period, MAX(CASE WHEN assumption_code = 'FX_AUDUSD' THEN value END) AS aud_usd,
+         MAX(CASE WHEN assumption_code = 'RETURNS_RATE' THEN value END) AS returns_rate,
+         MAX(CASE WHEN assumption_code = 'CLAIMS_RATE' THEN value END) AS claims_rate
+  FROM plan.assumption_in_force GROUP BY version_id, period
 ),
 terms AS (
   SELECT t.account_code, w.week_id,
@@ -29,15 +35,16 @@ promo AS (
 ),
 valued AS (
   SELECT s.*, a.price_list, p.currency, p.price_event,
-         CASE p.currency WHEN 'USD' THEN p.price_per_case / NULLIF(f.aud_usd, 0) ELSE p.price_per_case END AS list_price,
+         CASE p.currency WHEN 'USD' THEN p.price_per_case / NULLIF(COALESCE(fp.aud_usd, f.aud_usd), 0) ELSE p.price_per_case END AS list_price,
          COALESCE(t.standing_discount_rate, 0) AS standing_discount_rate, COALESCE(t.retro_rebate_rate, 0) AS retro_rebate_rate,
          COALESCE(t.volume_rebate_accrual_rate, 0) AS volume_rebate_accrual_rate, COALESCE(t.warehouse_allowance_rate, 0) AS warehouse_allowance_rate,
          COALESCE(t.settlement_discount_rate, 0) AS settlement_discount_rate,
          COALESCE(pr.tpr_per_case, 0) AS tpr_per_case, COALESCE(pr.scan_per_case, 0) * a.supplies_scan_data::INT AS scan_per_case, pr.event_ids,
-         COALESCE(f.returns_rate, 0) AS returns_rate, COALESCE(f.claims_rate, 0) AS claims_rate
+         COALESCE(fp.returns_rate, f.returns_rate, 0) AS returns_rate, COALESCE(fp.claims_rate, f.claims_rate, 0) AS claims_rate
   FROM plan.demand_stack s
   JOIN dims.dim_account a ON a.account_code = s.account_code
-  LEFT JOIN fx f ON f.version_id = s.version_id
+  LEFT JOIN fx_version f ON f.version_id = s.version_id
+  LEFT JOIN fx_period fp ON fp.version_id = s.version_id AND fp.period = s.period
   LEFT JOIN plan.price_in_force p ON p.price_list = a.price_list AND p.material_code = s.material_code AND p.week_id = s.week_id
   LEFT JOIN terms t ON t.account_code = s.account_code AND t.week_id = s.week_id
   LEFT JOIN promo pr ON pr.version_id = s.version_id AND pr.material_code = s.material_code AND pr.account_code = s.account_code AND pr.week_id = s.week_id

@@ -115,7 +115,11 @@ def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], ver
                    union all select 'cases_made_' || r.plant, d.period, sum(d.cases) from {T('plan.demand_financialised')} d join {plant} r using (material_code)
                              where d.version_id = '{v}' and d.period in ({pinn}) group by all""")
     driver_plan = {(d["driver"], d["period"]): float(d["q"] or 0) for d in dp}
-    cpi = fetch(f"select value from {T('dims.reg_assumption')} where assumption_code = 'CPI' and version_id = '{v}'")
+    # CPI in force at the first period the schedule plans (amendments included) — one index for its twelve periods; the
+    # version's own value where it plans none
+    first = periods[0] if periods else (ver.get("horizon_start") or "")
+    cpi = fetch(f"select value from {T('plan.assumption_in_force')} where assumption_code = 'CPI' and version_id = '{v}' and period = '{first}'") or \
+        fetch(f"select value from {T('dims.reg_assumption')} where assumption_code = 'CPI' and version_id = '{v}' and period = 'ALL'")
     inp = Inputs(version, is_open, periods, window, fy_of, prior, lines, actual, driver_plan, driver_actual, 1 + float(cpi[0]["value"] if cpi else 0))
     if labour:
         for r in fetch(f"""select entity_code, cost_centre_code, account_code, period, sum(amount) amount from {T('plan.labour_cost')}

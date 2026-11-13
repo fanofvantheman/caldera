@@ -169,7 +169,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   by the model behind it or by a Finance assumption, declared per step; Caldera fills the first three from the model and
   says *not yet filled* for the rest; beneath, fed or built per account × material) and beside it **how each figure is
   calculated** (the measure register: every grid a person types into, each figure's rule in words — how it is set, how it
-  adds up at a total, how a figure typed at a total spreads, who types it), the rungs named but not yet built
+  adds up at a total, how a figure typed at a total spreads, who types it) and the **assumptions** (the one set every
+  plan on a version is valued with — AUD/USD, CPI, the wage and commodity indices, returns and claims — by period, the
+  reference version's beneath each, and beside each what reads it; Finance amends one as a value from a period, through the
+  landing, in force after the next run, and the plan valued and the opex schedule read it by period), the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
   whoever holds `run.plan`, the log kept; under **Set-up** the **cost centres** — two legal entities, each on its
   own ledger with its own cost centres (Caldera Foods; Riverbend Fruit Co, the Loxton business bought at the start of

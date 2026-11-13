@@ -158,3 +158,7 @@ AUDIT (name labour_model_declared);
 /* blocking: one model per cost centre — a line from the other model than the one declared is not taken, and a cost
    centre never carries both */
 SELECT version_id, cost_centre_code, period FROM @this_model GROUP BY ALL HAVING COUNT(DISTINCT model) > 1;
+
+AUDIT (name one_value_per_period);
+/* blocking: an assumption has one value in a period on a version — two would value the same plan two ways */
+SELECT version_id, assumption_code, period FROM @this_model GROUP BY ALL HAVING COUNT(*) > 1;
