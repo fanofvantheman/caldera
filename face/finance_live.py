@@ -18,11 +18,22 @@ from chassis import CONFIG
 from chassis.warehouse import q
 from chassis.working import Copies
 
-from calc.finance import MEASURES, TOLERANCE, Grid, aggregate
+from calc.finance import NEGLIGIBLE, Grid, aggregate, rules_from
 
 COPIES = Copies()
 _BASE: dict[str, tuple[tuple, Grid]] = {}
-_BASE_LOCK = threading.Lock()
+_BASE_LOCK = threading.RLock()
+_RULES: dict = {}
+
+
+def rules() -> dict:
+    """The finance grid's rows of the measure register, as the last run left it — the rules the run applied to the plan
+    every working copy starts from. Read once per run."""
+    stamp = CONFIG.db.stat().st_mtime if CONFIG.db.exists() else 0
+    with _BASE_LOCK:
+        if _RULES.get("stamp") != stamp:
+            _RULES.update(stamp=stamp, rules=rules_from(q("select * from plan.ref_grid_measure order by grid, ord")))
+        return _RULES["rules"]
 
 
 def _structures() -> tuple[dict, dict, dict, dict]:
@@ -63,7 +74,7 @@ def base(version: str, landing) -> tuple[tuple, Grid]:
         acc, mat, declared, fy_of = _structures()
         def source_of(a: str, m: str) -> str:
             return declared.get((a, m)) or declared.get((a, "ALL")) or "fed"
-        g = Grid(acc, mat, source_of, fy_of).from_plan(q("select * from plan.finance_plan where version_id = ?", version))
+        g = Grid(acc, mat, source_of, fy_of, rules()).from_plan(q("select * from plan.finance_plan where version_id = ?", version))
         figures, cells = _pending_rows(landing, version)
         g.replay(figures, cells)
         _BASE[version] = (stamp, g)
@@ -96,6 +107,7 @@ class WorkingCopy:
     typed: list[Typed] = field(default_factory=list)
     touched: dict[str, set] = field(default_factory=lambda: defaultdict(set))
     n: int = 0
+    base: Grid | None = None                     # the shared plan this copy was made from: what "unsaved" is read against
 
     def unsaved(self) -> bool:
         return bool(self.typed)
@@ -109,9 +121,9 @@ def working_copy(who: str, version: str, landing, create: bool = False) -> Worki
         return None
     stamp, g = base(version, landing)
     if wc is None:
-        return COPIES.open(who, key, lambda: WorkingCopy(version, stamp, g.copy()))
+        return COPIES.open(who, key, lambda: WorkingCopy(version, stamp, g.copy(), base=g))
     if wc.stamp != stamp:                        # a run since: the same figures, their cells put again on the new plan
-        wc.grid, wc.stamp, wc.touched = g.copy(), stamp, defaultdict(set)
+        wc.grid, wc.stamp, wc.touched, wc.base = g.copy(), stamp, defaultdict(set), g
         for t in wc.typed:
             for a, m, x, _ in t.cells:
                 key_ = (version, a, m, t.period)
@@ -119,7 +131,7 @@ def working_copy(who: str, version: str, landing, create: bool = False) -> Worki
                     src = wc.grid.source_of(a, m)
                     wc.grid.start(key_, src, 0.0 if src == "fed" else None, 0.0 if src == "fed" else None)
                 wc.grid.put(key_, t.measure, x, t.edit_id)
-                _touch(wc, key_, t.measure)
+                _touch(wc, g, key_, t.measure)
     return wc
 
 
@@ -127,10 +139,13 @@ def discard(who: str, version: str) -> bool:
     return COPIES.drop(who, ("finance", version))
 
 
-def _touch(wc: WorkingCopy, key: tuple, measure: str) -> None:
+def _touch(wc: WorkingCopy, base_grid: Grid, key: tuple, measure: str) -> None:
+    """Mark the cell unsaved for the measure typed and for every other figure of it that now differs from the plan as
+    saved — the calculated ones the typed figure moved."""
     wc.touched[measure].add(key)
-    for m, r in MEASURES.items():
-        if r["formula"] and measure in r["formula"][1:]:
+    was, now = base_grid.cells.get(key) or {}, wc.grid.cells[key]
+    for m, r in wc.grid.rules.items():
+        if m != measure and was.get(r["field"]) != now.get(r["field"]):
             wc.touched[m].add(key)
 
 
@@ -141,7 +156,7 @@ def node_value(grid: Grid, version: str, customer: str, material: str, period: s
         cells = [c for c in cells if c["source"] == "fed"]
         if not cells:
             return None
-    return aggregate(cells, measure, source)
+    return aggregate(cells, measure, grid.rules, source)
 
 
 def type_figure(wc: WorkingCopy, customer: str, material: str, period: str, measure: str, value: float) -> Typed | None:
@@ -149,18 +164,18 @@ def type_figure(wc: WorkingCopy, customer: str, material: str, period: str, meas
     and nothing is recorded — when the node already reads the figure or has nothing beneath it in that period."""
     g, v = wc.grid, wc.version
     now = node_value(g, v, customer, material, period, measure)
-    if now is not None and abs(now - value) < TOLERANCE[measure]:
+    if now is not None and abs(now - value) < NEGLIGIBLE[g.rules[measure]["shown_as"]]:
         return None
     if not g.scope(v, customer, material, period) and not g.at_grain(customer, material):
         return None
     src_then = node_value(g, v, customer, material, period, measure, source=True)
     wc.n += 1
     t = Typed(wc.n, customer, material, period, measure, value, src_then, dt.datetime.now().isoformat(timespec="seconds"))
-    sf = MEASURES[measure]["source_field"]
+    sf = g.rules[measure]["source_field"]
     written = g.type(v, customer, material, period, measure, value, t.edit_id)
     t.cells = [(k[1], k[2], x, g.cells[k][sf] if g.cells[k]["source"] == "fed" else None) for k, x in written]
     for k, _ in written:
-        _touch(wc, k, measure)
+        _touch(wc, wc.base or g, k, measure)
     # the same node, period and measure typed again: the earlier figure's cells are all overwritten — keep the later only
     wc.typed = [e for e in wc.typed if (e.customer, e.material, e.period, e.measure) != (customer, material, period, measure)]
     wc.typed.append(t)

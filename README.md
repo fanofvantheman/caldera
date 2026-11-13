@@ -18,6 +18,10 @@ uv run python -m face --skin         # the same face in a specimen client's colo
 
 GitHub Actions runs the same three steps on every push and prints what the room would read.
 
+With the warehouse built, `uv run python -m tests.measure_register` checks that the measure register and the finance
+calculation agree (read only), and `uv run python -m tests.finance_working_copy` types into the finance grid through the
+app, saves, and checks the plan after the run equals what the grid showed (it removes what it wrote).
+
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
 (`rm -f data/*.duckdb && rm -rf data/.dlt`, then load and plan) — the runner always starts clean.
@@ -127,27 +131,35 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   read both ways. The **mapping review** lists the codes waiting for a person, lowest confidence
   first: accept, or alter to another of ours with a reason (or map a code nobody proposed); a held event enters on the
   first run after. Held, refused and to-review rows reach trade marketing through My attention. The terms register (terms grouped by account with every attribute, and each co-op envelope as committed, drawn by the events in the calendar, and remaining; **price lists** with the accounts on each, the price before and in force per material and the dated increase events) — read by every planner, amended only by whoever holds the register's maintain verb (Finance): an amendment or a price change is a new row from a date, never an edit of the row in force,
-  the versions, the **revenue forecast** under financial planning (net sales by fiscal year across its periods, per week —
-  invoiced, the latest view and its reference laid over one another, last year faint; read against the reference only on
-  the periods both value, with the gap by period; at the plan or any node of either structure, the level below as a split;
-  and beneath it the **financial forecast**: Finance's own volume × price = revenue at account × material × period, on a
-  grid — the material structure down (a node and the level beneath it), periods across, cases, net per case and net sales
-  per row — read three ways: Finance's plan with the demand plan under every figure, the demand plan, and the variance.
-  Finance types volume and price at any node (all, a unit or an account × any material node) in open periods, and the
-  grid recalculates on Enter or Tab with no run — totals above, children beneath, revenue, the variance and the year — in
-  a working copy that is Finance's alone until saved (hatched as unsaved, kept while they move about the grid, dropped by
-  Discard, lost on a restart); a volume at a node is written down to its children by the demand plan's shape at the
-  moment it is typed, a price moves every price beneath by one proportion so the node's calculated price is what was
-  typed, and the last figure typed wins at every level. Save asks one reason, writes one file — each figure as typed and
-  where, and the cells it wrote — and carries it into the plan with the run scoped to Finance's part. The app and the
-  model call the same function (`calc/finance.py`). A figure holds its value against the demand plan, the variance moves
-  when the demand plan moves, and a figure whose demand plan has moved since it was typed is marked. Fed or built is declared per account ×
-  material: Export and three foodservice cans at Bradfield are built by Finance, with nothing beneath; the rest is fed.
-  It never enters the demand stack or the gross-to-net), **where each number comes from** under financial planning (the chain —
+  the versions, the **financial forecast** under financial planning — one entry with a tab per measure, *Volume · Price ·
+  Revenue · Cost of goods · Margin*, then *Versions*. Each measure tab is the same grid — the material structure down (a
+  node and the level beneath it), periods across, one measure per row (cost of goods and margin with the lines they are
+  calculated from above them) — read three ways: Finance's plan with the demand plan under every figure, the demand plan,
+  and the variance. Finance types volume on its tab and price on its tab, at any node (all, a unit or an account × any
+  material node) in open periods, and the grid recalculates on Enter or Tab with no run — totals above, children beneath,
+  revenue, the variance and the year — in a working copy that is Finance's alone until saved (hatched as unsaved, the
+  same on every tab, kept while they move about, dropped by Discard, lost on a restart); a volume at a node is written
+  down to its children by the demand plan's shape at the moment it is typed, a price moves every price beneath by one
+  proportion so the node's calculated price is what was typed, and the last figure typed wins at every level. Save asks
+  one reason, writes one file — each figure as typed and where, and the cells it wrote — and carries it into the plan
+  with the run scoped to Finance's part. The app and the model call the same function (`calc/finance.py`), which reads
+  its rules — how each measure adds up at a total, how a figure typed at a total spreads, who types it — from the
+  measure register `plan.ref_grid_measure`; the formulas (revenue = volume × price, cost of goods = volume × standard
+  cost, margin = revenue − cost of goods) are written in the function and checked against the register's words by
+  `tests/measure_register.py`. Cost of goods and margin are empty and say why: Caldera has no standard cost per case yet.
+  A figure holds its value against the demand plan, the variance moves when the demand plan moves, and a figure whose
+  demand plan has moved since it was typed is marked. Fed or built is declared per account × material: Export and three
+  foodservice cans at Bradfield are built by Finance, with nothing beneath; the rest is fed. *Versions* is net sales by
+  fiscal year across its periods, per week — invoiced, the latest view and its reference laid over one another, last year
+  faint; read against the reference only on the periods both value, with the gap by period; at the plan or any node of
+  either structure, the level below as a split.
+  Finance's plan never enters the demand stack or the gross-to-net; **where each number comes from** under financial planning (the chain —
   volume, price and terms,
   promotions, delivery, cost of goods, inventory, labour, opex, capital, non-operating, balance sheet — each step filled
   by the model behind it or by a Finance assumption, declared per step; Caldera fills the first three from the model and
-  says *not yet filled* for the rest; beneath, fed or built per account × material), the rungs named but not yet built
+  says *not yet filled* for the rest; beneath, fed or built per account × material) and beside it **how each figure is
+  calculated** (the measure register: every grid a person types into, each figure's rule in words — how it is set, how it
+  adds up at a total, how a figure typed at a total spreads, who types it), the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
   whoever holds `run.plan`, the log kept; and under Admin the **structures as loaded** — read-only: each structure's
   system, its latest load and the one before, what changed between them, the members not yet fit to plan with whom to

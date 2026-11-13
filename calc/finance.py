@@ -1,4 +1,5 @@
-"""Finance's plan at its grain — account × material × period: volume, price and revenue, with the demand plan beneath.
+"""Finance's plan at its grain — account × material × period: volume, price and revenue, with the demand plan beneath;
+cost of goods and margin where a standard cost per case is known.
 
 Written once, called from two places:
 
@@ -11,67 +12,57 @@ grain), so what the grid shows before a save is what the run makes of it after. 
 spread at the moment of typing and kept as that spread: the parent is then the sum of its children, a later figure
 anywhere beneath or above simply overwrites the cells it reaches, and the mix is fixed as it was when typed.
 
-How each measure is set, read at a node above the grain, and spread when typed there is declared once, in MEASURES;
-the code below reads its roll-up, its breakback and its formula from there.
+The rules are a register, `plan.ref_grid_measure`, which both callers read from the warehouse and hand to the grid
+(`rules_from`). The grid obeys its settings — how a figure reads at a total (`rollup`), how one typed at a total spreads
+(`breakback`) and so which figures are typed — and keeps no copy of them. The formulas are not read from the register:
+they are written below, in `_revalue`, and `tests/measure_register.py` checks them against the register's words.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Callable, Iterable
 
-# ---- the rules, one row per measure ----
-# set        — how a value at the grain comes to be (words for a reader)
-# aggregate  — how it reads at a node above the grain (words); `rollup` is the same rule as the code reads it:
-#              ("sum",) — the sum of the children; ("ratio", a, b) — the node's a ÷ the node's b, never stored
-# spread     — what a figure typed at a node does beneath it (words); `breakback` is the same rule as the code reads it:
-#              "source_shape" — split by the source's values beneath (the cell's own where nothing feeds it), evenly
-#              where they are all zero; "proportional" — every value beneath moves by one factor so the node reads what
-#              was typed, a cell with no value taking the typed one; None — not typed
-# formula    — a measure that is calculated at the grain from two others: ("product", a, b)
-MEASURES: dict[str, dict] = {
-    "volume": {
-        "label": "cases", "field": "cases", "source_field": "source_cases",
-        "set": "typed, or from the source: the demand plan's cases",
-        "aggregate": "the sum of its children", "rollup": ("sum",),
-        "spread": "by the source's volumes beneath it (Finance's own where built); evenly where they are all zero", "breakback": "source_shape",
-        "formula": None,
-    },
-    "price": {
-        "label": "net / case", "field": "price", "source_field": "source_price",
-        "set": "typed, or from the source: the demand plan's net sales ÷ its cases",
-        "aggregate": "calculated: revenue ÷ volume", "rollup": ("ratio", "revenue", "volume"),
-        "spread": "proportionally: every price beneath moves by one factor, so the node reads what was typed; a cell with no price takes it",
-        "breakback": "proportional", "formula": None,
-    },
-    "revenue": {
-        "label": "net sales", "field": "net_sales", "source_field": "source_net_sales",
-        "set": "calculated: volume × price — the demand plan's own net sales where nothing has been typed",
-        "aggregate": "the sum of its children", "rollup": ("sum",),
-        "spread": "not typed", "breakback": None,
-        "formula": ("product", "volume", "price"),
-    },
-}
-TYPED = [m for m, r in MEASURES.items() if r["breakback"]]                  # the measures a person types
-TOLERANCE = {"volume": 0.5, "price": 0.005}                                  # half a case, half a cent: a figure that changes nothing
+ROLLUPS = ("sum", "ratio")
+BREAKBACKS = ("source_shape", "proportional", None)
+NEGLIGIBLE = {"count": 0.5, "rate": 0.005, "money": 0.005}    # half a case, half a cent: a figure that changes nothing
 
 COLUMNS = ["version_id", "account_code", "material_code", "period", "fiscal_year", "source", "source_cases", "source_net_sales",
-           "source_price", "cases", "price", "net_sales", "volume_edit_id", "price_edit_id"]
+           "source_price", "cases", "price", "net_sales", "std_cost", "cogs", "margin", "volume_edit_id", "price_edit_id"]
 
 Key = tuple   # (version, account, material, period)
+Rules = dict  # measure → its register row
 
 
-def aggregate(cells: Iterable[dict], measure: str, source: bool = False) -> float | None:
-    """A measure read at a node: the cells beneath it rolled up by the measure's declared rule."""
-    rule = MEASURES[measure]["rollup"]
+def rules_from(rows: Iterable[dict], grid: str = "finance") -> Rules:
+    """The register's rows for one grid, in order, keyed by measure — checked for settings the grid knows."""
+    out = {r["measure"]: dict(r) for r in sorted((r for r in rows if r["grid"] == grid), key=lambda r: r["ord"])}
+    for m, r in out.items():
+        if r["rollup"] not in ROLLUPS or r["breakback"] not in BREAKBACKS:
+            raise ValueError(f"{grid}.{m}: roll-up {r['rollup']!r} / spread {r['breakback']!r} is not one the calculation knows")
+        if r["rollup"] == "ratio" and (r["rollup_num"] not in out or r["rollup_den"] not in out):
+            raise ValueError(f"{grid}.{m}: a ratio of {r['rollup_num']} ÷ {r['rollup_den']}, which are not measures of the grid")
+    if not out:
+        raise ValueError(f"no measures registered for the {grid} grid")
+    return out
+
+
+def typed(rules: Rules) -> list[str]:
+    """The measures a person types: those with a spread."""
+    return [m for m, r in rules.items() if r["breakback"]]
+
+
+def aggregate(cells: Iterable[dict], measure: str, rules: Rules, source: bool = False) -> float | None:
+    """A measure read at a node: the cells beneath it rolled up by the measure's registered rule."""
+    r = rules[measure]
     cells = cells if isinstance(cells, list) else list(cells)
-    if rule[0] == "sum":
-        f = MEASURES[measure]["source_field" if source else "field"]
+    if r["rollup"] == "sum":
+        f = r["source_field" if source else "field"]
+        if not f:
+            return None
         vals = [c[f] for c in cells if c.get(f) is not None]
         return sum(vals) if vals else None
-    if rule[0] == "ratio":
-        a, b = aggregate(cells, rule[1], source), aggregate(cells, rule[2], source)
-        return a / b if a is not None and b not in (None, 0) else None
-    raise ValueError(f"unknown roll-up {rule!r} for {measure}")
+    a, b = aggregate(cells, r["rollup_num"], rules, source), aggregate(cells, r["rollup_den"], rules, source)
+    return a / b if a is not None and b not in (None, 0) else None
 
 
 class Grid:
@@ -79,20 +70,22 @@ class Grid:
     from until it writes one — a person's working copy costs only the cells they have changed."""
 
     def __init__(self, accounts_under: dict[str, set], materials_under: dict[str, set], source_of: Callable[[str, str], str],
-                 fy_of: dict[str, int]):
+                 fy_of: dict[str, int], rules: Rules):
         self.accounts_under, self.materials_under, self.source_of, self.fy_of = accounts_under, materials_under, source_of, fy_of
+        self.rules = rules
         self.cells: dict[Key, dict] = {}
         self.by_period: dict[tuple, list[Key]] = defaultdict(list)    # (version, period) → its cells, for scope matching
         self._owned: set | None = None                                  # None: every cell is this grid's own
 
     # ---- building ----
     def start(self, key: Key, src: str, source_cases: float | None, source_net_sales: float | None, **now) -> dict:
-        """A cell. Fed: the source is the demand plan valued and the cell starts as it. Built: no source."""
+        """A cell. Fed: the source is the demand plan valued and the cell starts as it. Built: no source. The standard cost
+        per case comes from the cost of goods step's source, which Caldera has not built: none, unless given."""
         price = source_net_sales / source_cases if source_cases not in (None, 0) and source_net_sales is not None else None
         c = {"version_id": key[0], "account_code": key[1], "material_code": key[2], "period": key[3], "fiscal_year": self.fy_of.get(key[3]),
              "source": src, "source_cases": source_cases, "source_net_sales": source_net_sales, "source_price": price,
              "cases": source_cases if source_cases is not None else 0.0, "price": price, "net_sales": source_net_sales,
-             "volume_edit_id": None, "price_edit_id": None}
+             "std_cost": None, "cogs": None, "margin": None, "volume_edit_id": None, "price_edit_id": None}
         c.update(now)
         self.cells[key] = c
         if self._owned is None:
@@ -120,7 +113,7 @@ class Grid:
         return self
 
     def copy(self) -> "Grid":
-        g = Grid(self.accounts_under, self.materials_under, self.source_of, self.fy_of)
+        g = Grid(self.accounts_under, self.materials_under, self.source_of, self.fy_of, self.rules)
         g.cells, g.by_period, g._owned = dict(self.cells), dict(self.by_period), set()
         return g
 
@@ -146,29 +139,32 @@ class Grid:
         return list(zip(keys, values))
 
     def breakback(self, keys: list[Key], measure: str, value: float) -> list[float]:
-        rule, f = MEASURES[measure]["breakback"], MEASURES[measure]["field"]
+        r = self.rules[measure]
+        rule, f = r["breakback"], r["field"]
         cells = [self.cells[k] for k in keys]
         if not cells:
             return []
-        if rule == "source_shape":
-            sf = MEASURES[measure]["source_field"]
-            w = [max((c[sf] if c["source"] == "fed" else c[f]) or 0.0, 0.0) for c in cells]
+        if rule is None:
+            raise ValueError(f"{measure} is not typed")
+        if rule == "source_shape" or (rule == "proportional" and r["rollup"] == "sum"):
+            # by the source's figures beneath (the cell's own where nothing feeds it), or proportionally — by the figures
+            # standing now; evenly where they are all zero
+            sf = r["source_field"] if rule == "source_shape" else None
+            w = [max(((c[sf] if (sf and c["source"] == "fed") else c[f]) or 0.0), 0.0) for c in cells]
             W = sum(w)
             return [value * (wi / W if W > 0 else 1 / len(cells)) for wi in w]
-        if rule == "proportional":
-            _, num, den = MEASURES[measure]["rollup"]               # a ratio: num ÷ den at the node, so den weighs each cell
-            df = MEASURES[den]["field"]
-            priced = [c for c in cells if c[f] is not None]
-            wd = sum(c[df] or 0.0 for c in priced)
-            wn = sum((c[df] or 0.0) * c[f] for c in priced)
-            k = value * wd / wn if wd > 0 and wn > 0 else None
-            return [c[f] * k if (k is not None and c[f] is not None) else value for c in cells]
-        raise ValueError(f"{measure} is not typed")
+        # proportional on a ratio: num ÷ den at the node, so den weighs each cell; one factor moves every figure beneath
+        df = self.rules[r["rollup_den"]]["field"]
+        priced = [c for c in cells if c[f] is not None]
+        wd = sum(c[df] or 0.0 for c in priced)
+        wn = sum((c[df] or 0.0) * c[f] for c in priced)
+        k = value * wd / wn if wd > 0 and wn > 0 else None
+        return [c[f] * k if (k is not None and c[f] is not None) else value for c in cells]
 
     def put(self, key: Key, measure: str, value: float, edit_id: str) -> dict:
         """A value at the grain: it stands, and the calculated measures follow."""
         c = self._own(key)
-        c[MEASURES[measure]["field"]] = value
+        c[self.rules[measure]["field"]] = value
         c[f"{measure}_edit_id"] = edit_id
         self._revalue(c)
         return c
@@ -195,14 +191,15 @@ class Grid:
             self._owned.add(key)
         return self.cells[key]
 
-    def _revalue(self, c: dict) -> None:
-        untouched = all(c.get(f"{m}_edit_id") is None for m in TYPED)
-        for m, r in MEASURES.items():
-            if not r["formula"]:
-                continue
-            op, a, b = r["formula"]
-            if untouched and c["source"] == "fed":
-                c[r["field"]] = c[r["source_field"]]                   # exactly the demand plan valued, even where it has no cases
-                continue
-            x, y = c[MEASURES[a]["field"]], c[MEASURES[b]["field"]]
-            c[r["field"]] = x * y if (op == "product" and x is not None and y is not None) else None
+    @staticmethod
+    def _revalue(c: dict) -> None:
+        """The formulas — written here, once; the register states each in words (formula_says) and a test holds the two
+        together. Revenue = volume × price, except that a fed cell nothing has been typed on is exactly the demand plan
+        valued, even where it has no cases. Cost of goods = volume × standard cost; margin = revenue − cost of goods."""
+        if c.get("volume_edit_id") is None and c.get("price_edit_id") is None and c["source"] == "fed":
+            c["net_sales"] = c["source_net_sales"]
+        else:
+            c["net_sales"] = c["cases"] * c["price"] if c["cases"] is not None and c["price"] is not None else None
+        std = c.get("std_cost")
+        c["cogs"] = c["cases"] * std if std is not None and c["cases"] is not None else None
+        c["margin"] = c["net_sales"] - c["cogs"] if c["net_sales"] is not None and c["cogs"] is not None else None

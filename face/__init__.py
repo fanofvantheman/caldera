@@ -34,6 +34,7 @@ READ = ["read.plan"]
 ENTER = [f"layer.{n}.enter" for n in (1, 2, 4, 6, 7, 8, 9)]
 HEALTH = "plan.run_health"      # one row per worklist; every worklist row carries `whose`
 RUNG = "plan.rung"
+FIN_READ = ["register.assumptions.maintain", "overlay.finance.enter", "read.proof"]
 
 # ---- the processes in play: a register, not a menu ----
 PROCESSES = [
@@ -83,10 +84,19 @@ PROCESSES = [
             Section("landed", "Landed cost", RUNG, {"slug": "landed"}, verbs=["register.supplier_price_list.maintain", "register.freight_contract.maintain", "register.hedge_book.maintain", "register.customs.maintain"]),
         ]),
         Area("sources", "Sources", [
-            Section("slots", "Where each number comes from", "plan.slots", verbs=["register.assumptions.maintain", "overlay.finance.enter", "read.proof"]),
+            Section("slots", "Where each number comes from", "plan.slots", verbs=FIN_READ),
+            Section("rules", "How each figure is calculated", "plan.rules", verbs=FIN_READ),
         ]),
         Area("statements", "Planned statements", [
-            Section("revenue", "Revenue forecast", "plan.revenue", verbs=["register.assumptions.maintain", "overlay.finance.enter", "read.proof"]),
+            # the financial forecast: one tab per measure of the register, each a view of the same working copy, then the
+            # versions laid over one another in net sales
+            Section("revenue", "Financial forecast", "plan.revenue", tabs=[
+                Tab("fin_volume", "Volume", "plan.revenue", {"measure": "volume"}, verbs=FIN_READ),
+                Tab("fin_price", "Price", "plan.revenue", {"measure": "price"}, verbs=FIN_READ),
+                Tab("fin_revenue", "Revenue", "plan.revenue", {"measure": "revenue"}, verbs=FIN_READ),
+                Tab("fin_cogs", "Cost of goods", "plan.revenue", {"measure": "cogs"}, verbs=FIN_READ),
+                Tab("fin_margin", "Margin", "plan.revenue", {"measure": "margin"}, verbs=FIN_READ),
+                Tab("fin_versions", "Versions", "plan.revenue_versions", verbs=FIN_READ)]),
             Section("pnl", "P&L plan", RUNG, {"slug": "pnl"}, verbs=["register.assumptions.maintain", "register.timing_policy.maintain", "read.proof"]),
             Section("balance", "Balance sheet plan", RUNG, {"slug": "balance"}, verbs=["register.timing_policy.maintain", "read.proof"]),
             Section("capex", "Capital", RUNG, {"slug": "capex"}, verbs=["capex.project.enter", "capex.approve"]),
@@ -147,8 +157,8 @@ MAP_NODES = [
     Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),
     Node("accuracy", "read", "Forecast accuracy", "the plan judged as a forecast", "plan.accuracy"),
     Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
-    Node("revenue", "read", "Revenue forecast", "the versions over one another", "plan.revenue"),
-    Node("finance", "read", "Finance's plan", "volume × price, fed or built", "plan.revenue", anchor="finance"),
+    Node("revenue", "read", "Versions in net sales", "the versions over one another", "plan.revenue_versions"),
+    Node("finance", "read", "Financial forecast", "volume × price, fed or built", "plan.revenue"),
     Node("statements", "read", "Planned statements", "P&L and balance sheet", "plan.rung", {"slug": "pnl"}, built=False),
 ]
 # (from, to, what flows); a flow from the first band is a door — something made elsewhere taken in

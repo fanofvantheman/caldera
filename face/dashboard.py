@@ -221,7 +221,7 @@ def _points(keys, view, ref, py, X, Y, series) -> str:
 
 
 REVENUE_PAGE = """<form class="toolbar" method="get"><label>version<select name="version" onchange="this.form.submit()">{% for v in versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == version }}>{{ v.version_id }} · {{ v.status }}</option>{% endfor %}</select></label></form>
-<h1>Revenue forecast<small>{{ version }} · FY{{ fy }} · net sales invoiced, the latest view and {{ ref_id or 'no reference' }} laid over one another, per week</small></h1>
+<h1>Financial forecast<small>{{ version }} · FY{{ fy }} · net sales invoiced, the latest view and {{ ref_id or 'no reference' }} laid over one another, per week</small></h1>
 {% if years|length > 1 %}<nav class="tabs">{% for y in years %}<a href="{{ y.href }}" class="{{ 'active' if y.fy == fy }}">FY{{ y.fy }}</a>{% endfor %}</nav>{% endif %}
 <div class="cards tiles">
 <div class="card stat"><span>FY{{ fy }} latest view · AUD</span><b>{{ lfl.year|m }}</b><div class="small delta {{ d.py|dir }}">{% if lfl.py_year %}{{ d.py|pct }} vs FY{{ fy - 1 }} invoiced{% elif lfl.py_part %}FY{{ fy - 1 }} is still closing — no year to read against{% else %}no FY{{ fy - 1 }} invoiced to read against{% endif %}</div></div>

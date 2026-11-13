@@ -814,6 +814,11 @@ def slots() -> list[dict]:
     return q("select * from plan.ref_plan_slot order by ord")
 
 
+def grid_measures() -> list[dict]:
+    """The measure register: every grid a person types into, its measures and the rules behind each, in order."""
+    return q("select * from plan.ref_grid_measure order by grid, ord")
+
+
 # ---- the structures as loaded: read here, maintained in the client's systems ----
 
 def structure_loads() -> list[dict]:
