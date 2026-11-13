@@ -135,3 +135,13 @@ AUDIT (name finance_revenue_is_volume_times_price);
 /* blocking: in Finance's plan revenue is always volume × price at the grain */
 SELECT version_id, account_code, material_code, period, cases, price, net_sales FROM plan.finance_plan
 WHERE price IS NOT NULL AND ABS(net_sales - cases * price) > 0.01;
+
+AUDIT (name cost_centre_map_one_target);
+/* blocking: a ledger cost centre maps to one planning cost centre at a time (many to one, never one to many), and a
+   mapping names one of ours — an organisation cost centre, or one opened for it from the queue */
+SELECT a.entity_code, a.ledger_cost_centre, a.valid_from FROM @this_model a
+JOIN @this_model b ON a.entity_code = b.entity_code AND a.ledger_cost_centre = b.ledger_cost_centre AND a.valid_from < b.valid_from
+     AND (a.valid_to IS NULL OR a.valid_to >= b.valid_from)
+UNION ALL
+SELECT entity_code, ledger_cost_centre, valid_from FROM @this_model
+WHERE NOT target_known;

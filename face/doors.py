@@ -1,4 +1,5 @@
-"""The plan's doors on the chassis's one resolution model: the promotions system (TPM) and the forecasting system (FCS).
+"""The plan's doors on the chassis's one resolution model: the promotions system (TPM), the forecasting system (FCS) and
+the ledgers (GL — a ledger cost centre no mapping carries to one of the plan's).
 
 Every decision at either door is one row in one act register (`plan/reg_door_act`); what a person may decide about each
 kind of disagreement is reference data (`plan.ref_door_resolution`); each door's queue is a worklist in the chassis's
@@ -33,9 +34,10 @@ def _kinds() -> dict[str, dict[str, door.Kind]]:
 
 TPM = door.Door("TPM", "the promotions system", ACTS, lambda: _kinds().get("TPM", {}), _master)
 FCS = door.Door("FCS", "the forecasting system", ACTS, lambda: _kinds().get("FCS", {}), _master)
-DOORS = {"TPM": TPM, "FCS": FCS}
-QUEUES = {"TPM": "plan.worklist_promo_mapping_review", "FCS": "plan.worklist_forecast_queue"}
-PAGES = {"TPM": "plan.mapping", "FCS": "plan.forecast"}
+GL = door.Door("GL", "the ledgers", ACTS, lambda: _kinds().get("GL", {}), _master)
+DOORS = {"TPM": TPM, "FCS": FCS, "GL": GL}
+QUEUES = {"TPM": "plan.worklist_promo_mapping_review", "FCS": "plan.worklist_forecast_queue", "GL": "plan.worklist_cost_centre_unmapped"}
+PAGES = {"TPM": "plan.mapping", "FCS": "plan.forecast", "GL": "plan.cost_mapping"}
 # what of ours a resolution names → the list it must be one of
 TPM_SUBJECT = {"account": "customer", "promo group": "material", "mechanic": "mechanic", "funding type": "funding_type", "status": "status"}
 
@@ -54,6 +56,9 @@ def ours_list(names: str) -> list[dict]:
         return [{"code": t["code"], "label": t["description"]} for t in reads.mapping_targets(TPM_SUBJECT[names])]
     if names == "material":
         return [{"code": m["material_code"], "label": m["material_name"]} for m in reads.materials()]
+    if names == "planning cost centre":
+        return [{"code": c["cost_centre_code"], "label": c["cost_centre_name"]}
+                for c in q("select cost_centre_code, cost_centre_name from plan.planning_cost_centre where kind not in ('company', 'function') order by 1")]
     if names == "product":
         return [{"code": p["product_code"], "label": f"{p['category_name']} › {p['product_name']}"} for p in reads.products()]
     return []

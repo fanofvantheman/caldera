@@ -20,6 +20,7 @@ from .emit import emit_all, dataclass_rows
 from . import sender
 from . import forecaster
 from . import loads
+from . import costs
 
 FIRST_FY, LAST_FY, PLAN_FY = 2024, 2030, 2027   # the latest view rolls 36 periods from the cycle
 LATEST_CLOSED = "2027P04"          # the last closed period: October 2026
@@ -91,6 +92,9 @@ def main() -> None:
                                         f"LV-{LATEST_CLOSED}")       # after the last draw on rng above: it draws nothing
     plan.update({**fcst, "reg_door_act": plan["reg_door_act"] + fcst["reg_door_act"]})     # one act register for every door
     waiting = sender.next_export(events, {p["period"]: p["period_start"] for p in cal.periods(weeks)}, PLAN_FY)
+    periods = cal.periods(weeks)
+    tables.update(costs.reference(periods))           # the entities, their ledgers' cost centres, the mapping, the chart
+    history["cost_actual"] = costs.cost_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, args.seed)   # a stream of its own
     tables.update(loads.structure_loads(tables))        # the load before, and one member the client has not finished; draws nothing
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
     c = manifest["counts"]

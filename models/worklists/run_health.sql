@@ -26,4 +26,6 @@ FROM (
          'accept the proposal, or alter it to another of ours with a reason' FROM plan.worklist_promo_mapping_review
   UNION ALL SELECT 'forecast disagreements', 'plan.worklist_forecast_queue', 'ACTION', COUNT(*),
          'decide each on the statistical forecast page: the same as one of ours, placed, left out; keep our calculation, or zero' FROM plan.worklist_forecast_queue
+  UNION ALL SELECT 'ledger cost centres unmapped', 'plan.worklist_cost_centre_unmapped', 'ACTION', COUNT(*),
+         'decide each on the cost centres page: map it to one of ours, open a planning cost centre for it, or leave it out with a reason' FROM plan.worklist_cost_centre_unmapped
 ) w CROSS JOIN readers r

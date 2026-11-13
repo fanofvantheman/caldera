@@ -12,7 +12,8 @@ spaghetti, spreads, and part of the fruit hall) and Loxton in the Riverland, Sou
 hall and the snack cup hall). Canned fruit is made at both, each with its own lines, rates and capacity, so a DC can be
 served from the nearer plant or the further one. Three third-party DCs store and ship — Melbourne, Sydney and
 Brisbane — each replenished from both plants and each serving the customers' DCs in its own region; no customer is
-served direct from a plant. One reporting entity: the plants are a supply network, not a consolidation.
+served direct from a plant. One reporting entity for the plan's supply and revenue: the plants are a supply network,
+not a consolidation. The cost side has two legal entities (`costs.py`) — a dimension of the cost lines, not a consolidation.
 
 Everything here is deterministic and legible: the catalogue is built from a product × format × variant recipe, volume
 from a rank rule, ranging from the rank — no hand-typed rows beyond the products themselves. Figures are
@@ -637,7 +638,9 @@ LANES = [
 # Organisation — cost centres
 # ---------------------------------------------------------------------------------------------
 
-# code, name, parent, kind. One company: each plant's halls are cost centres under operations, not an entity.
+# code, name, parent, kind. The plan's cost centres — one normalised set over the two ledgers' own (`costs.py`): each plant's
+# halls are cost centres under operations, never an entity. Loxton's two halls are one, Loxton production, because the
+# Riverbend ledger has one production centre for both and the plan is no finer than the coarsest ledger can supply.
 COST_CENTRES = [
     ("CAL",        "Caldera Foods",                   "",        "company"),
     ("OPS",        "Operations",                      "CAL",     "function"),
@@ -647,8 +650,7 @@ COST_CENTRES = [
     ("CC_E_SPRD",  "Echuca spreads",                  "OPS",     "factory"),
     ("CC_E_MAINT", "Echuca engineering and maintenance", "OPS",  "factory"),
     ("CC_E_WHSE",  "Echuca warehouse",                "OPS",     "factory"),
-    ("CC_L_FRUIT", "Loxton fruit hall",               "OPS",     "factory"),
-    ("CC_L_CUPS",  "Loxton snack cup hall",           "OPS",     "factory"),
+    ("CC_L_PROD",  "Loxton production",               "OPS",     "factory"),
     ("CC_L_MAINT", "Loxton engineering and maintenance", "OPS",  "factory"),
     ("CC_L_WHSE",  "Loxton warehouse",                "OPS",     "factory"),
     ("CC_LOG",     "Logistics",                       "OPS",     "factory"),

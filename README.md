@@ -38,10 +38,13 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   South Australia (the rest of the fruit and the snack cups); canned fruit is made at both. Three 3PL stocking DCs —
   Melbourne, Sydney and Brisbane — are each replenished from both plants, so any DC can be served from the nearer plant
   or the further one at a dearer lane, and each serves the customers' DCs in its region (Perth from Melbourne); no
-  customer is served direct from a plant. One reporting entity.
+  customer is served direct from a plant. One reporting entity for supply and revenue; the cost side has two legal entities.
   `structures.py` is what Caldera makes, sells to, operates and is organised as, built from a product × format ×
   variant recipe;
   `calendar.py` the 4-4-5 trading calendar (fiscal year July–June, every week in exactly one period);
+  `costs.py` the cost side — the two legal entities, each ledger's cost centres, the mapping onto the plan's, the chart of
+  accounts, the drivers a cost line may declare, and the ledgers' actuals by entity × ledger cost centre × account ×
+  period (a random stream of its own, so nothing else moves);
   `history.py` three years of shipments by material × ship-to × week — each row with what it invoiced, gross at list and net
   sales, because history is revenue and units and price is the derived figure — the price lists, and what each earlier cycle's
   latest view said (the forecast snapshots accuracy is read from); `registers.py` the
@@ -161,7 +164,13 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   calculated** (the measure register: every grid a person types into, each figure's rule in words — how it is set, how it
   adds up at a total, how a figure typed at a total spreads, who types it), the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
-  whoever holds `run.plan`, the log kept; and under Admin the **structures as loaded** — read-only: each structure's
+  whoever holds `run.plan`, the log kept; under **Operating costs** the **cost centres** — two legal entities, each on its
+  own ledger with its own cost centres (Caldera Foods; Riverbend Fruit Co, the Loxton business bought at the start of
+  FY2026), read through one set of the plan's own: *Cost centres* (each of ours with the ledger cost centres mapped to it,
+  per entity, and the last twelve closed periods' actuals), *Entities and ledgers*, *Actuals* (by our cost centre or each
+  ledger's own × account × closed period) and the *Mapping review* — a ledger cost centre no mapping carries is an item on
+  the doors' one queue, decided as map to one of ours, open a planning cost centre for it, or leave out; intercompany
+  charges between the entities are left out and the pages say so; and under Admin the **structures as loaded** — read-only: each structure's
   system, its latest load and the one before, what changed between them, the members not yet fit to plan with whom to
   ask, the members held provisionally ahead of the client's master, and the open disagreements by door. The plan does
   not maintain master data; this is what it says about the state of what it was given. Every act writes a receipt under `data/receipts/`. What a page shows is what
@@ -195,7 +204,9 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
     status registers, each account's promotional week, the four structures as hierarchy
     bridges (material, customer, location, organisation), the bill of materials, routes, lanes, the capacity
     register, the assumptions register, roles and the entitlements derived from them
-  - `history/` shipments at week and period grain with gross and net sales invoiced, price lists, each earlier cycle's latest view at the plan's grain
+  - `dims/` also the cost side: the legal entities, each ledger's cost centres, the chart of accounts, the drivers, and
+    the cost centre mapping as loaded
+  - `history/` the ledgers' actuals (`cost_actual`); shipments at week and period grain with gross and net sales invoiced, price lists, each earlier cycle's latest view at the plan's grain
   - `plan/` the demand plan and its money: the category trend and the history shape fitted from cleansed
     shipments; the layer entries as filed and resolved to the grid; layer 1 computed for the open version and
     entered for the frozen one — the open version's baseline is `baseline_in_force`: our own calculation
@@ -211,7 +222,9 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
     and return (`promo_event_effect`); its lump sums — fixed fee, retail media, co-op drawdown — in the long form; the stack (every layer line, keyed by version and source); the unconstrained demand plan
     at storage grain and at the review's grain with each layer beside the total; the list price and terms in force
     by week; every line valued through the gross-to-net (wide, and long with each deduction's attributes); the
-    revenue bridge by layer; the gap to the version's reference; the plan judged as a forecast (`forecast_accuracy`:
+    revenue bridge by layer; the gap to the version's reference; the cost side's mapping in force (`cost_centre_map`, the
+    register with the ledgers' queue decisions), the plan's cost centres (`planning_cost_centre`) and the actuals read
+    through them (`cost_actual`, each row mapped, unmapped or left out); the plan judged as a forecast (`forecast_accuracy`:
     the snapshot `lag` periods before against shipments, at material × account × period, both structures beside)
 - `audits/` — the checks every model runs: every member reaches its root, every week in one period, exactly one
   open period, vocabularies, references resolve, one person does not both enter demand and enter the supply

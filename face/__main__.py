@@ -25,6 +25,7 @@ from . import promotions
 from . import forecast as fcst
 from . import doors
 from . import finance_live
+from . import costs
 
 plan = Blueprint("plan", __name__)
 
@@ -2364,6 +2365,10 @@ def run_now():
     ok = _run_plan(who, request.form.get("scope") or "")
     nxt = request.form.get("next") or ""
     return redirect(nxt if ok and nxt.startswith("/") and not nxt.startswith("//") else url_for("plan.run"))
+
+
+# the cost side's pages, in their own module, on this blueprint
+costs.register(plan, _page, _who, _ctx, _busy, session)
 
 
 def main() -> None:

@@ -40,6 +40,12 @@ REFERENCE = {
     "ref_lane": ("transit_days", "cost_per_pallet"),
     "ref_route": ("rate_cases_per_hour", "changeover_hours"),
     "dim_cost_centre": (),
+    # the cost side: the legal entities, each one's ledger cost centres, the mapping to the plan's, the chart, the drivers
+    "dim_entity": (),
+    "dim_ledger_cost_centre": (),
+    "reg_cost_centre_map": (),
+    "dim_gl_account": (),
+    "ref_cost_driver": ("ord",),
     "reg_capacity_machine": ("shifts", "working_days", "available_hours", "planned_downtime_hours", "efficiency_assumption"),
     "reg_assumption": ("value",),
     "ref_reason_code": (),
@@ -60,6 +66,7 @@ HISTORY = {
     "shipments": ("cases", "tonnes", "gross_sales", "net_sales"),
     "price_list": ("price_per_case",),
     "forecast_snapshot": ("lag", "cases"),
+    "cost_actual": ("amount",),
 }
 PLAN = {
     "layer_entry": ("layer_no", "value"),
@@ -76,7 +83,7 @@ PLAN = {
     "reg_finance_source": (),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
-           "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks"})
+           "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "ord"})
 
 
 def main() -> None:

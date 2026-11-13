@@ -3,7 +3,7 @@
    ours (if anything), whether it takes the proposal, whether it needs a reason, and the verb that lets a person make it.
    The promotions system's codes (door TPM) are one kind per subject: accept the proposal, or alter it to one of ours.
    The forecasting system's run (door FCS): a code in the run the plan has not got, and a series the plan has that the run
-   has not. A third door is a query that finds its disagreements and rows here. */
+   has not. The ledgers (door GL): a ledger cost centre no mapping carries to one of ours. A fourth door is a query that finds its disagreements and rows here. */
 MODEL (name plan.ref_door_resolution, kind FULL, grain (door, kind, resolution));
 SELECT * FROM (VALUES
   ('TPM', 'customer',     'Their planning account, not yet ours', 'every event that uses it is held', 'accept', 'Accept', 'accepted as', NULL, TRUE, FALSE, 'mapping.accept', 1),
@@ -20,5 +20,8 @@ SELECT * FROM (VALUES
   ('FCS', 'theirs_not_ours', 'In the run, not in the plan', 'held out of the plan', 'place_under', 'Place under a product', 'placed under', 'product', FALSE, TRUE, 'layer.1.enter', 12),
   ('FCS', 'theirs_not_ours', 'In the run, not in the plan', 'held out of the plan', 'leave_out', 'Leave out', 'left out', NULL, FALSE, TRUE, 'layer.1.enter', 13),
   ('FCS', 'ours_not_theirs', 'In the plan, not in the run', 'on our calculation', 'keep_ours', 'Keep our calculation', 'our calculation kept', NULL, FALSE, TRUE, 'layer.1.enter', 14),
-  ('FCS', 'ours_not_theirs', 'In the plan, not in the run', 'on our calculation', 'zero', 'Zero on purpose', 'zero on purpose', NULL, FALSE, TRUE, 'layer.1.enter', 15)
+  ('FCS', 'ours_not_theirs', 'In the plan, not in the run', 'on our calculation', 'zero', 'Zero on purpose', 'zero on purpose', NULL, FALSE, TRUE, 'layer.1.enter', 15),
+  ('GL', 'unmapped_cost_centre', 'A ledger cost centre with no planning cost centre', 'its actuals are outside the plan', 'map_to', 'Map to one of ours', 'mapped to', 'planning cost centre', FALSE, TRUE, 'register.cost_centre_map.maintain', 16),
+  ('GL', 'unmapped_cost_centre', 'A ledger cost centre with no planning cost centre', 'its actuals are outside the plan', 'open_new', 'Open a planning cost centre for it', 'opened as a planning cost centre of its own', NULL, FALSE, TRUE, 'register.cost_centre_map.maintain', 17),
+  ('GL', 'unmapped_cost_centre', 'A ledger cost centre with no planning cost centre', 'its actuals are outside the plan', 'leave_out', 'Leave out', 'left out of the plan', NULL, FALSE, TRUE, 'register.cost_centre_map.maintain', 18)
 ) AS t(door, kind, kind_says, meanwhile, resolution, label, says, names, takes_proposal, reason_required, verb, ord)

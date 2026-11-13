@@ -39,6 +39,7 @@ ENTER = [f"layer.{n}.enter" for n in (1, 2, 4, 6, 7, 8, 9)]
 HEALTH = "plan.run_health"      # one row per worklist; every worklist row carries `whose`
 RUNG = "plan.rung"
 FIN_READ = ["register.assumptions.maintain", "overlay.finance.enter", "read.proof"]
+COST_READ = ["register.cost_centre_map.maintain", "register.cost_input.maintain", "schedule.line.enter", "headcount.enter", "read.proof"]
 CONTEXT_ALL = ("version", "fy", "customer", "material")          # the context keys a page applies (DEC-20261113-07)
 
 # ---- the processes in play: a register, not a menu ----
@@ -91,6 +92,14 @@ PROCESSES = [
         Area("sources", "Sources", [
             Section("slots", "Where each number comes from", "plan.slots", verbs=FIN_READ),
             Section("rules", "How each figure is calculated", "plan.rules", verbs=FIN_READ),
+        ]),
+        # the cost side: the entities' ledgers read through the plan's own cost centres (DEC-20261113-03)
+        Area("costs", "Operating costs", [
+            Section("costcentres", "Cost centres", "plan.cost_centres", tabs=[
+                Tab("cc_tree", "Cost centres", "plan.cost_centres", verbs=COST_READ),
+                Tab("cc_entities", "Entities and ledgers", "plan.cost_entities", verbs=COST_READ),
+                Tab("cc_actuals", "Actuals", "plan.cost_actuals", verbs=COST_READ),
+                Tab("cc_mapping", "Mapping review", "plan.cost_mapping", verbs=["register.cost_centre_map.maintain", "read.proof"])]),
         ]),
         Area("statements", "Planned statements", [
             # the financial forecast: one tab per measure of the register, each a view of the same working copy, then the
@@ -146,6 +155,7 @@ MAP_NODES = [
     Node("erp", "sends", "The ERP", "structures, history, prices, terms", "plan.structures"),
     Node("fcs", "sends", "The forecasting system", "the baseline, run by run", "plan.forecast", anchor="sender"),
     Node("tpm", "sends", "The promotions system", "events for the accounts it keeps", "plan.events", anchor="sender"),
+    Node("ledgers", "sends", "The ledgers", "two entities' actuals, their own cost centres", "plan.cost_entities"),
     Node("people", "sends", "People who enter", "planners, marketing, Finance", "plan.entries"),
     Node("structures", "plan", "Structures", "materials, customers, lanes", "plan.structures"),
     Node("baseline", "plan", "Baseline", "ours and the run, by account", "plan.forecast", surfaces=["plan.worklist_forecast_queue"]),
@@ -157,6 +167,7 @@ MAP_NODES = [
     Node("submissions", "plan", "Submissions", "by unit, then the plan", "plan.submissions", surfaces=["plan.worklist_open_submissions"]),
     Node("versions", "plan", "Versions", "open, frozen, the reference", "plan.versions"),
     Node("rates", "plan", "Prices and terms", "lists and terms in force", "plan.terms"),
+    Node("costcentres", "plan", "Cost centres", "ours over each entity's own", "plan.cost_centres", surfaces=["plan.worklist_cost_centre_unmapped"]),
     Node("stack", "made", "The demand plan", "every layer, by version", "plan.demand", surfaces=["plan.worklist_stack_negative"]),
     Node("supply", "made", "Supply plan", "stock, lines and purchases", "plan.rung", {"slug": "supply"}, built=False),
     Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),
@@ -169,7 +180,7 @@ MAP_NODES = [
 # (from, to, what flows); a flow from the first band is a door — something made elsewhere taken in
 MAP_FLOWS = [
     ("erp", "structures", "loaded"), ("erp", "baseline", "shipments"), ("erp", "rates", "lists, terms"),
-    ("fcs", "baseline", "runs"), ("tpm", "calendar", "events in their codes"),
+    ("fcs", "baseline", "runs"), ("tpm", "calendar", "events in their codes"), ("ledgers", "costcentres", "actuals in their cost centres"),
     ("people", "layers", "entries"), ("people", "calendar", "typed events"), ("people", "submissions", "acts"), ("people", "finance", "Finance's figures"),
     ("structures", "stack", ""), ("baseline", "stack", ""), ("calendar", "stack", ""), ("layers", "stack", ""), ("submissions", "stack", ""),
     ("versions", "stack", ""), ("rates", "valued", ""),
