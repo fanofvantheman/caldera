@@ -84,18 +84,22 @@ def main() -> None:
     ap.add_argument("--root", default="data/generated")
     ap.add_argument("--db", default="data/caldera.duckdb")
     ap.add_argument("--landing", default="data/landing", help="what the face has written since the load: appended to the same tables")
+    ap.add_argument("--only", nargs="+", default=None, help="load just these tables — a run scoped to what one act can reach")
     args = ap.parse_args()
     root = Path(args.root)
     landing = Path(args.landing)
     pipeline = dlt.pipeline(pipeline_name="caldera_bronze", destination=dlt.destinations.duckdb(args.db),
                             dataset_name="bronze", pipelines_dir="data/.dlt")
     resources = []
-    for name, numeric in REFERENCE.items():
+    only = set(args.only) if args.only else None
+    for name, numeric in ({} if only else REFERENCE).items():
         p = root / "reference" / f"{name}.csv"
         if p.exists() and p.stat().st_size > 0:
             resources.append(log_resource(p, [], name, numeric, INTEGER))
     for sub, group in (("history", HISTORY), ("plan", PLAN)):
         for name, numeric in group.items():
+            if only and name not in only:
+                continue
             p = root / sub / f"{name}.csv"
             placed = sorted((landing / sub / name).glob("*.csv")) if (landing / sub / name).is_dir() else []   # file order is time order
             if p.exists() and p.stat().st_size > 0:

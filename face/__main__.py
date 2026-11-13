@@ -775,7 +775,7 @@ FINANCE_SECTION = """<h2 id="finance">Financial forecast<span class="count">FY{{
 <label>customer<select name="fc" onchange="this.form.submit()">{% for c in fin.customers %}<option value="{{ c.code }}" {{ 'selected' if c.code == fin.fc }}>{{ '— ' * c.depth }}{{ c.label }}{% if fin.source_of.get(c.code) == 'built' %} · built by Finance{% endif %}</option>{% endfor %}</select></label>
 <span class="crumbs">{% for n in fin.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}</span></form>
 <nav class="tabs">{% for t in fin.readings %}<a href="{{ t.href }}" class="{{ 'active' if t.on }}">{{ t.label }}</a>{% endfor %}</nav>
-<form method="post" action="{{ url_for('plan.run_now') }}" id="finance-run"><input type="hidden" name="next" value="{{ fin.back }}"></form>
+<form method="post" action="{{ url_for('plan.run_now') }}" id="finance-run"><input type="hidden" name="next" value="{{ fin.back }}"><input type="hidden" name="scope" value="finance"></form>
 {% if fin.editable %}<form method="post" action="{{ url_for('plan.finance_save') }}" id="finance-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}{% endif %}
 {% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} figure{{ 's' if fin.n_waiting != 1 }} typed at {{ fin.customer_label }} {{ 'are' if fin.n_waiting != 1 else 'is' }} waiting for the next run, shown hatched where typed. The run spreads each beneath its row and carries it into the totals. {% if fin.may_run %}<button form="finance-run" onclick="this.textContent='Running…'">Run now</button>{% else %}<a href="{{ url_for('plan.run') }}">Run and health</a>{% endif %}</p>{% endif %}
 <div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}<th class="n {{ 'closed' if p.closed }}">{{ p.label }}</th>{% endfor %}<th class="n">FY{{ fy }}</th></tr></thead><tbody>
@@ -1039,8 +1039,8 @@ def finance_save():
     session.say(f"{save_id} placed — {len(figures)} figure{'s' if len(figures) != 1 else ''} at {fc}, in Finance's plan after the next run" if placed
                 else "save refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
     if placed and f.get("then") == "run" and _may_run(who):
-        if _run_plan(who):
-            session.say(f"{save_id} saved and the plan run — {len(figures)} figure{'s' if len(figures) != 1 else ''} at {fc} spread beneath and carried into the totals", True)
+        if _run_plan(who, "finance"):
+            session.say(f"{save_id} saved and run — {len(figures)} figure{'s' if len(figures) != 1 else ''} at {fc} spread beneath and carried into the totals", True)
         else:
             return redirect(url_for("plan.run"))
     return redirect(_back(f))
@@ -2096,14 +2096,27 @@ def _may_run(who: str) -> bool:
     return roles.may(who, "run.plan")
 
 
-def _run_plan(who: str) -> bool:
-    """The run, from wherever it was asked for: the landing loaded, every model and check evaluated, a receipt."""
+# A run scoped to what Finance's figures can reach: its two registers loaded, the financial forecast and what reads it
+# evaluated. Nothing else in the plan reads a Finance figure, so nothing is left behind by stopping here.
+FINANCE_RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_finance_overlay", "reg_finance_source"],
+               ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.finance_edit+", "--restate-model", "plan.finance_source+",
+                "--auto-apply", "--no-prompts"]]
+
+
+def _run_plan(who: str, scope: str = "") -> bool:
+    """The run, from wherever it was asked for: the landing loaded, the models and checks evaluated, a receipt. Asked for
+    from the financial forecast it runs that far and no further — unless something else is waiting too, when stopping
+    short would leave that file looking taken in: then it is the whole run."""
+    others = len(_pending()) - len(FINANCE.pending())
+    scoped = scope == "finance" and others == 0
     _close_warehouse(None)              # the run writes the file: this request lets go of its read first
-    log = Runner().run()
+    log = Runner(FINANCE_RUN if scoped else None).run()
     session.run_log = log
     ok = "✗" not in log
-    receipts.act("run", who, "plan", ok, "run completed" if ok else "run stopped — see the log")
-    session.say("run completed — the pages read the new plan" if ok else "run stopped; the log says where", ok)
+    what = "financial forecast" if scoped else "plan"
+    receipts.act("run", who, what, ok, "run completed" if ok else "run stopped — see the log")
+    session.say((f"run completed — the financial forecast reads Finance's figures; nothing else in the plan reads them" if scoped
+                 else "run completed — the pages read the new plan") if ok else "run stopped; the log says where", ok)
     return ok
 
 
@@ -2131,7 +2144,7 @@ def run_now():
     if not _may_run(who):
         session.say(f"{who} may not run the plan", False)
         return redirect(url_for("plan.run"))
-    ok = _run_plan(who)
+    ok = _run_plan(who, request.form.get("scope") or "")
     nxt = request.form.get("next") or ""
     return redirect(nxt if ok and nxt.startswith("/") and not nxt.startswith("//") else url_for("plan.run"))
 
