@@ -88,6 +88,7 @@ PLAN = {
     "reg_finance_source": (),
     "reg_schedule_edit": ("value", "calc_at_entry"),
     "reg_assumption_amend": ("value",),
+    "reg_version_act": (),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "ord"})

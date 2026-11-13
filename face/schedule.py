@@ -166,7 +166,7 @@ PAGE = MACROS + """<h1>Opex schedule<small>FY{{ fy }} · {{ version }} · {{ s.w
 <label>cost centre<select name="cc" onchange="this.form.submit()">{% for c in s.centres %}<option value="{{ c.code }}" {{ 'selected' if c.code == s.cc }}>{{ '· ' * c.depth }}{{ c.name }}</option>{% endfor %}</select></label></form>
 <p class="hint">{{ entity_note }}</p>
 {% if s.withheld %}<p class="hint">The labour lines of {{ s.withheld|length }} cost centres planned by name are individual pay, read by {{ s.pay_holders|join(', ') or 'nobody yet' }}: they are left out here and out of every total shown.</p>{% endif %}
-{% if not s.open %}<p class="hint">{{ version }} is {{ s.status }}: the schedule is kept on the open latest view, for the twelve periods after the last closed one.</p>{% endif %}
+{% if not s.open %}<p class="hint">{{ version }} is {{ s.status }}{% if s.planned %} — read only: nothing is typed on a closed version{% else %}: the schedule is kept on the latest view, for the twelve periods after the last closed one{% endif %}.</p>{% endif %}
 <div class="schlive"{% if s.editable %} data-live-post="{{ url_for('plan.schedule_cell') }}" data-live-context='{{ s.live_context|tojson }}'{% endif %}>
 {{ sch_status(s) }}
 <form method="post" action="{{ url_for('plan.schedule_cell') }}" id="sch-grid">{% for k, v in s.keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}

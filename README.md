@@ -22,7 +22,8 @@ With the warehouse built, `uv run python -m tests.measure_register` checks that 
 calculation agree (read only), and `uv run python -m tests.finance_working_copy` types into the finance grid through the
 app, saves, and checks the plan after the run equals what the grid showed (it removes what it wrote);
 `uv run python -m tests.schedule_working_copy` does the same for the opex schedule, and `uv run python -m tests.pay_verb`
-checks that individual pay shows only to the holders of its verb (read only).
+checks that individual pay shows only to the holders of its verb (read only); `uv run python -m tests.version_acts` closes
+and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -138,7 +139,9 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   read both ways. The **mapping review** lists the codes waiting for a person, lowest confidence
   first: accept, or alter to another of ours with a reason (or map a code nobody proposed); a held event enters on the
   first run after. Held, refused and to-review rows reach trade marketing through My attention. The terms register (terms grouped by account with every attribute, and each co-op envelope as committed, drawn by the events in the calendar, and remaining; **price lists** with the accounts on each, the price before and in force per material and the dated increase events) — read by every planner, amended only by whoever holds the register's maintain verb (Finance): an amendment or a price change is a new row from a date, never an edit of the row in force,
-  the versions. **Financial planning** is laid out as the chain Finance builds a plan along, one area per step in order —
+  the **versions** — each open or closed, read from a register of acts: the holder of the freeze verb closes one and reopens
+  it with a reason, each with a receipt and in force at once; a closed version takes no entry or change and stays readable;
+  a version another is read against is not reopened. **Financial planning** is laid out as the chain Finance builds a plan along, one area per step in order —
   *Revenue · Cost of goods · Labour · Opex · Capital · Non-operating · Balance sheet and cash · Statements · Set-up* — a
   step not yet built shown in its place and saying so. **Revenue** is one entry with a tab per measure, *Volume · Price ·
   Revenue*, then *Versions*, with prices and terms and promotions linked from it to where they live under Demand; the

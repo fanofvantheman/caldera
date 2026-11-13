@@ -30,6 +30,7 @@ from . import costs
 from . import schedule
 from . import headcount
 from . import assumptions
+from . import versions as versions_page
 from .words import said
 
 plan = Blueprint("plan", __name__)
@@ -2312,15 +2313,6 @@ def price_change():
     return redirect(url_for("plan.price_lists"))
 
 
-@plan.get("/versions")
-def versions():
-    try:
-        cols = ["version_id", "version_kind", "cycle", "fiscal_year", "horizon_start", "horizon_end", "calendar_variant", "standard_version", "reference_version", "status", "owner", "named_on"]
-        return _page("<h1>Versions<small>named, owned, frozen or open — the plan is a stack of entries on a version</small></h1>" + _table(reads.versions(), cols), title="Versions", active="versions")
-    except Busy as e:
-        return _busy("Versions", e)
-
-
 # ---- forecast accuracy ----
 @plan.get("/accuracy")
 def accuracy():
@@ -2420,6 +2412,7 @@ costs.register(plan, _page, _who, _ctx, _busy, session, roles)
 schedule.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED)
 headcount.register(plan, _page, _who, _ctx, _busy, session, roles)
 assumptions.register(plan, _page, _who, _ctx, _busy, session, roles)
+versions_page.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
 
 
 def main() -> None:

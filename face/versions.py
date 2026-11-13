@@ -1,0 +1,107 @@
+"""Versions, and closing and reopening one (DEC-20261113-05, first part): a version is open or closed, and the state is
+read from a register of acts (plan.version_act → plan.version_state), never edited in place. Close and reopen are acts by
+the holders of `version.freeze`, each with a receipt; reopening asks for a reason; a version that is the declared reference
+of another is not reopened — a changed reference is a new version, or every gap read against it would move without
+anyone having decided it. A closed version takes no entry and no change of any register; it stays readable, and every
+calculation keeps reading it.
+
+An act is a file in the landing, released at once by a run scoped to the version's state (the whole run when another file
+is waiting). Naming a new version from a base and any state per step inside a version are not built — the decision
+leaves both open. Registered on the plan's blueprint by `register(...)`, called from `face/__main__.py`."""
+from __future__ import annotations
+
+import datetime as dt
+
+from chassis import receipts
+from chassis.landing import LogLanding
+from chassis.warehouse import Busy, q
+from flask import redirect, request, url_for
+
+from .words import said
+
+VERB = "version.freeze"
+COLUMNS = ["act_id", "version_id", "act", "reason", "entered_by", "entered_on"]
+LANDING = LogLanding("plan", "reg_version_act", COLUMNS)
+RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_version_act"],
+       ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.version_act+", "--auto-apply", "--no-prompts"]]
+
+PAGE = """<h1>Versions<small>named, owned, open or closed — the plan is a stack of entries on a version; a closed version takes no entry and stays readable</small></h1>
+<p class="hint">{% if may %}You close and reopen versions: each is an act with a receipt; reopening asks why. A version another is read against is not reopened — a changed reference is a new version.{% else %}Versions are closed and reopened by {{ holders|join(', ') or 'nobody yet' }}.{% endif %} The actuals are closed by the period, not here.</p>
+<table><thead><tr><th>Version</th><th>Kind</th><th>Cycle</th><th>Horizon</th><th>Read against</th><th>State</th><th>Last act</th>{% if may %}<th></th>{% endif %}</tr></thead><tbody>
+{% for v in versions %}<tr class="{{ 'off' if v.status == 'closed' }}"><td><b>{{ v.version_id }}</b><div class="small muted">named {{ v.named_on }} · {{ v.owner }}</div></td><td class="small">{{ v.version_kind.replace('_', ' ') }}</td><td class="small">{{ v.cycle or '' }}</td>
+<td class="small">{{ v.horizon_start }} – {{ v.horizon_end }}</td><td class="small">{{ v.reference_version or '—' }}{% if v.reference_of %}<div class="muted">the reference of {{ v.reference_of }}</div>{% endif %}</td>
+<td><span class="state">{{ v.status }}</span></td>
+<td class="small">{% if v.last_act %}{{ v.last_act }} by {{ v.last_act_by }}, {{ (v.last_act_on or '')[:16].replace('T', ' ') }}{% if v.last_act_reason %} — {{ v.last_act_reason }}{% endif %}{% elif v.version_kind == 'actual' %}closed by the period{% else %}as named{% endif %}</td>
+{% if may %}<td class="acts">{% if v.version_kind == 'actual' %}{% elif v.status == 'open' %}<form class="inline" method="post" action="{{ url_for('plan.version_close') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="18" placeholder="note (optional)"> <button class="act" onclick="this.textContent='Closing…'">close</button></form>
+{% elif v.is_reference %}<span class="small muted">not reopened — {{ v.reference_of }} {{ 'is' if ',' not in v.reference_of else 'are' }} read against it</span>
+{% else %}<form class="inline" method="post" action="{{ url_for('plan.version_reopen') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="18" required placeholder="why it reopens"> <button class="act" onclick="this.textContent='Reopening…'">reopen</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>
+{% if last and last.act in ('version.close', 'version.reopen') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else '✕' }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+<h2>Acts<span class="count">every close and reopen, newest first — the register the states above are read from</span></h2>
+<table><thead><tr><th>When</th><th>Version</th><th>Act</th><th>By</th><th>Why</th></tr></thead><tbody>
+{% for a in acts %}<tr><td class="small">{{ (a.entered_on or '')[:16].replace('T', ' ') }}</td><td>{{ a.version_id }}</td><td>{{ a.act }}</td><td class="small">{{ a.entered_by }}</td><td class="small">{{ a.reason or '' }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">No version has been closed or reopened.</td></tr>{% endfor %}
+{% for w in waiting %}<tr><td class="small">{{ w.entered_on[:16].replace('T', ' ') }}</td><td>{{ w.version_id }}</td><td>{{ w.act }} <span class="small muted">placed, waiting for the run</span></td><td class="small">{{ w.entered_by }}</td><td class="small">{{ w.reason }}</td></tr>{% endfor %}</tbody></table>"""
+
+
+def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> None:
+    from . import reads
+    import csv
+    scoped["versions"] = {"commands": RUN, "pending": LANDING.pending, "what": "version state",
+                          "says": "run completed — the version's state is the act just taken"}
+
+    def _waiting() -> list[dict]:
+        out = []
+        for p in LANDING.pending():
+            with open(p, newline="") as fh:
+                out += list(csv.DictReader(fh))
+        return out
+
+    @bp.get("/versions")
+    def versions():
+        try:
+            who = who_fn()
+            return page(PAGE, title="Versions", active="versions", versions=reads.versions(), acts=q("select * from plan.version_act order by entered_on desc, act_id desc"),
+                        waiting=_waiting(), may=roles.may(who, VERB), holders=reads.holders(VERB), last=session.last, receipt_acts=("version.",))
+        except Busy as e:
+            return busy("Versions", e)
+
+    def _act(kind: str):
+        f = request.form; who = who_fn(); vid = f.get("version_id", ""); reason = (f.get("reason") or "").strip()
+        v = reads.version(vid) or {}
+        may = roles.may(who, VERB)
+        want = "open" if kind == "close" else "closed"
+        checks = [
+            {"check": f"who may {kind}", "ok": may, "says": f"{who} holds {said(VERB)}" if may else f"{who} does not hold {said(VERB)} — versions are closed and reopened by {', '.join(reads.holders(VERB)) or 'nobody yet'}"},
+            {"check": "a version of the plan", "ok": bool(v) and v.get("version_kind") != "actual",
+             "says": f"{vid} · {(v.get('version_kind') or '').replace('_', ' ')}" if v and v.get("version_kind") != "actual" else (f"{vid} is the actuals — closed by the period, not by an act" if v else f"{vid or 'nothing'} is not a version")},
+            {"check": f"the version is {want}", "ok": v.get("status") == want, "says": f"{vid} is {v.get('status', 'unknown')}"},
+        ]
+        if kind == "reopen":
+            checks += [
+                {"check": "not the reference of another", "ok": not v.get("is_reference"),
+                 "says": "no version is read against it" if not v.get("is_reference") else
+                         f"{v.get('reference_of')} {'is' if ',' not in (v.get('reference_of') or '') else 'are'} read against {vid} — a changed reference is a new version, or every gap read against it would move without anyone having decided it"},
+                {"check": "a reason", "ok": bool(reason), "says": reason or "reopening a version says why"},
+            ]
+        placed = receipts.judge(checks)
+        if placed:
+            now = dt.datetime.now()
+            LANDING.place([{"act_id": f"VA-{now.strftime('%Y%m%d-%H%M%S-%f')}", "version_id": vid, "act": kind, "reason": reason,
+                            "entered_by": who, "entered_on": now.isoformat(timespec="seconds")}], who)
+        session.last = receipts.write(f"version.{kind}", who, vid, checks, placed)
+        if not placed:
+            session.say(f"{kind} refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), False)
+            return redirect(url_for("plan.versions"))
+        if run_plan(who, "versions"):
+            session.say(f"{vid} {'closed — no entry or change is taken on it; it stays readable' if kind == 'close' else 'reopened'}", True)
+            return redirect(url_for("plan.versions"))
+        return redirect(url_for("plan.run"))
+
+    @bp.post("/versions/close")
+    def version_close():
+        return _act("close")
+
+    @bp.post("/versions/reopen")
+    def version_reopen():
+        return _act("reopen")

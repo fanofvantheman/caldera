@@ -190,7 +190,7 @@ MAP_NODES = [
          surfaces=["plan.worklist_entry_refused", "plan.worklist_withdrawal_refused", "plan.worklist_entry_unresolved", "plan.worklist_reason_unknown",
                    "plan.worklist_entry_after_submission"]),
     Node("submissions", "plan", "Submissions", "by unit, then the plan", "plan.submissions", surfaces=["plan.worklist_open_submissions"]),
-    Node("versions", "plan", "Versions", "open, frozen, the reference", "plan.versions"),
+    Node("versions", "plan", "Versions", "open or closed, the reference", "plan.versions"),
     Node("rates", "plan", "Prices and terms", "lists and terms in force", "plan.terms"),
     Node("assumptions", "plan", "Assumptions", "one set by period; what reads each", "plan.assumptions"),
     Node("costcentres", "plan", "Cost centres", "ours over each entity's own", "plan.cost_centres", surfaces=["plan.worklist_cost_centre_unmapped"]),
@@ -288,7 +288,7 @@ def _materials(who, chosen) -> list[dict]:
 
 
 CONTEXT = [
-    Choice("version", "Version", _versions, default=lambda who, chosen, opts: reads.default_version(), strict=True),
+    Choice("version", "Version", _versions, default=lambda who, chosen, opts: reads.default_version() or (opts[0]["value"] if opts else None), strict=True),
     Choice("fy", "Year", _years, default=_year_default, strict=True),
     Choice("customer", "Customer", _customers, default=_customer_default, note=lambda who, opts: _bounded(who, "customer", opts), known=_known_customer),
     Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts), known=_known_material),

@@ -179,3 +179,13 @@ def assumption_amendments(latest_closed: str) -> list[dict]:
     starts (January 2027). Nothing calculated reads the energy index yet — the standard it values is not built."""
     return [{"amend_id": "AA-00001", "version_id": f"LV-{latest_closed}", "assumption_code": "ENERGY_IDX", "valid_from": "2027P07", "value": 108.0,
              "note": "new energy contract from 1 January 2027", "entered_by": "finance.manager@caldera", "entered_on": "2026-11-02T10:00:00"}]
+
+
+# closing and reopening a version: one row per act; a version's state is read from these (plan.version_state)
+VERSION_ACT_COLUMNS = ["act_id", "version_id", "act", "reason", "entered_by", "entered_on"]
+
+
+def version_acts(plan_fy: int) -> list[dict]:
+    """The acts the business took before the build: the business plan closed when the board agreed it."""
+    return [{"act_id": "VA-00001", "version_id": f"BP-FY{plan_fy}", "act": "close", "reason": "agreed by the board — the year's reference",
+             "entered_by": "finance.manager@caldera", "entered_on": "2026-06-30T17:00:00"}]

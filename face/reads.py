@@ -5,20 +5,27 @@ from __future__ import annotations
 from chassis.warehouse import one, q
 
 
+# a version as the face reads it: its status is its state — open or closed — read from the acts (plan.version_state);
+# what it was named (open, frozen, closed) is kept beside it
+_VERSIONS = """select v.* replace (coalesce(s.state, case v.status when 'open' then 'open' else 'closed' end) as status), v.status as named_status,
+                      s.last_act, s.last_act_by, s.last_act_on, s.last_act_reason, s.reference_of, coalesce(s.is_reference, false) is_reference
+               from dims.ctl_version v left join plan.version_state s using (version_id)"""
+
+
 def versions() -> list[dict]:
-    return q("select * from dims.ctl_version order by case status when 'open' then 0 when 'frozen' then 1 else 2 end, version_id")
+    return q(f"{_VERSIONS} order by case v.version_kind when 'actual' then 2 else 0 end, case s.state when 'open' then 0 else 1 end, v.version_id")
 
 
 def open_versions() -> list[dict]:
-    return q("select * from dims.ctl_version where status = 'open' order by named_on desc")
+    return q(f"{_VERSIONS} where s.state = 'open' order by v.named_on desc")
 
 
 def version(version_id: str) -> dict | None:
-    return one("select * from dims.ctl_version where version_id = ?", version_id)
+    return one(f"{_VERSIONS} where v.version_id = ?", version_id)
 
 
 def default_version() -> str | None:
-    r = one("select version_id from dims.ctl_version where status = 'open' order by named_on desc limit 1")
+    r = one(f"{_VERSIONS} where s.state = 'open' order by v.named_on desc limit 1")
     return r["version_id"] if r else None
 
 
