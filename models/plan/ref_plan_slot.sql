@@ -4,7 +4,7 @@
    possible sources, the one declared, whether the build fills it, and the page that owns it. */
 MODEL (name plan.ref_plan_slot, kind FULL, grain (slot_key));
 SELECT * FROM (VALUES
-  (1,  'volume',     'Volume',                          'The demand plan (consensus), constrained where supply says so', 'Cases by account × material × period: last year ± a rate, or typed', 'model', TRUE,  'plan.demand',      'the unconstrained consensus; no supply constraint yet'),
+  (1,  'volume',     'Volume',                          'The demand plan (consensus), constrained where supply says so', 'Cases by account × material × period: last year ± a rate, or typed', 'model', TRUE,  'plan.demand',      'the unconstrained consensus; no supply constraint yet. Fed or built is declared per account × material in Finance''s plan'),
   (2,  'price',      'Price and terms',                 'The price lists and terms registers',                            'The same registers',                                                 'model', TRUE,  'plan.terms',       NULL),
   (3,  'promotions', 'Promotions',                      'The calendar, event by event',                                   'Trade spend as a rate on gross sales by account',                    'model', TRUE,  'plan.events',      NULL),
   (4,  'delivery',   'Delivery',                        'Demand routed over the network: ship-to → serving node → lane',  'A cost to serve per case by account or region',                      'none',  FALSE, NULL,               'the lanes are loaded; no cost to serve is valued'),

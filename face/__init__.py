@@ -142,24 +142,24 @@ MAP_NODES = [
     Node("submissions", "plan", "Submissions", "by unit, then the plan", "plan.submissions", surfaces=["plan.worklist_open_submissions"]),
     Node("versions", "plan", "Versions", "open, frozen, the reference", "plan.versions"),
     Node("rates", "plan", "Prices and terms", "lists and terms in force", "plan.terms"),
-    Node("overlay", "plan", "Finance's overlay", "risks and opportunities, in money", "plan.revenue", anchor="overlay"),
     Node("stack", "made", "The demand plan", "every layer, by version", "plan.demand", surfaces=["plan.worklist_stack_negative"]),
     Node("supply", "made", "Supply plan", "stock, lines and purchases", "plan.rung", {"slug": "supply"}, built=False),
     Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),
     Node("accuracy", "read", "Forecast accuracy", "the plan judged as a forecast", "plan.accuracy"),
     Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
     Node("revenue", "read", "Revenue forecast", "the versions over one another", "plan.revenue"),
+    Node("finance", "read", "Finance's plan", "volume × price, fed or built", "plan.revenue", anchor="finance"),
     Node("statements", "read", "Planned statements", "P&L and balance sheet", "plan.rung", {"slug": "pnl"}, built=False),
 ]
 # (from, to, what flows); a flow from the first band is a door — something made elsewhere taken in
 MAP_FLOWS = [
     ("erp", "structures", "loaded"), ("erp", "baseline", "shipments"), ("erp", "rates", "lists, terms"),
     ("fcs", "baseline", "runs"), ("tpm", "calendar", "events in their codes"),
-    ("people", "layers", "entries"), ("people", "calendar", "typed events"), ("people", "submissions", "acts"), ("people", "overlay", "Finance"),
+    ("people", "layers", "entries"), ("people", "calendar", "typed events"), ("people", "submissions", "acts"), ("people", "finance", "Finance's figures"),
     ("structures", "stack", ""), ("baseline", "stack", ""), ("calendar", "stack", ""), ("layers", "stack", ""), ("submissions", "stack", ""),
-    ("versions", "stack", ""), ("rates", "valued", ""), ("overlay", "valued", "beside"),
+    ("versions", "stack", ""), ("rates", "valued", ""),
     ("stack", "valued", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
-    ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "statements", ""), ("supply", "statements", ""),
+    ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "finance", "feeds"), ("valued", "statements", ""), ("supply", "statements", ""),
 ]
 
 SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map")],
@@ -185,10 +185,10 @@ NEIGHBOUR_COLUMNS = ["neighbour_id", "version_id", "event_id", "scope_material",
 # edit of the row in force; who placed it is the file's name and the receipt
 TERMS_COLUMNS = ["account_code", "instrument_code", "instrument_kind", "driver_basis", "rate", "flow_position", "conditionality",
                  "settlement_timing", "scope_material", "valid_from", "valid_to", "note"]
-# Finance's overlay: its own risk and opportunity on the valued plan, in net-sales dollars at any node of either structure
-# over a span of periods; a withdrawal is a later row naming the entry
-OVERLAY_COLUMNS = ["overlay_id", "action", "withdraws", "version_id", "kind", "reason_code", "scope_customer", "scope_material",
-                   "period_from", "period_to", "amount", "entered_by", "entered_on", "note"]
+# Finance's figures: one row per figure typed — a customer node at account or above × a material node × a period, volume
+# or price, and the demand plan at that node when typed; the figures of one save share its reason; a release names a save
+FINANCE_COLUMNS = ["edit_id", "action", "withdraws", "save_id", "version_id", "scope_customer", "scope_material", "period", "measure", "value",
+                   "source_at_entry", "reason_code", "entered_by", "entered_on", "note"]
 PRICE_LIST_COLUMNS = ["price_list", "material_code", "currency", "price_per_case", "valid_from", "valid_to", "event"]
 # the forecasting system's door — a run's header and its series as taken in, account by account (one header row per
 # account that accepted the run); what people decide where its structures and

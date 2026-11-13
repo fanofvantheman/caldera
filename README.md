@@ -130,14 +130,19 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   the versions, the **revenue forecast** under financial planning (net sales by fiscal year across its periods, per week —
   invoiced, the latest view and its reference laid over one another, last year faint; read against the reference only on
   the periods both value, with the gap by period; at the plan or any node of either structure, the level below as a split;
-  nothing typed except **Finance's overlay**: Finance's own risks and opportunities, in money, reason-coded, at any
-  node of the customer structure × any node of the material structure over open periods, spread to account × material ×
-  period by the plan's own net sales — a measure of its own in the gross-to-net and a line of its own in the revenue
-  bridge, never in net sales, never in cases, never to supply; the page always shows the plan valued, the overlay and the
-  two together), **where each number comes from** under financial planning (the chain — volume, price and terms,
+  and beneath it the **financial forecast**: Finance's own volume × price = revenue at account × material × period, on a
+  grid — the material structure down (a node and the level beneath it), periods across, cases, net per case and net sales
+  per row — read three ways: Finance's plan with the demand plan under every figure, the demand plan, and the variance.
+  Finance types volume and price at any node (all, a unit or an account × any material node) in open periods, one reason
+  per save; a volume at a node is spread by the shape beneath it, a price moves every price beneath by one proportion so
+  the node's calculated price is what was typed; a figure holds its value, the variance moves when the demand plan moves,
+  and a figure whose demand plan has moved since it was typed is marked. Fed or built is declared per account ×
+  material: Export and three foodservice cans at Bradfield are built by Finance, with nothing beneath; the rest is fed.
+  It never enters the demand stack or the gross-to-net), **where each number comes from** under financial planning (the chain —
+  volume, price and terms,
   promotions, delivery, cost of goods, inventory, labour, opex, capital, non-operating, balance sheet — each step filled
   by the model behind it or by a Finance assumption, declared per step; Caldera fills the first three from the model and
-  says *not yet filled* for the rest), the rungs named but not yet built
+  says *not yet filled* for the rest; beneath, fed or built per account × material), the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
   whoever holds `run.plan`, the log kept; and under Admin the **structures as loaded** — read-only: each structure's
   system, its latest load and the one before, what changed between them, the members not yet fit to plan with whom to

@@ -126,7 +126,13 @@ WHERE a.state NOT IN ('proposed', 'decided') OR a.origin NOT IN ('first_pass', '
 AUDIT (name forecast_resolution_target_known);
 SELECT resolution_id, resolution, target_code FROM @this_model WHERE NOT target_known;
 
-AUDIT (name finance_overlay_spread_ties);
-/* blocking: every overlay entry in force is spread whole over its scope — the money Finance typed is the money read */
-SELECT e.overlay_id, e.amount, SUM(o.overlay) AS spread FROM plan.finance_overlay_entry e LEFT JOIN @this_model o ON o.overlay_id = e.overlay_id
-WHERE e.state = 'in_force' GROUP BY ALL HAVING ABS(e.amount - COALESCE(SUM(o.overlay), 0)) > 0.01;
+AUDIT (name finance_figure_holds);
+/* blocking: every figure Finance typed that still holds reads, at its node, exactly what was typed — volume as typed, price
+   as revenue ÷ volume */
+SELECT edit_id, measure, value, now_at_node FROM @this_model
+WHERE standing = 'held' AND now_at_node IS NOT NULL AND ABS(now_at_node - value) > CASE measure WHEN 'volume' THEN 0.01 ELSE 0.000001 * value END;
+
+AUDIT (name finance_revenue_is_volume_times_price);
+/* blocking: in Finance's plan revenue is always volume × price at the grain */
+SELECT version_id, account_code, material_code, period, cases, price, net_sales FROM plan.finance_plan
+WHERE price IS NOT NULL AND ABS(net_sales - cases * price) > 0.01;

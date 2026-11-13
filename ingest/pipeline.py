@@ -72,7 +72,8 @@ PLAN = {
     "fcst_run": ("horizon_weeks",),
     "fcst_series": ("cases",),
     "reg_door_act": (),
-    "reg_finance_overlay": ("amount",),
+    "reg_finance_overlay": ("value", "source_at_entry"),
+    "reg_finance_source": (),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks"})

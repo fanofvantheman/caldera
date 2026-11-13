@@ -2,8 +2,7 @@
    band (presentation), flow position, driver basis, conditionality, source. An event's lump sums join here as planned
    money against the event — its fixed fee, its retail-media money and its drawdown on the account's co-op envelope, each
    its own measure — attributed to the materials in its scope by their cases in the window. The envelope itself is not
-   money here: only what events draw from it is, so it is counted once. Finance's overlay is a measure of its own at
-   account × material × period (no ship-to, no week): beside net sales, never in it. */
+   money here: only what events draw from it is, so it is counted once. */
 MODEL (name plan.gross_to_net, kind FULL, grain (version_id, layer_no, line_source, effect_type, material_code, ship_to_code, week_id, measure),
        audits (long_form_ties_to_wide));
 WITH f AS (SELECT * FROM plan.demand_financialised),
@@ -33,12 +32,7 @@ fees AS (
          SUM(fee) AS amount, 'allocated' AS value_state
   FROM fee_share GROUP BY ALL
 ),
-overlay AS (   -- Finance's overlay: its own measure at account × material × period, never in net_sales, so the plan valued stays the plan valued
-  SELECT version_id, NULL::INT AS layer_no, 'finance_overlay' AS line_source, 'overlay' AS effect_type, material_code, NULL AS ship_to_code, account_code,
-         NULL AS week_id, period, 'finance_overlay' AS measure, overlay AS amount, 'judgemental' AS value_state
-  FROM plan.finance_overlay
-),
-rows_ AS (SELECT * FROM long WHERE amount <> 0 UNION ALL SELECT * FROM fees UNION ALL SELECT * FROM overlay)
+rows_ AS (SELECT * FROM long WHERE amount <> 0 UNION ALL SELECT * FROM fees)
 SELECT r.*, m.band, m.flow_position, m.driver_basis, m.conditionality, m.source, m.sign
 FROM rows_ r
 JOIN (VALUES
@@ -55,6 +49,5 @@ JOIN (VALUES
   ('settlement_discount',       'payment',     'off_invoice', 'pct_of_invoice', 'payment',       'terms',      -1),
   ('returns_and_ullage',        'compliance',  'off_invoice', 'pct_of_invoice', 'compliance',    'history',    -1),
   ('claims',                    'compliance',  'off_invoice', 'pct_of_invoice', 'compliance',    'history',    -1),
-  ('net_sales',                 'net',         NULL,          NULL,             NULL,            'derived',     0),
-  ('finance_overlay',           'overlay',     NULL,          'lump_sum',       'judgement',     'finance',     1)
+  ('net_sales',                 'net',         NULL,          NULL,             NULL,            'derived',     0)
 ) AS m(measure, band, flow_position, driver_basis, conditionality, source, sign) ON m.measure = r.measure

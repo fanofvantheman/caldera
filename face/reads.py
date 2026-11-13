@@ -162,12 +162,11 @@ def customer_scope_resolves(code: str) -> bool:
 
 
 def bridge(version_id: str) -> dict:
-    rows = q("""select line_kind, layer_no, layer_name, sum(cases) cases, sum(gross_at_list) gross_at_list, sum(on_invoice_deductions) on_invoice,
+    rows = q("""select layer_no, layer_name, sum(cases) cases, sum(gross_at_list) gross_at_list, sum(on_invoice_deductions) on_invoice,
                        sum(gross_invoice) gross_invoice, sum(off_invoice_deductions) off_invoice, sum(net_sales) net_sales
-                from plan.revenue_bridge where version_id = ? group by all order by line_kind desc, layer_no""", version_id)
+                from plan.revenue_bridge where version_id = ? group by all order by layer_no""", version_id)
     by_period = q("""select period, sum(gross_at_list) gross_at_list, sum(on_invoice_deductions) on_invoice, sum(gross_invoice) gross_invoice,
-                            sum(off_invoice_deductions) off_invoice, sum(net_sales) filter (where line_kind = 'plan') net_sales,
-                            sum(net_sales) filter (where line_kind = 'overlay') as "overlay"
+                            sum(off_invoice_deductions) off_invoice, sum(net_sales) net_sales
                      from plan.revenue_bridge where version_id = ? group by period order by period""", version_id)
     gap = one("""select reference_version, sum(plan_cases) plan_cases, sum(reference_cases) reference_cases, sum(cases_gap) cases_gap,
                         sum(plan_net_sales) plan_net_sales, sum(reference_net_sales) reference_net_sales, sum(net_sales_gap) net_sales_gap
@@ -692,30 +691,123 @@ def materials() -> list[dict]:
     return q("select material_code, material_name from dims.dim_material order by material_code")
 
 
-# ---- Finance's overlay and where each number comes from ----
+# ---- Finance's plan and where each number comes from ----
 
-def overlay_entries(version_id: str) -> list[dict]:
-    return q("select * from plan.finance_overlay_entry where version_id = ? order by entered_on desc, overlay_id desc", version_id)
-
-
-def overlay_by_period(version_id: str, fy: int) -> list[dict]:
-    """The plan valued, Finance's overlay and the two together, by period of the fiscal year — always shown side by side."""
-    return q("""select period, sum(net_sales) filter (where line_kind = 'plan') plan_net_sales, coalesce(sum(net_sales) filter (where line_kind = 'overlay'), 0) as "overlay"
-                from plan.revenue_bridge where version_id = ? and fiscal_year = ? group by period order by period""", version_id, fy)
-
-
-def overlay_reasons() -> list[dict]:
+def finance_reasons() -> list[dict]:
     return q("select * from plan.ref_overlay_reason order by reason_code")
 
 
 def open_periods(version_id: str) -> list[str]:
-    """The version's periods not yet closed — where an overlay may be placed."""
+    """The version's periods not yet closed — where Finance may type."""
     return [r["period"] for r in q("""select distinct b.period from plan.revenue_bridge b join dims.dim_period p on p.period = b.period
-                                      where b.version_id = ? and b.line_kind = 'plan' and p.period_state <> 'CLOSED' order by 1""", version_id)]
+                                      where b.version_id = ? and p.period_state <> 'CLOSED' order by 1""", version_id)]
+
+
+def fy_periods(fy: int) -> list[dict]:
+    return q("select period, fiscal_period, period_state from dims.dim_period where fiscal_year = ? order by period", fy)
 
 
 def material_node(code: str) -> bool:
     return one("select 1 ok from dims.dim_material_hierarchy where ancestor_code = ? limit 1", code) is not None
+
+
+def is_account(code: str) -> bool:
+    return one("select 1 ok from dims.dim_account where account_code = ?", code) is not None
+
+
+def material_tree_under(node: str) -> dict:
+    """The material nodes beneath a node in one read: each child's label, level and whether it has children of its own."""
+    rows = q("""with k as (select descendant_code code, descendant_level lvl from dims.dim_material_hierarchy where ancestor_code = ? and depth = 1 and descendant_code <> ancestor_code)
+                select k.code, k.lvl, coalesce(c.category_name, p.product_name, m.material_name, k.code) as "label",
+                       exists (select 1 from dims.dim_material_hierarchy h where h.ancestor_code = k.code and h.depth = 1 and h.descendant_code <> h.ancestor_code) has_kids
+                from k left join (select distinct category_code, category_name from dims.dim_material) c on c.category_code = k.code
+                left join (select distinct product_code, product_name from dims.dim_material) p on p.product_code = k.code
+                left join dims.dim_material m on m.material_code = k.code order by k.code""", node)
+    return {r["code"]: r for r in rows}
+
+
+def customer_labels() -> dict:
+    rows = q("""select planning_unit code, any_value(planning_unit_name) as "label" from dims.dim_account group by 1
+                union all select account_code, account_name from dims.dim_account""")
+    return {r["code"]: r["label"] for r in rows}
+
+
+def finance_customer_nodes() -> list[dict]:
+    """The customer nodes Finance types at: all, the units, the accounts — never a ship-to."""
+    rows = q("""select h.descendant_code code, h.descendant_level lvl, h.depth, p.ancestor_code parent from dims.dim_customer_hierarchy h
+                left join dims.dim_customer_hierarchy p on p.descendant_code = h.descendant_code and p.depth = 1
+                where h.ancestor_code = 'ALL' and h.descendant_level <> 'ship_to' order by h.depth, h.descendant_code""")
+    kids: dict = {}
+    for r in rows:
+        kids.setdefault(r["parent"], []).append(r)
+    out: list[dict] = []
+    names = customer_labels()
+    def walk(r):                                          # the tree in order: each unit followed by its accounts
+        out.append({**r, "label": "All customers" if r["code"] == "ALL" else names.get(r["code"], r["code"])})
+        for k in kids.get(r["code"], []):
+            walk(k)
+    for r in kids.get(None, []):
+        walk(r)
+    return out
+
+
+def finance_cells(version_id: str, fy: int, customer: str, nodes: list[str]) -> list[dict]:
+    """Finance's plan summed to each node shown × period: the plan, the fed part, the demand plan beneath it, the built part."""
+    marks = ",".join("?" * len(nodes))
+    return q(f"""with sc as (select descendant_code a from dims.dim_customer_hierarchy where ancestor_code = ? and descendant_level = 'account'),
+                     n as (select ancestor_code node, descendant_code mat from dims.dim_material_hierarchy
+                           where descendant_level = 'material' and ancestor_code in ({marks}))
+                 select n.node, f.period, count(*) n_cells, sum(f.cases) cases, sum(f.net_sales) net_sales,
+                        sum(f.cases) filter (where f.source = 'fed') fed_cases, sum(f.net_sales) filter (where f.source = 'fed') fed_net_sales,
+                        sum(f.source_cases) source_cases, sum(f.source_net_sales) source_net_sales,
+                        count(*) filter (where f.source = 'built') n_built,
+                        sum(f.cases) filter (where f.source = 'built') built_cases, sum(f.net_sales) filter (where f.source = 'built') built_net_sales
+                 from plan.finance_plan f join sc on sc.a = f.account_code join n on n.mat = f.material_code
+                 where f.version_id = ? and f.fiscal_year = ? group by all""", customer, *nodes, version_id, fy)
+
+
+def finance_edits_at(version_id: str, fy: int, customer: str, nodes: list[str]) -> list[dict]:
+    """The figures typed at this customer node on the nodes shown, latest first."""
+    marks = ",".join("?" * len(nodes))
+    return q(f"""select * from plan.finance_edit_reading where version_id = ? and fiscal_year = ? and scope_customer = ?
+                 and scope_material in ({marks}) order by entered_on desc, edit_id desc""", version_id, fy, customer, *nodes)
+
+
+def finance_saves(version_id: str) -> list[dict]:
+    return q("""select save_id, min(entered_on) entered_on, any_value(entered_by) entered_by, any_value(reason_code) reason_code, any_value(reason) reason,
+                       any_value(note) note, count(*) figures, count(*) filter (where standing = 'held') held,
+                       count(*) filter (where standing = 'overwritten') overwritten, count(*) filter (where source_moved) moved,
+                       count(*) filter (where standing like 'unplaced%') unplaced, bool_or(state = 'released') released,
+                       string_agg(distinct scope_customer, ', ') customers, min(period) period_from, max(period) period_to
+                from plan.finance_edit_reading where version_id = ? group by save_id order by min(entered_on) desc, save_id desc""", version_id)
+
+
+def finance_save(save_id: str) -> dict | None:
+    return one("select save_id, any_value(version_id) version_id, bool_or(state = 'released') released from plan.finance_edit where save_id = ? group by 1", save_id)
+
+
+def finance_source_at(version_id: str, period: str, customer: str, material: str) -> dict:
+    """The demand plan at a node now, fed cells only — what a figure typed there is read against."""
+    return one("""select count(f.source_cases) n_fed, sum(f.source_cases) cases, sum(f.source_net_sales) / nullif(sum(f.source_cases), 0) price
+                  from plan.finance_plan f
+                  join dims.dim_customer_hierarchy c on c.ancestor_code = ? and c.descendant_level = 'account' and c.descendant_code = f.account_code
+                  join dims.dim_material_hierarchy m on m.ancestor_code = ? and m.descendant_level = 'material' and m.descendant_code = f.material_code
+                  where f.version_id = ? and f.period = ?""", customer, material, version_id, period) or {}
+
+
+def finance_sources() -> list[dict]:
+    return q("select * from plan.finance_source order by account_code, material_code = 'ALL' desc, material_code")
+
+
+def finance_by_source(version_id: str, fy: int) -> list[dict]:
+    return q("""select account_code, source, count(distinct material_code) materials, sum(cases) cases, sum(net_sales) net_sales, sum(source_net_sales) source_net_sales
+                from plan.finance_plan where version_id = ? and fiscal_year = ? group by all order by account_code, source""", version_id, fy)
+
+
+def account_materials(account: str) -> list[dict]:
+    """What the account can be sold: the materials on its price list."""
+    return q("""select distinct p.material_code code, m.material_name as "label" from history.price_list p join dims.dim_account a on a.price_list = p.price_list
+                join dims.dim_material m on m.material_code = p.material_code where a.account_code = ? order by 1""", account)
 
 
 def slots() -> list[dict]:
