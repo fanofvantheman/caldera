@@ -189,3 +189,19 @@ def version_acts(plan_fy: int) -> list[dict]:
     """The acts the business took before the build: the business plan closed when the board agreed it."""
     return [{"act_id": "VA-00001", "version_id": f"BP-FY{plan_fy}", "act": "close", "reason": "agreed by the board — the year's reference",
              "entered_by": "finance.manager@caldera", "entered_on": "2026-06-30T17:00:00"}]
+
+
+# the strategic plan: one plan over five years, reading the latest view inside its reach and growing by category beyond
+def strategic_plan(plan_fy: int, latest_closed: str) -> list[dict]:
+    return [{"plan_id": f"SP-FY{plan_fy}", "plan_name": f"Five-year plan FY{plan_fy}–FY{plan_fy + 4}", "latest_view": f"LV-{latest_closed}",
+             "first_year": plan_fy, "last_year": plan_fy + 4, "owner": "finance.manager@caldera", "named_on": "2026-11-02"}]
+
+
+STRATEGIC_GROWTH = {"CANNED_FRUIT": -0.010, "TOMATOES": 0.010, "BEANS_SPAG": 0.005, "PASTA_SAUCE": 0.030, "SNACK_CUPS": 0.060, "SPREADS": 0.000}
+
+
+def strategic_growth(plan_fy: int) -> list[dict]:
+    """Finance's growth by category for the years beyond the latest view's reach — the far-horizon rates."""
+    return [{"plan_id": f"SP-FY{plan_fy}", "category_code": c, "fiscal_year": y, "growth_pct": g,
+             "note": "category trend held", "entered_by": "finance.manager@caldera", "entered_on": "2026-11-02T10:00:00"}
+            for y in range(plan_fy + 3, plan_fy + 5) for c, g in STRATEGIC_GROWTH.items()]

@@ -141,6 +141,13 @@ PROCESSES = [
             Section("assumptions", "Assumptions", "plan.assumptions", uses=("version", "fy"), verbs=sorted(set(READ + FIN_READ + COST_READ))),
         ]),
     ]),
+    # the long-term plan: the same objects coarser over five years, with a declared few capacities read against the volume
+    # path (DEC-20261113-01) — its own process, owned by Finance, after the plan it is read against
+    Process("strategic", "Strategic plan", says="Five years at category × channel: the latest view where it reaches, growth beyond, and the few capacities that would force a decision.", areas=[
+        Area("strategic", "Strategic plan", [
+            Section("strategic", "Five-year plan", "plan.strategic", verbs=FIN_READ + ["read.plan"]),
+        ]),
+    ]),
     Process("actuals", "Actuals", says="What happened, closed and proved, for the plan to be read against.", areas=[
         Area("close", "Close", [
             Section("cycle", "Period control", RUNG, {"slug": "cycle"}, verbs=["cycle.open", "cycle.close", "register.calendar.maintain"]),
@@ -203,6 +210,7 @@ MAP_NODES = [
     Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
     Node("revenue", "read", "Versions in net sales", "the versions over one another", "plan.revenue_versions"),
     Node("finance", "read", "Revenue", "volume × price, fed or built", "plan.revenue"),
+    Node("strategic", "read", "Five-year plan", "category × channel × year; the few capacities", "plan.strategic"),
     Node("statements", "read", "Statements", "the P&L read across the chain; the balance sheet", "plan.rung", {"slug": "pnl"}, built=False),
 ]
 # (from, to, what flows); a flow from the first band is a door — something made elsewhere taken in
@@ -213,7 +221,7 @@ MAP_FLOWS = [
     ("structures", "stack", ""), ("baseline", "stack", ""), ("calendar", "stack", ""), ("layers", "stack", ""), ("submissions", "stack", ""),
     ("versions", "stack", ""), ("rates", "valued", ""), ("assumptions", "valued", "FX, returns, claims"), ("assumptions", "schedule", "CPI"),
     ("stack", "valued", ""), ("costcentres", "schedule", ""), ("labour", "schedule", "labour lines"), ("people", "labour", "positions, people"), ("stack", "schedule", "drivers"), ("schedule", "statements", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
-    ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "finance", "feeds"), ("valued", "statements", ""), ("supply", "statements", ""),
+    ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "finance", "feeds"), ("valued", "statements", ""), ("supply", "statements", ""), ("valued", "strategic", "the latest view, rolled up"),
 ]
 
 # ---- the context: the selections that mean the same on every page, chosen once in the navigation (DEC-20261113-07) ----

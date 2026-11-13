@@ -74,7 +74,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   file order is time order; the face is the landing's only writer. The sender's outbox (`data/generated/sender/`) is
   read by the face, never loaded: a file reaches the landing only when someone takes it in.
 - `face/` — the planning face, organised around the person. The processes in play are a register (`face/__init__.py`
-  `PROCESSES`: integrated business planning, financial planning, actuals, admin), each with its areas and pages and the verbs
+  `PROCESSES`: integrated business planning, financial planning, the strategic plan, actuals, admin), each with its areas and pages and the verbs
   that make a page relevant; a person sees the processes, areas and pages their roles reach, and their home page is
   what those processes expect of them today — their entries awaiting the cycle, the gap to reference, the versions,
   the files waiting for a run. Above that, **My attention**: every row the last run routed to the person — the
@@ -141,7 +141,11 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   first run after. Held, refused and to-review rows reach trade marketing through My attention. The terms register (terms grouped by account with every attribute, and each co-op envelope as committed, drawn by the events in the calendar, and remaining; **price lists** with the accounts on each, the price before and in force per material and the dated increase events) — read by every planner, amended only by whoever holds the register's maintain verb (Finance): an amendment or a price change is a new row from a date, never an edit of the row in force,
   the **versions** — each open or closed, read from a register of acts: the holder of the freeze verb closes one and reopens
   it with a reason, each with a receipt and in force at once; a closed version takes no entry or change and stays readable;
-  a version another is read against is not reopened. **Financial planning** is laid out as the chain Finance builds a plan along, one area per step in order —
+  a version another is read against is not reopened. The **strategic plan** is its own process: a *five-year plan*
+  (FY2027–FY2031) by category × channel — the latest view rolled up where it covers a whole year, grown by Finance's rates by
+  category beyond — and the five capacities it declares by year with their tiers: production computed (line hours by plant,
+  from the machine register and the routes; first break, or none), working capital as receivables at terms with no limit
+  declared, and storage, material and logistics saying they have no data behind them. **Financial planning** is laid out as the chain Finance builds a plan along, one area per step in order —
   *Revenue · Cost of goods · Labour · Opex · Capital · Non-operating · Balance sheet and cash · Statements · Set-up* — a
   step not yet built shown in its place and saying so. **Revenue** is one entry with a tab per measure, *Volume · Price ·
   Revenue*, then *Versions*, with prices and terms and promotions linked from it to where they live under Demand; the

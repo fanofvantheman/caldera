@@ -31,6 +31,7 @@ from . import schedule
 from . import headcount
 from . import assumptions
 from . import versions as versions_page
+from . import strategic
 from .words import said
 
 plan = Blueprint("plan", __name__)
@@ -2413,6 +2414,7 @@ schedule.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCO
 headcount.register(plan, _page, _who, _ctx, _busy, session, roles)
 assumptions.register(plan, _page, _who, _ctx, _busy, session, roles)
 versions_page.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
+strategic.register(plan, _page, _busy)
 
 
 def main() -> None:
