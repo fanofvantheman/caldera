@@ -145,3 +145,11 @@ JOIN @this_model b ON a.entity_code = b.entity_code AND a.ledger_cost_centre = b
 UNION ALL
 SELECT entity_code, ledger_cost_centre, valid_from FROM @this_model
 WHERE NOT target_known;
+
+AUDIT (name schedule_edit_valid);
+/* blocking: an act on the schedule is one of the four, a month or a reset names a period where it must, a driver is one
+   the schedule knows */
+SELECT edit_id, action, period, driver FROM @this_model
+WHERE action NOT IN ('driver', 'rate', 'month', 'reset')
+   OR (action = 'month' AND (period IS NULL OR value IS NULL))
+   OR (action = 'driver' AND driver NOT IN ('cases_made_ech', 'cases_made_lox', 'cases_shipped', 'net_sales', 'none', 'last_year'));

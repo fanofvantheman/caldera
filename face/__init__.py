@@ -95,6 +95,8 @@ PROCESSES = [
         ]),
         # the cost side: the entities' ledgers read through the plan's own cost centres (DEC-20261113-03)
         Area("costs", "Operating costs", [
+            Section("schedule", "Opex schedule", "plan.schedule", uses=("version", "fy"), tabs=[
+                Tab("sch_schedule", "Schedule", "plan.schedule", verbs=COST_READ)]),
             Section("costcentres", "Cost centres", "plan.cost_centres", tabs=[
                 Tab("cc_tree", "Cost centres", "plan.cost_centres", verbs=COST_READ),
                 Tab("cc_entities", "Entities and ledgers", "plan.cost_entities", verbs=COST_READ),
@@ -171,6 +173,7 @@ MAP_NODES = [
     Node("stack", "made", "The demand plan", "every layer, by version", "plan.demand", surfaces=["plan.worklist_stack_negative"]),
     Node("supply", "made", "Supply plan", "stock, lines and purchases", "plan.rung", {"slug": "supply"}, built=False),
     Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),
+    Node("schedule", "made", "Opex schedule", "driver × rate, by cost centre", "plan.schedule"),
     Node("accuracy", "read", "Forecast accuracy", "the plan judged as a forecast", "plan.accuracy"),
     Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
     Node("revenue", "read", "Versions in net sales", "the versions over one another", "plan.revenue_versions"),
@@ -180,11 +183,11 @@ MAP_NODES = [
 # (from, to, what flows); a flow from the first band is a door — something made elsewhere taken in
 MAP_FLOWS = [
     ("erp", "structures", "loaded"), ("erp", "baseline", "shipments"), ("erp", "rates", "lists, terms"),
-    ("fcs", "baseline", "runs"), ("tpm", "calendar", "events in their codes"), ("ledgers", "costcentres", "actuals in their cost centres"),
+    ("fcs", "baseline", "runs"), ("tpm", "calendar", "events in their codes"), ("ledgers", "costcentres", "actuals in their cost centres"), ("people", "schedule", "typed months and rates"),
     ("people", "layers", "entries"), ("people", "calendar", "typed events"), ("people", "submissions", "acts"), ("people", "finance", "Finance's figures"),
     ("structures", "stack", ""), ("baseline", "stack", ""), ("calendar", "stack", ""), ("layers", "stack", ""), ("submissions", "stack", ""),
     ("versions", "stack", ""), ("rates", "valued", ""),
-    ("stack", "valued", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
+    ("stack", "valued", ""), ("costcentres", "schedule", ""), ("stack", "schedule", "drivers"), ("schedule", "statements", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
     ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "finance", "feeds"), ("valued", "statements", ""), ("supply", "statements", ""),
 ]
 

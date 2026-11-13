@@ -9,6 +9,8 @@
 2. Every setting's words match the setting: a sum says so, a ratio names its two figures, a spread says how.
 3. The settings drive: the same figures typed into the same small grid behave differently when a row's spread or roll-up
    is changed — the calculation obeys the register, it does not keep its own copy.
+
+The opex schedule's rows (grid `schedule`, calc/schedule.py) are checked the same three ways against plan.opex_schedule.
 """
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ import chassis                                        # noqa: E402
 from chassis.warehouse import q                       # noqa: E402
 
 from calc.finance import Grid, aggregate, rules_from, typed   # noqa: E402
+from calc import schedule as sch                              # noqa: E402
 
 chassis.configure(root=BUILD, db="data/caldera.duckdb", receipts="data/receipts", landing="data/landing")
 CENT = 0.005
@@ -59,6 +62,72 @@ FORMULAS = {
 }
 
 
+# ---- the opex schedule: one check per formula, on every cell of plan.opex_schedule ----
+def _line(c: dict) -> tuple:
+    return (c["entity_code"], c["cost_centre_code"], c["account_code"])
+
+
+def schedule_formulas(inp) -> dict:
+    def rate_calc(c: dict) -> bool:
+        if c["driver"] == "labour_model":
+            return c["rate_calc"] is None
+        if c["driver"] == "last_year":
+            return close(c["rate_calc"], inp.index)
+        act = sum(inp.actual.get((_line(c), p), 0.0) for p in inp.window)
+        want = act / len(inp.window) if c["driver"] == "none" else (act / inp.driver_actual[c["driver"]] if inp.driver_actual.get(c["driver"]) else None)
+        return close(c["rate_calc"], want)
+
+    def amount_calc(c: dict) -> bool:
+        if c["driver"] == "labour_model":
+            return close(c["amount_calc"], inp.labour.get((_line(c), c["period"]), 0.0))
+        return close(c["amount_calc"], c["driver_qty"] * c["rate"])
+
+    def amount(c: dict) -> bool:
+        return c["state"] in ("calculated", "model") and close(c["amount"], c["amount_calc"]) or c["state"] == "typed" and c["month_edit_id"] is not None
+
+    return {("schedule", "rate_calc", "the line's actuals ÷ the driver's actuals over the last twelve closed periods"): rate_calc,
+            ("schedule", "amount_calc", "driver × rate"): amount_calc,
+            ("schedule", "amount", "the calculated amount, or the month as typed"): amount}
+
+
+def schedule_checks(rows: list[dict], fail) -> None:
+    rules = sch.rules_from(rows)
+    label = {m: r["label"].lower() for m, r in rules.items()}
+    versions = [r["version_id"] for r in q("select distinct version_id from plan.opex_schedule")]
+    cells = q("select * from plan.opex_schedule")
+    for v in versions:
+        inp = sch.read_inputs(lambda sql: q(sql), lambda n: n, v, labour=bool(q("select 1 from information_schema.tables where table_name = 'labour_cost' limit 1")))
+        formulas = schedule_formulas(inp)
+        stated = {("schedule", m, r["formula_says"]) for m, r in rules.items() if r["formula_says"]}
+        for k in sorted(stated - set(formulas)):
+            fail(f"schedule.{k[1]}: the register says '{label[k[1]]} = {k[2]}' and no check here proves the calculation does it")
+        for k in sorted(set(formulas) - stated):
+            fail(f"schedule.{k[1]}: a check for '{k[2]}', which no row of the register says")
+        mine = [c for c in cells if c["version_id"] == v]
+        for k in sorted(stated & set(formulas)):
+            bad = [c for c in mine if not formulas[k](c)]
+            if bad:
+                fail(f"schedule.{k[1]}: '{label[k[1]]} = {k[2]}' fails on {len(bad)} of {len(mine):,} cells of the schedule on {v}, e.g. {bad[0]}")
+            else:
+                print(f"✓ schedule.{k[1]}: {label[k[1]]} = {k[2]} — holds on all {len(mine):,} cells of the schedule on {v}")
+    # the words of each setting match the setting
+    says = {"sum": "the sum of the figures beneath it", "months": "the line's months", "line": "the line's own figure"}
+    for m, r in rules.items():
+        if says[r["rollup"]] not in r["rollup_says"]:
+            fail(f"schedule.{m}: adds up as {r['rollup']} but says '{r['rollup_says']}'")
+        if bool(r["verb"]) != ("typed in" in r["breakback_says"] or "typed for" in r["breakback_says"]):
+            fail(f"schedule.{m}: typed by {r['verb']} but says '{r['breakback_says']}'")
+    print(f"✓ schedule: every roll-up and who types it says what it does ({', '.join(m + ' ' + r['rollup'] for m, r in rules.items())})")
+    # the settings drive: a line's months read at a total of several lines, and the amount read as a line's own figure
+    two = [c for c in cells if c["period"] == cells[0]["period"] and c["version_id"] == cells[0]["version_id"]][:2]
+    as_registered = sch.total(two, "amount", rules)
+    changed = {**rules, "amount": {**rules["amount"], "rollup": "line"}}
+    if not (close(as_registered, sum(c["amount"] for c in two)) and sch.total(two, "amount", changed) is None):
+        fail(f"schedule.amount: as registered {as_registered}, as a line's own figure {sch.total(two, 'amount', changed)}; expected the sum and nothing")
+    else:
+        print(f"✓ schedule.amount over two lines: registered sum → {as_registered:,.2f}; the row changed to a line's own figure → not added across lines")
+
+
 def small_grid(rules: dict, std: float | None = None) -> Grid:
     """One account, two materials, one period: M1 fed by 100 cases at 10.00, M2 by 300 at 20.00."""
     g = Grid({"ALL": {"A1"}, "A1": {"A1"}}, {"ALL": {"M1", "M2"}, "M1": {"M1"}, "M2": {"M2"}}, lambda a, m: "fed", {"P1": 2027}, rules)
@@ -73,7 +142,7 @@ def main() -> None:
     def fail(s: str):
         failures.append(s); print("✕", s)
 
-    for grid in sorted({r["grid"] for r in rows}):
+    for grid in sorted({r["grid"] for r in rows} - {"schedule"}):
         rules = rules_from(rows, grid)
         label = {m: r["label"].lower() for m, r in rules.items()}
 
@@ -147,6 +216,8 @@ def main() -> None:
     except ValueError:
         print(f"✓ price with its spread removed from the row is no longer typed (typed measures: {typed(rules)} → "
               f"{typed({**rules, 'price': {**rules['price'], 'breakback': None}})})")
+
+    schedule_checks(rows, fail)
 
     if failures:
         raise SystemExit(f"{len(failures)} disagreement{'s' if len(failures) != 1 else ''} between the register and the calculation")

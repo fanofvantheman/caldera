@@ -20,7 +20,8 @@ GitHub Actions runs the same three steps on every push and prints what the room 
 
 With the warehouse built, `uv run python -m tests.measure_register` checks that the measure register and the finance
 calculation agree (read only), and `uv run python -m tests.finance_working_copy` types into the finance grid through the
-app, saves, and checks the plan after the run equals what the grid showed (it removes what it wrote).
+app, saves, and checks the plan after the run equals what the grid showed (it removes what it wrote);
+`uv run python -m tests.schedule_working_copy` does the same for the opex schedule.
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -45,6 +46,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   `costs.py` the cost side — the two legal entities, each ledger's cost centres, the mapping onto the plan's, the chart of
   accounts, the drivers a cost line may declare, and the ledgers' actuals by entity × ledger cost centre × account ×
   period (a random stream of its own, so nothing else moves);
+  the opex schedule's acts as seeded (each line's driver; a typed rate and two typed months);
   `history.py` three years of shipments by material × ship-to × week — each row with what it invoiced, gross at list and net
   sales, because history is revenue and units and price is the derived figure — the price lists, and what each earlier cycle's
   latest view said (the forecast snapshots accuracy is read from); `registers.py` the
@@ -170,7 +172,15 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   per entity, and the last twelve closed periods' actuals), *Entities and ledgers*, *Actuals* (by our cost centre or each
   ledger's own × account × closed period) and the *Mapping review* — a ledger cost centre no mapping carries is an item on
   the doors' one queue, decided as map to one of ours, open a planning cost centre for it, or leave out; intercompany
-  charges between the entities are left out and the pages say so; and under Admin the **structures as loaded** — read-only: each structure's
+  charges between the entities are left out and the pages say so; the **opex schedule** — entity × our cost centre ×
+  account × period for the twelve periods after the last closed, closed periods beside it as actuals: each line a driver
+  (cases made at a plant, cases shipped, net sales, a flat amount, or last year × the index) and a rate, the rate
+  calculated from the last twelve closed periods shown beneath the one in use; each month driver × rate until someone
+  types it, a typed month held with the calculated amount beneath it and a mark when that has moved since; typed into a
+  working copy that recalculates at once (the same function as the run, `calc/schedule.py`), Save with one reason
+  releasing it by a run scoped to the schedule, Discard, *Recalculate* (calculated months only — it says how many typed
+  months it left alone) and *Reset to base* (a confirmation naming the typed months it removes); months typed by the cost
+  centre's budget holder, drivers and rates by Commercial finance; and under Admin the **structures as loaded** — read-only: each structure's
   system, its latest load and the one before, what changed between them, the members not yet fit to plan with whom to
   ask, the members held provisionally ahead of the client's master, and the open disagreements by door. The plan does
   not maintain master data; this is what it says about the state of what it was given. Every act writes a receipt under `data/receipts/`. What a page shows is what
@@ -224,7 +234,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
     by week; every line valued through the gross-to-net (wide, and long with each deduction's attributes); the
     revenue bridge by layer; the gap to the version's reference; the cost side's mapping in force (`cost_centre_map`, the
     register with the ledgers' queue decisions), the plan's cost centres (`planning_cost_centre`) and the actuals read
-    through them (`cost_actual`, each row mapped, unmapped or left out); the plan judged as a forecast (`forecast_accuracy`:
+    through them (`cost_actual`, each row mapped, unmapped or left out); the opex schedule (`opex_schedule`, a Python
+    model over `calc/schedule.py`) from its acts (`schedule_edit`); the plan judged as a forecast (`forecast_accuracy`:
     the snapshot `lag` periods before against shipments, at material × account × period, both structures beside)
 - `audits/` — the checks every model runs: every member reaches its root, every week in one period, exactly one
   open period, vocabularies, references resolve, one person does not both enter demand and enter the supply

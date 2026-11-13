@@ -26,6 +26,7 @@ from . import forecast as fcst
 from . import doors
 from . import finance_live
 from . import costs
+from . import schedule
 
 plan = Blueprint("plan", __name__)
 
@@ -226,7 +227,8 @@ def _mine(who: str, held: set[str]) -> list[dict]:
 
 def _pending() -> list[pathlib.Path]:
     """Every file any act has placed since the last run, across the landing's tables."""
-    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending() + FINANCE.pending()
+    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending() + FINANCE.pending() \
+        + [f for scope in SCOPED.values() for f in scope["pending"]() if scope["pending"] is not FINANCE.pending]
 
 
 def _d(a: float | None, b: float | None) -> float | None:
@@ -1292,6 +1294,8 @@ def slots():
             today["price"] = f"{pl} price lists, {ti} terms instruments"
             ev = q("select count(*) n from plan.promo_event")[0]["n"]
             today["promotions"] = f"{ev} events in the calendar"
+            sch = q("select count(distinct entity_code || cost_centre_code || account_code) n, sum(amount) a from plan.opex_schedule where version_id = ? and fiscal_year = ?", version, fy)[0]
+            today["opex"] = f"{sch['n']} lines, ${sch['a'] / 1e6:,.1f}M planned in FY{fy}'s open periods on {version}" if sch["n"] else None
         rows = []
         for s_ in reads.slots():
             href = url_for("plan.rung", slug=SLOT_RUNG[s_["slot_key"]]) if s_["page"] == "plan.rung" and s_["slot_key"] in SLOT_RUNG else (url_for(s_["page"]) if s_["page"] else None)
@@ -2321,20 +2325,28 @@ FINANCE_RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_f
                 "--auto-apply", "--no-prompts"]]
 
 
+# A release scoped to one act's reach: the commands, what that act's own files waiting are, what the run is called and what
+# it says when done. The cost side adds its own (face/schedule.py).
+SCOPED: dict[str, dict] = {
+    "finance": {"commands": FINANCE_RUN, "pending": FINANCE.pending, "what": "financial forecast",
+                "says": "run completed — the financial forecast reads Finance's figures; nothing else in the plan reads them"},
+}
+
+
 def _run_plan(who: str, scope: str = "") -> bool:
     """The run, from wherever it was asked for: the landing loaded, the models and checks evaluated, a receipt. Asked for
-    from the financial forecast it runs that far and no further — unless something else is waiting too, when stopping
-    short would leave that file looking taken in: then it is the whole run."""
-    others = len(_pending()) - len(FINANCE.pending())
-    scoped = scope == "finance" and others == 0
+    from a page with a scoped release (the financial forecast, the opex schedule) it runs that far and no further —
+    unless something else is waiting too, when stopping short would leave that file looking taken in: then it is the
+    whole run."""
+    sc = SCOPED.get(scope)
+    scoped = bool(sc) and len(_pending()) - len(sc["pending"]()) == 0
     _close_warehouse(None)              # the run writes the file: this request lets go of its read first
-    log = Runner(FINANCE_RUN if scoped else None).run()
+    log = Runner(sc["commands"] if scoped else None).run()
     session.run_log = log
     ok = "✗" not in log
-    what = "financial forecast" if scoped else "plan"
+    what = sc["what"] if scoped else "plan"
     receipts.act("run", who, what, ok, "run completed" if ok else "run stopped — see the log")
-    session.say((f"run completed — the financial forecast reads Finance's figures; nothing else in the plan reads them" if scoped
-                 else "run completed — the pages read the new plan") if ok else "run stopped; the log says where", ok)
+    session.say((sc["says"] if scoped else "run completed — the pages read the new plan") if ok else "run stopped; the log says where", ok)
     return ok
 
 
@@ -2369,6 +2381,7 @@ def run_now():
 
 # the cost side's pages, in their own module, on this blueprint
 costs.register(plan, _page, _who, _ctx, _busy, session)
+schedule.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED)
 
 
 def main() -> None:

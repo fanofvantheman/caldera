@@ -1,13 +1,16 @@
 /* The measures of each grid a person types into, and the rules behind each — one row per grid × measure. Read by the one
-   calculation the grid and the run share (calc/finance.py, called from plan.finance_plan and from the face), and shown on
+   calculation the grid and the run share (calc/finance.py for the finance grid, calc/schedule.py for the opex schedule —
+   each called from its model and from the face), and shown on
    the page "How each figure is calculated".
 
    Settings the calculation obeys — change the row and the grid behaves differently:
-     rollup     how the figure reads at a total: 'sum' (of the figures beneath) or 'ratio' (rollup_num ÷ rollup_den, never stored)
+     rollup     how the figure reads at a total: 'sum' (of the figures beneath) or 'ratio' (rollup_num ÷ rollup_den, never stored);
+                on the schedule also 'months' (the sum of one line's months) and 'line' (the line's own figure) — never across lines
      breakback  how a figure typed at a total spreads beneath it: 'source_shape' (by the source's figures beneath; the
                 figure's own where nothing feeds it; evenly where all are zero), 'proportional' (every figure beneath moves
                 by one factor so the total reads what was typed), or null — not typed
-     verb       who may type it; null where it is not typed
+     verb       who may type it; null where it is not typed (on the schedule a figure is typed only at a line × month, or for a
+                line — never spread from a total — so its spread is null and the verb alone says it is typed)
    Words only — written in the calculation, and checked against these words by tests/measure_register.py:
      set_says, formula_says (and every *_says column).
    field / source_field name the figure's column in plan.finance_plan; unit is the line's label on the grid; shown_as how its figures are written (count · rate · money). */
@@ -48,6 +51,37 @@ SELECT * FROM (VALUES
    'revenue − cost of goods',
    'sum', NULL, NULL, 'the sum of the figures beneath it',
    NULL, 'not typed',
-   NULL, FALSE, 'Waits for cost of goods.')
+   NULL, FALSE, 'Waits for cost of goods.'),
+  -- the opex schedule: entity × the plan's cost centre × account × period; a line is a driver and a rate (calc/schedule.py)
+  ('schedule', 'Opex schedule', 'plan.schedule', 1, 'driver', 'Driver', 'driver quantity', 'count', 'driver_qty', NULL,
+   'from a source', 'The plan quantity the line declares — cases made at a plant, cases shipped, net sales — or the same period''s actual a year earlier for last year, or one for a flat amount',
+   NULL,
+   'months', NULL, NULL, 'the sum of the line''s months; never added across lines',
+   NULL, 'not typed — a driver is chosen for the line from the list',
+   NULL, TRUE, NULL),
+  ('schedule', 'Opex schedule', 'plan.schedule', 2, 'rate_calc', 'Calculated rate', 'per unit of driver', 'rate', 'rate_calc', NULL,
+   'calculated', 'From the line''s own history; shown beneath the rate in use',
+   'the line''s actuals ÷ the driver''s actuals over the last twelve closed periods',
+   'line', NULL, NULL, 'the line''s own figure; never added across lines',
+   NULL, 'not typed',
+   NULL, TRUE, NULL),
+  ('schedule', 'Opex schedule', 'plan.schedule', 3, 'rate', 'Rate', 'per unit of driver', 'rate', 'rate', 'rate_calc',
+   'typed over a source', 'The calculated rate unless typed over, for the whole line; emptied, it is the calculated rate again; a changed driver returns it to calculated',
+   NULL,
+   'line', NULL, NULL, 'the line''s own figure; never added across lines',
+   NULL, 'typed for a line, never at a total',
+   'register.cost_input.maintain', TRUE, NULL),
+  ('schedule', 'Opex schedule', 'plan.schedule', 4, 'amount_calc', 'Calculated amount', '$', 'money', 'amount_calc', NULL,
+   'calculated', 'Every month, typed or not — shown beneath a typed month with the difference',
+   'driver × rate',
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed',
+   NULL, TRUE, NULL),
+  ('schedule', 'Opex schedule', 'plan.schedule', 5, 'amount', 'Amount', '$', 'money', 'amount', 'amount_calc',
+   'typed over a source', 'The calculated amount until a month is typed; a typed month holds through every recalculation until it is reset',
+   'the calculated amount, or the month as typed',
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'typed in a month of a line, never at a total',
+   'schedule.line.enter', TRUE, NULL)
 ) AS t(grid, grid_label, grid_page, ord, measure, label, unit, shown_as, field, source_field,
        set_by, set_says, formula_says, rollup, rollup_num, rollup_den, rollup_says, breakback, breakback_says, verb, built, not_built_says)

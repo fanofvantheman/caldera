@@ -187,3 +187,36 @@ def reference(periods: list[dict]) -> dict[str, list[dict]]:
         "ref_cost_driver": [{"driver": d, "driver_label": l, "unit": u, "says": s, "ord": i} for i, (d, l, u, s) in enumerate(DRIVERS, start=1)],
     }
 
+
+# ---- the schedule as Finance left it at onboarding, and what has been typed since --------------------------------------
+SCHEDULE_COLUMNS = ["edit_id", "save_id", "version_id", "entity_code", "cost_centre_code", "account_code", "action", "period", "value", "driver",
+                    "calc_at_entry", "reason_code", "note", "entered_by", "entered_on"]
+
+
+def schedule_edits(version: str, actuals: list[dict], window: list[str]) -> list[dict]:
+    """Each line's driver as its history follows it (declared by Finance when the schedule was set up); then three things
+    typed since: a rate on Loxton production's electricity for the energy contract signed in October, a boiler overhaul at
+    Echuca in P08, and the Christmas campaign in P06 — typed on 2 November against a calculated amount the demand plan has
+    since moved, so it is marked. The overhaul was typed against the calculated amount then, which nothing has moved:
+    a flat line's year ÷ 12 over the window."""
+    to = {(e, cc): p for e, cc, _, p in LEDGER_COST_CENTRES if p}
+    lines: dict[tuple, str] = {}
+    for ent, cc, acct, driver, _ in COST_LINES:
+        if (ent, cc) in to:
+            lines.setdefault((ent, to[(ent, cc)], acct), driver)
+    rows, fin = [], "finance.manager@caldera"
+    def row(i, save, ent, cc, acct, action, on, period="", value="", driver="", calc="", reason="METHOD", note="", by=fin):
+        rows.append({"edit_id": f"SE-{save[3:]}-{i:03d}", "save_id": save, "version_id": version, "entity_code": ent, "cost_centre_code": cc,
+                     "account_code": acct, "action": action, "period": period, "value": value, "driver": driver, "calc_at_entry": calc,
+                     "reason_code": reason, "note": note, "entered_by": by, "entered_on": on})
+    for i, ((ent, cc, acct), d) in enumerate(sorted(lines.items()), start=1):
+        row(i, "SS-20261102-0900", ent, cc, acct, "driver", "2026-11-02T09:00:00", driver=d, note="the driver its history follows")
+    row(1, "SS-20261102-1015", "CF", "CC_MKT", "6900", "month", "2026-11-02T10:15:00", period="2027P06", value=750000.0, calc=552000.0,
+        reason="TIMING", note="the Christmas campaign lands in one period")
+    row(1, "SS-20261105-1400", "RBF", "CC_L_PROD", "6200", "rate", "2026-11-05T14:00:00", value=0.23, reason="CONTRACT",
+        note="energy contract from 1 January: 23 cents a case made")
+    row(1, "SS-20261106-1100", "CF", "CC_E_MAINT", "6300", "month", "2026-11-06T11:00:00", period="2027P08", value=320000.0,
+        calc=sum(a["amount"] for a in actuals if (a["entity_code"], a["ledger_cost_centre"], a["account_code"]) == ("CF", "1150", "6300") and a["period"] in window) / len(window),
+        reason="ONE_OFF", note="boiler overhaul in the shutdown", by="plant.manager@caldera")
+    return rows
+

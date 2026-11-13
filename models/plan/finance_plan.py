@@ -36,7 +36,9 @@ TYPES = {"version_id": "TEXT", "account_code": "TEXT", "material_code": "TEXT", 
 )
 def execute(context: ExecutionContext, start: datetime, end: datetime, execution_time: datetime, **kwargs: t.Any) -> pd.DataFrame:
     T = context.resolve_table
-    demand = context.fetchdf(f"""select version_id, account_code, material_code, period, sum(cases) cases, sum(net_sales) net_sales
+    # rounded below a millionth: a parallel sum adds in no fixed order, and a run-out's cancelling lines otherwise leave
+    # ±1e-14 cases that flip a price between none and -0 from one run to the next
+    demand = context.fetchdf(f"""select version_id, account_code, material_code, period, round(sum(cases), 6) cases, round(sum(net_sales), 6) net_sales
                                  from {T('plan.demand_financialised')} group by all""")
     edits = context.fetchdf(f"""select edit_id, version_id, scope_customer, scope_material, period, measure, value
                                 from {T('plan.finance_edit')} where state = 'in_force' order by entered_on, edit_id""")
