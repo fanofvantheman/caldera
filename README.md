@@ -73,7 +73,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   file order is time order; the face is the landing's only writer. The sender's outbox (`data/generated/sender/`) is
   read by the face, never loaded: a file reaches the landing only when someone takes it in.
 - `face/` — the planning face, organised around the person. The processes in play are a register (`face/__init__.py`
-  `PROCESSES`: integrated planning, financial planning, actuals, admin), each with its areas and pages and the verbs
+  `PROCESSES`: integrated business planning, financial planning, actuals, admin), each with its areas and pages and the verbs
   that make a page relevant; a person sees the processes, areas and pages their roles reach, and their home page is
   what those processes expect of them today — their entries awaiting the cycle, the gap to reference, the versions,
   the files waiting for a run. Above that, **My attention**: every row the last run routed to the person — the
@@ -138,8 +138,11 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   read both ways. The **mapping review** lists the codes waiting for a person, lowest confidence
   first: accept, or alter to another of ours with a reason (or map a code nobody proposed); a held event enters on the
   first run after. Held, refused and to-review rows reach trade marketing through My attention. The terms register (terms grouped by account with every attribute, and each co-op envelope as committed, drawn by the events in the calendar, and remaining; **price lists** with the accounts on each, the price before and in force per material and the dated increase events) — read by every planner, amended only by whoever holds the register's maintain verb (Finance): an amendment or a price change is a new row from a date, never an edit of the row in force,
-  the versions, the **financial forecast** under financial planning — one entry with a tab per measure, *Volume · Price ·
-  Revenue · Cost of goods · Margin*, then *Versions*. Each measure tab is the same grid — the material structure down (a
+  the versions. **Financial planning** is laid out as the chain Finance builds a plan along, one area per step in order —
+  *Revenue · Cost of goods · Labour · Opex · Capital · Non-operating · Balance sheet and cash · Statements · Set-up* — a
+  step not yet built shown in its place and saying so. **Revenue** is one entry with a tab per measure, *Volume · Price ·
+  Revenue*, then *Versions*, with prices and terms and promotions linked from it to where they live under Demand; the
+  *Cost of goods* entry under Cost of goods is the same grid's *Cost of goods · Margin* tabs on the same working copy. Each measure tab is the same grid — the material structure down (a
   node and the level beneath it), periods across, one measure per row (cost of goods and margin with the lines they are
   calculated from above them) — read three ways: Finance's plan with the demand plan under every figure, the demand plan,
   and the variance. Finance types volume on its tab and price on its tab, at any node (all, a unit or an account × any
@@ -160,7 +163,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   fiscal year across its periods, per week — invoiced, the latest view and its reference laid over one another, last year
   faint; read against the reference only on the periods both value, with the gap by period; at the plan or any node of
   either structure, the level below as a split.
-  Finance's plan never enters the demand stack or the gross-to-net; **where each number comes from** under financial planning (the chain —
+  Finance's plan never enters the demand stack or the gross-to-net; **where each number comes from** under financial planning's Set-up (the chain —
   volume, price and terms,
   promotions, delivery, cost of goods, inventory, labour, opex, capital, non-operating, balance sheet — each step filled
   by the model behind it or by a Finance assumption, declared per step; Caldera fills the first three from the model and
@@ -168,7 +171,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   calculated** (the measure register: every grid a person types into, each figure's rule in words — how it is set, how it
   adds up at a total, how a figure typed at a total spreads, who types it), the rungs named but not yet built
   (supply, capacity, inventory, scenarios, management review), and the run — the same two commands the schedule runs, started by
-  whoever holds `run.plan`, the log kept; under **Operating costs** the **cost centres** — two legal entities, each on its
+  whoever holds `run.plan`, the log kept; under **Set-up** the **cost centres** — two legal entities, each on its
   own ledger with its own cost centres (Caldera Foods; Riverbend Fruit Co, the Loxton business bought at the start of
   FY2026), read through one set of the plan's own: *Cost centres* (each of ours with the ledger cost centres mapped to it,
   per entity, and the last twelve closed periods' actuals), *Entities and ledgers*, *Actuals* (by our cost centre or each
@@ -201,7 +204,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   Above the menu, the **context**: version, year, customer (all, a unit or an account) and material (all, a category, a
   product or a material), chosen once and held in the page's address, so every link carries it and a link sent opens on
   the same context. A person whose assignments name customers or materials is offered those; a page that does not use a
-  selection says so beside it. The demand plan opens its cells when the customer is an account; the financial forecast,
+  selection says so beside it. The demand plan opens its cells when the customer is an account; Revenue,
   its versions chart, submissions (a unit by account) and the promotions calendar read it too.
   **Every door decides the same way.** The promotions system and the forecasting system are taken in by an act whose
   declarations are checked as data; each disagreement between what arrived and the plan's own structures is an item of

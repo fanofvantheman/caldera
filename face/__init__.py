@@ -44,7 +44,7 @@ CONTEXT_ALL = ("version", "fy", "customer", "material")          # the context k
 
 # ---- the processes in play: a register, not a menu ----
 PROCESSES = [
-    Process("ibp", "Integrated planning", says="Demand through supply to the one set of numbers the business runs on.", areas=[
+    Process("ibp", "Integrated business planning", says="Demand through supply to the one set of numbers the business runs on.", areas=[
         # an object with several views is one entry with tabs; the menu stays process → area → entry
         Area("demand", "Demand", [
             Section("demandplan", "Demand plan", "plan.demand", tabs=[
@@ -84,41 +84,60 @@ PROCESSES = [
             Section("review", "Management review", RUNG, {"slug": "review"}, verbs=["review.mbr.close", "decision.accept", "decision.record", "read.proof"]),
         ]),
     ]),
-    Process("finplan", "Financial planning", says="The plan valued: standard cost, the P&L by cause, the balance sheet rolled from opening actuals, cash.", areas=[
-        Area("standard", "Standard cost", [
+    # the chain Finance builds a plan along, one area per step, in order (DEC-20261113-12); a step not yet built is shown
+    # in its place and says so; set-up last, because it is read, not worked
+    Process("finplan", "Financial planning", says="The plan valued, step by step: revenue, cost of goods, labour, opex, capital, non-operating, the balance sheet and cash, the statements.", areas=[
+        Area("revenue", "Revenue", [
+            # one tab per measure of the register, each a view of the same working copy, then the versions laid over one another
+            Section("revenue", "Revenue", "plan.revenue", uses=CONTEXT_ALL, tabs=[
+                Tab("fin_volume", "Volume", "plan.revenue", {"measure": "volume"}, verbs=FIN_READ),
+                Tab("fin_price", "Price", "plan.revenue", {"measure": "price"}, verbs=FIN_READ),
+                Tab("fin_revenue", "Revenue", "plan.revenue", {"measure": "revenue"}, verbs=FIN_READ),
+                Tab("fin_versions", "Versions", "plan.revenue_versions", verbs=FIN_READ)]),
+            # steps of the chain whose registers live under Demand, where the planners read them: shown here as links, not moved
+            Section("rev_prices", "Prices and terms · in Demand", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill", "read.plan"]),
+            Section("rev_promotions", "Promotions · in Demand", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
+        ]),
+        Area("cogs", "Cost of goods", [
+            # the same page and working copy as Revenue's tabs: a volume typed there shows here
+            Section("cogs", "Cost of goods", "plan.revenue", {"measure": "cogs"}, uses=CONTEXT_ALL, tabs=[
+                Tab("fin_cogs", "Cost of goods", "plan.revenue", {"measure": "cogs"}, verbs=FIN_READ),
+                Tab("fin_margin", "Margin", "plan.revenue", {"measure": "margin"}, verbs=FIN_READ)]),
             Section("standard", "Standard by plant", RUNG, {"slug": "standard"}, verbs=["standard.derive", "standard.declare", "register.cost_input.maintain", "read.proof"]),
             Section("landed", "Landed cost", RUNG, {"slug": "landed"}, verbs=["register.supplier_price_list.maintain", "register.freight_contract.maintain", "register.hedge_book.maintain", "register.customs.maintain"]),
         ]),
-        Area("sources", "Sources", [
-            Section("slots", "Where each number comes from", "plan.slots", verbs=FIN_READ),
-            Section("rules", "How each figure is calculated", "plan.rules", verbs=FIN_READ),
-        ]),
         # the cost side: the entities' ledgers read through the plan's own cost centres (DEC-20261113-03)
-        Area("costs", "Operating costs", [
-            Section("schedule", "Opex schedule", "plan.schedule", uses=("version", "fy"), tabs=[
-                Tab("sch_schedule", "Schedule", "plan.schedule", verbs=COST_READ)]),
+        Area("labour", "Labour", [
             Section("headcount", "Headcount", "plan.headcount_role", uses=("version", "fy"), tabs=[
                 Tab("hc_role", "By role", "plan.headcount_role", verbs=COST_READ),
                 Tab("hc_name", "By name", "plan.headcount_name", verbs=["read.pay"])]),
+        ]),
+        Area("opex", "Opex", [
+            Section("schedule", "Opex schedule", "plan.schedule", uses=("version", "fy"), tabs=[
+                Tab("sch_schedule", "Schedule", "plan.schedule", verbs=COST_READ)]),
+        ]),
+        Area("capital", "Capital", [
+            Section("capex", "Projects and depreciation", RUNG, {"slug": "capex"}, verbs=["capex.project.enter", "capex.approve", *FIN_READ]),
+        ]),
+        Area("nonop", "Non-operating", [
+            Section("nonop", "Interest, tax and other", RUNG, {"slug": "nonop"}, verbs=FIN_READ),
+        ]),
+        Area("balance", "Balance sheet and cash", [
+            Section("balance", "Balance sheet plan", RUNG, {"slug": "balance"}, verbs=["register.timing_policy.maintain", "read.proof"]),
+            Section("cash", "Cash", RUNG, {"slug": "cash"}, verbs=["register.timing_policy.maintain", "read.proof"]),
+        ]),
+        Area("statements", "Statements", [
+            Section("pnl", "P&L plan", RUNG, {"slug": "pnl"}, verbs=["register.assumptions.maintain", "register.timing_policy.maintain", "read.proof"]),
+        ]),
+        Area("setup", "Set-up", [
+            Section("slots", "Where each number comes from", "plan.slots", verbs=FIN_READ),
+            Section("rules", "How each figure is calculated", "plan.rules", verbs=FIN_READ),
             Section("costcentres", "Cost centres", "plan.cost_centres", tabs=[
                 Tab("cc_tree", "Cost centres", "plan.cost_centres", verbs=COST_READ),
                 Tab("cc_entities", "Entities and ledgers", "plan.cost_entities", verbs=COST_READ),
                 Tab("cc_actuals", "Actuals", "plan.cost_actuals", verbs=COST_READ),
                 Tab("cc_mapping", "Mapping review", "plan.cost_mapping", verbs=["register.cost_centre_map.maintain", "read.proof"])]),
-        ]),
-        Area("statements", "Planned statements", [
-            # the financial forecast: one tab per measure of the register, each a view of the same working copy, then the
-            # versions laid over one another in net sales
-            Section("revenue", "Financial forecast", "plan.revenue", uses=CONTEXT_ALL, tabs=[
-                Tab("fin_volume", "Volume", "plan.revenue", {"measure": "volume"}, verbs=FIN_READ),
-                Tab("fin_price", "Price", "plan.revenue", {"measure": "price"}, verbs=FIN_READ),
-                Tab("fin_revenue", "Revenue", "plan.revenue", {"measure": "revenue"}, verbs=FIN_READ),
-                Tab("fin_cogs", "Cost of goods", "plan.revenue", {"measure": "cogs"}, verbs=FIN_READ),
-                Tab("fin_margin", "Margin", "plan.revenue", {"measure": "margin"}, verbs=FIN_READ),
-                Tab("fin_versions", "Versions", "plan.revenue_versions", verbs=FIN_READ)]),
-            Section("pnl", "P&L plan", RUNG, {"slug": "pnl"}, verbs=["register.assumptions.maintain", "register.timing_policy.maintain", "read.proof"]),
-            Section("balance", "Balance sheet plan", RUNG, {"slug": "balance"}, verbs=["register.timing_policy.maintain", "read.proof"]),
-            Section("capex", "Capital", RUNG, {"slug": "capex"}, verbs=["capex.project.enter", "capex.approve"]),
+            Section("assumptions", "Assumptions", RUNG, {"slug": "assumptions"}, verbs=FIN_READ),
         ]),
     ]),
     Process("actuals", "Actuals", says="What happened, closed and proved, for the plan to be read against.", areas=[
@@ -181,8 +200,8 @@ MAP_NODES = [
     Node("accuracy", "read", "Forecast accuracy", "the plan judged as a forecast", "plan.accuracy"),
     Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
     Node("revenue", "read", "Versions in net sales", "the versions over one another", "plan.revenue_versions"),
-    Node("finance", "read", "Financial forecast", "volume × price, fed or built", "plan.revenue"),
-    Node("statements", "read", "Planned statements", "P&L and balance sheet", "plan.rung", {"slug": "pnl"}, built=False),
+    Node("finance", "read", "Revenue", "volume × price, fed or built", "plan.revenue"),
+    Node("statements", "read", "Statements", "the P&L read across the chain; the balance sheet", "plan.rung", {"slug": "pnl"}, built=False),
 ]
 # (from, to, what flows); a flow from the first band is a door — something made elsewhere taken in
 MAP_FLOWS = [
@@ -264,7 +283,7 @@ CONTEXT = [
     Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts)),
 ]
 
-SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map")],
+SHELL = Shell(brand="Caldera", strapline="integrated business planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map")],
               context=CONTEXT, skin=SPECIMEN_SKIN if "--skin" in sys.argv[1:] else None)
 
 # the entry file's contract — every column the landing writes; the generator writes the same

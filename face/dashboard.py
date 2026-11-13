@@ -219,7 +219,7 @@ def _points(keys, view, ref, py, X, Y, series) -> str:
     return json.dumps(pts).replace("'", "&#39;")
 
 
-REVENUE_PAGE = """<h1>Financial forecast<small>{{ version }} · FY{{ fy }} · net sales invoiced, the latest view and {{ ref_id or 'no reference' }} laid over one another, per week</small></h1>
+REVENUE_PAGE = """<h1>Revenue · versions<small>{{ version }} · FY{{ fy }} · net sales invoiced, the latest view and {{ ref_id or 'no reference' }} laid over one another, per week</small></h1>
 <div class="cards tiles">
 <div class="card stat"><span>FY{{ fy }} latest view · AUD</span><b>{{ lfl.year|m }}</b><div class="small delta {{ d.py|dir }}">{% if lfl.py_year %}{{ d.py|pct }} vs FY{{ fy - 1 }} invoiced{% elif lfl.py_part %}FY{{ fy - 1 }} is still closing — no year to read against{% else %}no FY{{ fy - 1 }} invoiced to read against{% endif %}</div></div>
 <div class="card stat"><span>Invoiced to date</span><b>{{ lfl.invoiced|m }}</b><div class="small muted">{% if series.n_actual %}{{ series.n_actual }} closed period{{ 's' if series.n_actual > 1 }} of {{ table|length }}{% else %}no period closed yet{% endif %}</div></div>

@@ -746,10 +746,11 @@ def revenue():
         measure = page.get("measure") if page.get("measure") in FIN_TABS else "volume"
         page["measure"] = measure
         fin = _finance_ctx(version, fy, page)
-        return _page(FINANCE_PAGE, title=f"Financial forecast · {fin['tab_label']}", active=f"fin_{measure}", width="none", version=version,
+        fin["entry"] = "Cost of goods" if measure in ("cogs", "margin") else "Revenue"
+        return _page(FINANCE_PAGE, title=f"{fin['entry']} · {fin['tab_label']}", active=f"fin_{measure}", width="none", version=version,
                      fy=fy, fin=fin, last=session.last, live_script=working.script())
     except Busy as e:
-        return _busy("Financial forecast", e)
+        return _busy("Revenue", e)
 
 
 @plan.get("/revenue/versions")
@@ -797,13 +798,13 @@ def revenue_versions():
         drill = {"dim": dim, "label": reads.node_label(dim, node) + (f" × {across}" if across else ""), "across": across,
                  "path": [{**n, "href": L(**{dim: n["code"]})} for n in reads.node_path(dim, node)],
                  "other": L(dim=other)}
-        return _page(dashboard.REVENUE_PAGE, title="Financial forecast · Versions", active="fin_versions", width="none",
+        return _page(dashboard.REVENUE_PAGE, title="Revenue · Versions", active="fin_versions", width="none",
                      version=version, versions=reads.versions(), fy=fy,
                      grain=grain, grains=[{"label": g, "on": g == grain, "href": L(grain=g)} for g in ("period", "week")],
                      series=series, chart=dashboard.chart(shown, fy), lfl=lfl, d=d, table=table, split=split, split_of=split_of, drill=drill,
                      ref_id=ref_id, ref_kind=ref_kind)
     except Busy as e:
-        return _busy("Financial forecast", e)
+        return _busy("Revenue", e)
 
 
 # ---- Finance's plan: volume × price = revenue, with the demand plan beneath every figure ----
@@ -825,7 +826,7 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 {% for e in fin.edits %}<tr class="{{ 'off' if e.state != 'in_force' }}"><td>{{ e.scope_material }}</td><td>{{ e.period }}</td><td>{{ e.measure }}</td><td class="n">{{ e.typed }}</td><td class="n">{{ e.now }}</td><td class="n">{{ e.then }}</td><td class="n">{{ e.src_now }}{% if e.source_moved %} <span class="moved">◆</span>{% endif %}</td>
 <td>{% if e.standing == 'unsaved' %}<span class="state unsaved">unsaved</span>{% elif e.standing == 'held' %}held{% elif e.standing == 'overwritten' %}<span class="state">changed</span> <span class="small muted">by a later figure</span>{% else %}<span class="state">{{ e.standing }}</span>{% endif %}</td><td class="small">{{ e.reason }}</td><td class="small">{{ e.entered_by }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>{% endmacro %}"""
 
-FINANCE_PAGE = FIN_MACROS + """<h1>Financial forecast<small>FY{{ fy }} · {{ version }} · {{ fin.tab_label }} · Finance's volume × price = revenue, the demand plan beneath every figure</small></h1>
+FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ version }} · {{ fin.tab_label }} · {% if fin.entry == 'Revenue' %}Finance's volume × price = revenue{% else %}the volume typed under Revenue × the standard cost per case = cost of goods; margin = revenue − cost of goods{% endif %}, the demand plan beneath every figure</small></h1>
 {{ fin_tiles(fin) }}
 <div class="toolbar"><span class="small muted">{{ fin.customer_label }}{% if fin.source_of.get(fin.fc) == 'built' %} · built by Finance{% endif %} ×</span>
 <span class="crumbs">{% for n in fin.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}</span>
@@ -1277,7 +1278,7 @@ SLOTS = """<h1>Where each number comes from<small>the financial plan is one chai
 {% for d in sources %}<tr><td>{{ d.account_code }} <span class="small muted">{{ d.account_name }}</span></td><td>{% if d.material_code == 'ALL' %}<span class="small muted">the account's default</span>{% else %}{{ d.material_code }} <span class="small muted">{{ d.material_name }}</span>{% endif %}</td>
 <td>{% if d.source == 'built' %}<b>built by Finance</b>{% else %}fed by the demand plan{% endif %}</td><td class="small">{{ d.declared_by }} · {{ d.declared_on }}</td>
 <td class="n">{{ d.plan|aud if d.plan is not none else '' }}</td><td class="n">{{ d.beneath|aud if d.beneath is not none else ('none' if d.source == 'built' else '') }}</td><td class="small">{{ d.note or '' }}</td></tr>{% endfor %}</tbody></table>
-<p class="hint">Fed: the demand plan valued is the source and Finance types over it. Built: nothing feeds — Finance keeps the volume and the price itself, and the grid shows no figure beneath. The account's row is its default; a material row is an exception. <a href="{{ url_for('plan.revenue') }}">The financial forecast</a> reads both, with the demand plan under every fed figure.</p>"""
+<p class="hint">Fed: the demand plan valued is the source and Finance types over it. Built: nothing feeds — Finance keeps the volume and the price itself, and the grid shows no figure beneath. The account's row is its default; a material row is an exception. <a href="{{ url_for('plan.revenue') }}">Revenue</a> reads both, with the demand plan under every fed figure.</p>"""
 SLOT_RUNG = {"cogs": "standard", "inventory": "inventory", "capex": "capex", "balance": "balance"}
 
 
@@ -1471,9 +1472,12 @@ def plan_map():
 RUNGS = {
     "standard": ("Standard by plant", "The standard cost of every material at every plant for the version's standard year, derived from the routes, the BOM and the cost inputs; a new plant through to a new standard and the transition."),
     "landed": ("Landed cost", "The distributor's standard: supplier price × FX + freight + duty by source; purchase price, FX and freight rate as the three variances."),
-    "pnl": ("P&L plan", "Every line of the commercial P&L by cause — volume, price, mix, promotion, cost — at standard, with the planned variances beneath."),
-    "balance": ("Balance sheet plan", "Every line rolled from opening actuals by one declared movement source; three identities run as a check on every version."),
-    "capex": ("Capital", "Projects entered, approved and phased; the maintenance deferral that raises unplanned downtime into the capacity analysis."),
+    "pnl": ("P&L plan", "The P&L read across every step of the chain: every line of the commercial P&L by cause — volume, price, mix, promotion, cost — at standard, with the planned variances beneath."),
+    "balance": ("Balance sheet plan", "Every line rolled from opening actuals by one declared movement source, working capital first by its timing policy; three identities run as a check on every version."),
+    "capex": ("Projects and depreciation", "Projects entered, approved and phased, and depreciated; the maintenance deferral that raises unplanned downtime into the capacity analysis. Waits on four questions about how capital is planned here."),
+    "nonop": ("Interest, tax and other", "The non-operating lines of the P&L — interest, tax, other income and expense — each a schedule of its own or a line per period with a declared method."),
+    "cash": ("Cash", "Cash by period, rolled from the opening balance through the P&L and the movements in working capital, capital and financing."),
+    "assumptions": ("Assumptions", "The one set of assumptions every plan is valued with — exchange rate, inflation, wage and energy indices — by version and period, each with what reads it."),
     "cycle": ("Period control", "Periods opened and closed; the latest closed period that every version's baseline is read from."),
     "proof": ("Proof", "The identities and reconciliations that let a number be trusted: stack to total, gross to net, plan to reference."),
     "supply": ("Supply plan", "Unconstrained demand met from stock, production and purchases by week and node; the rough-cut against the lines; what cannot be made and the shaping that answers it."),
@@ -2331,8 +2335,8 @@ FINANCE_RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_f
 # A release scoped to one act's reach: the commands, what that act's own files waiting are, what the run is called and what
 # it says when done. The cost side adds its own (face/schedule.py).
 SCOPED: dict[str, dict] = {
-    "finance": {"commands": FINANCE_RUN, "pending": FINANCE.pending, "what": "financial forecast",
-                "says": "run completed — the financial forecast reads Finance's figures; nothing else in the plan reads them"},
+    "finance": {"commands": FINANCE_RUN, "pending": FINANCE.pending, "what": "revenue",
+                "says": "run completed — Revenue reads Finance's figures; nothing else in the plan reads them"},
 }
 
 
