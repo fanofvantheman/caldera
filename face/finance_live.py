@@ -174,12 +174,32 @@ def type_figure(wc: WorkingCopy, customer: str, material: str, period: str, meas
     sf = g.rules[measure]["source_field"]
     written = g.type(v, customer, material, period, measure, value, t.edit_id)
     t.cells = [(k[1], k[2], x, g.cells[k][sf] if g.cells[k]["source"] == "fed" else None) for k, x in written]
+    base_grid = wc.base or g
     for k, _ in written:
-        _touch(wc, wc.base or g, k, measure)
-    # the same node, period and measure typed again: the earlier figure's cells are all overwritten — keep the later only
-    wc.typed = [e for e in wc.typed if (e.customer, e.material, e.period, e.measure) != (customer, material, period, measure)]
+        _touch(wc, base_grid, k, measure)
+    # an earlier figure in the same period and measure whose every cell this one has written over is gone — the same node
+    # typed again, or a child under a parent typed since; it no longer stands anywhere, so it is not saved or marked typed
+    mine = {(k[1], k[2]) for k, _ in written}
+    wc.typed = [e for e in wc.typed if not (e.period == period and e.measure == measure and {(a, m) for a, m, _, _ in e.cells} <= mine)]
     wc.typed.append(t)
+    # a cell typed back to what was saved is no longer a change: unmarked, and a figure all of whose cells are as saved
+    # is dropped — the copy keeps only what differs from the plan
+    for k, _ in written:
+        was, now = base_grid.cells.get(k), g.cells[k]
+        if was is not None and all(_same(was.get(r["field"]), now.get(r["field"])) for r in g.rules.values()):
+            for m in wc.touched:
+                wc.touched[m].discard(k)
+    if all(base_grid.cells.get(k) is not None and _same(base_grid.cells[k].get(g.rules[measure]["field"]), g.cells[k].get(g.rules[measure]["field"]))
+           for k, _ in written):
+        wc.typed = [e for e in wc.typed if e is not t]
+        return t
     return t
+
+
+def _same(a, b) -> bool:
+    if a is None or b is None:
+        return a is b
+    return abs(a - b) < 1e-6 * max(1.0, abs(a))
 
 
 def rows_for_save(wc: WorkingCopy, save_id: str, stamp: dt.datetime, who: str, reason: str, note: str) -> list[dict]:

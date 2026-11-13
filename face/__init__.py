@@ -227,7 +227,16 @@ def _bounded(who: str | None, dimension: str, opts: list[dict]) -> str | None:
 
 
 def _versions(who, chosen) -> list[dict]:
-    return [{"value": v["version_id"], "label": f"{v['version_id']} · {v['status']}"} for v in reads.versions()]
+    """The plan versions — the actuals are not a version a page plans or reads a plan on, so they are not offered."""
+    return [{"value": v["version_id"], "label": f"{v['version_id']} · {v['status']}"} for v in reads.versions() if v.get("version_kind") != "actual"]
+
+
+def _known_customer(code: str) -> bool:
+    return bool(q("select 1 ok from dims.dim_customer_hierarchy where descendant_code = ? limit 1", code))
+
+
+def _known_material(code: str) -> bool:
+    return code == "ALL" or reads.material_node(code) or bool(q("select 1 ok from dims.dim_material where material_code = ? limit 1", code))
 
 
 def _years(who, chosen) -> list[dict]:
@@ -279,8 +288,8 @@ def _materials(who, chosen) -> list[dict]:
 CONTEXT = [
     Choice("version", "Version", _versions, default=lambda who, chosen, opts: reads.default_version(), strict=True),
     Choice("fy", "Year", _years, default=_year_default, strict=True),
-    Choice("customer", "Customer", _customers, default=_customer_default, note=lambda who, opts: _bounded(who, "customer", opts)),
-    Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts)),
+    Choice("customer", "Customer", _customers, default=_customer_default, note=lambda who, opts: _bounded(who, "customer", opts), known=_known_customer),
+    Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts), known=_known_material),
 ]
 
 SHELL = Shell(brand="Caldera", strapline="integrated business planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map")],

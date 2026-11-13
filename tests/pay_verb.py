@@ -65,7 +65,7 @@ def main() -> None:
         cc = c.get("/costs/centres").data.decode()
         check(exec_line not in sch and person["person_name"] not in hn and salary not in hn,
               f"{who} (no read.pay): no name-based labour line on the schedule, no person or salary on Headcount by name")
-        check("individual pay" in hn and "read.pay" in hn, f"{who} is told who reads it")
+        check("individual pay" in hn and HOLDER in hn and "read.pay" not in hn, f"{who} is told who reads it, in words — not the permission's code")
         check("6100 Wages" not in exec_group(act), f"{who}: the executive office's wages are not in the actuals")
         check(("planned by name" in act and "planned by name" in cc) or who == "plant.manager@caldera", f"{who}: the actuals and cost centre pages say labour is withheld")
         if who != "plant.manager@caldera":

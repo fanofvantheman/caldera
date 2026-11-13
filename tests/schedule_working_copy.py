@@ -101,9 +101,9 @@ def main() -> None:
         assert b"not saved" not in r.data
         session.become(PLANT)
         reply = post(f"m|{S.line_id(travel)}|{p1}", 1)
-        assert "does not hold schedule.line.enter" in reply.get("sch-status", ""), reply.get("sch-status")
+        assert "does not hold the right to type a cost centre" in reply.get("sch-status", "") and "schedule.line.enter" not in reply.get("sch-status", ""), reply.get("sch-status")
         reply = post(f"r|{S.line_id(elec)}", 0.3)
-        assert "does not hold register.cost_input.maintain" in reply.get("sch-status", "")
+        assert "does not hold the right to set a schedule line" in reply.get("sch-status", "")
         print("refused         the plant manager at Sales (outside OPS) and on a rate; the general manager sees none of Finance's changes")
         session.become(FINANCE)
         wages = ("CF", "CC_E_TOM", "6100")

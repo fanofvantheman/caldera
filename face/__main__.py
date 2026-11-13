@@ -4,6 +4,7 @@ know them."""
 from __future__ import annotations
 
 import datetime as dt
+import math
 import pathlib
 
 import duckdb as _duckdb
@@ -28,6 +29,7 @@ from . import finance_live
 from . import costs
 from . import schedule
 from . import headcount
+from .words import said
 
 plan = Blueprint("plan", __name__)
 
@@ -87,6 +89,9 @@ def _page(body: str, **ctx) -> str:
         principals = []
     who = _who() if principals else None
     held = roles.actions_held(who) if who else set()
+    acts = ctx.pop("receipt_acts", None)            # a page showing a receipt names the acts it belongs to
+    if acts is not None and ctx.get("last") and (ctx["last"].get("by") != who or not any(ctx["last"].get("act", "").startswith(x) for x in acts)):
+        ctx["last"] = None
     return SHELL.page(body, who=who, held=held, principals=principals, flash=session.flash(), **ctx)
 
 
@@ -547,7 +552,7 @@ def entry_new():
         return _page(NEW, title="New entry", active="new", versions=reads.open_versions(),
                      layers=[l for l in reads.layers() if l["layer_no"] in enterable], reasons=reads.reasons(), effects=EFFECTS, kinds=KINDS, spreads=SPREADS,
                      materials=reads.material_scopes(), customers=reads.customer_scopes(),
-                     periods=reads.horizon(reads.default_version() or ""), last=session.last)
+                     periods=reads.horizon(reads.default_version() or ""), last=session.last, receipt_acts=("enter", "withdraw"))
     except Busy as e:
         return _busy("New entry", e)
 
@@ -659,7 +664,7 @@ def submit():
     over_open = act == "submit" and bool(st) and st["state"] == "open"
     checks = [
         {"check": "version open", "ok": bool(v and v["status"] == "open"), "says": f"{version} is {v['status'] if v else 'unknown'}"},
-        {"check": "who holds the verb here", "ok": holds, "says": f"{who} holds {verb} at {node}" if holds else f"{who} does not hold {verb} at {node}"},
+        {"check": "who holds the verb here", "ok": holds, "says": f"{who} holds {said(verb)} at {node}" if holds else f"{who} does not hold {said(verb)} at {node}"},
         {"check": "act fits the state", "ok": fits, "says": f"{subject} at {node} is {st['state'] if st else 'unknown'}"},
         {"check": "submitting over open children", "ok": not over_open, "flag": True,
          "says": "something beneath is still open — submitted over it, on record" if over_open else "nothing open beneath"},
@@ -703,8 +708,8 @@ def money():
 
 # ---- reconciliation: the gap to the reference version ----
 GAP = TOOLBAR + """
-<h1>Gap to reference<small>{{ version }} against {{ g.reference }} · the difference the cycle exists to close</small></h1>
-{% if not g.reference %}<p class="lede">This version names no reference.</p>{% else %}
+<h1>Gap to reference<small>{% if g.reference %}{{ version }} against {{ g.reference }}{% else %}{{ version }} has no reference{% endif %} · the difference the cycle exists to close</small></h1>
+{% if not g.reference %}<p class="lede">{{ version }} is read against nothing — it is itself the reference a later version is read against. Choose a version that names one (a latest view) to see its gap.</p>{% else %}
 <h2>By period</h2>
 <table><thead><tr><th>Period</th><th class="n">Plan cases</th><th class="n">Reference cases</th><th class="n">Gap</th><th class="n">Plan net sales</th><th class="n">Reference net sales</th><th class="n">Gap</th></tr></thead><tbody>
 {% for r in g.by_period %}<tr><td>{{ r.period }}</td><td class="n">{{ r.plan_cases|n }}</td><td class="n">{{ r.reference_cases|n }}</td><td class="n">{{ r.cases_gap|n }}</td><td class="n">{{ r.plan_net_sales|n }}</td><td class="n">{{ r.reference_net_sales|n }}</td><td class="n">{{ r.net_sales_gap|n }}</td></tr>{% endfor %}
@@ -745,10 +750,11 @@ def revenue():
         page = {**_page_args(request.args), "version": version, "fy": fy, "customer": c.get("customer") or "ALL", "material": c.get("material") or "ALL"}
         measure = page.get("measure") if page.get("measure") in FIN_TABS else "volume"
         page["measure"] = measure
-        fin = _finance_ctx(version, fy, page)
+        with finance_live.COPIES.lock(_who()):
+            fin = _finance_ctx(version, fy, page)
         fin["entry"] = "Cost of goods" if measure in ("cogs", "margin") else "Revenue"
         return _page(FINANCE_PAGE, title=f"{fin['entry']} · {fin['tab_label']}", active=f"fin_{measure}", width="none", version=version,
-                     fy=fy, fin=fin, last=session.last, live_script=working.script())
+                     fy=fy, fin=fin, last=session.last, receipt_acts=("finance",), live_script=working.script())
     except Busy as e:
         return _busy("Revenue", e)
 
@@ -817,7 +823,7 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 <div class="card stat"><span>Built by Finance</span><b>{{ fin.tot.built_rev|m if fin.tot.built_rev else '—' }}</b><div class="small muted">{{ fin.tot.built_vol|n if fin.tot.built_vol else 'no' }} cases with no demand plan beneath</div></div></div>{% endmacro %}
 {% macro fin_status(fin) %}<div id="fin-status">{% if fin.say %}<p class="flash no">{{ fin.say }}</p>{% endif %}{% if fin.unsaved_n %}<p class="hint unsaved-note"><b>{{ fin.unsaved_n }} figure{{ 's' if fin.unsaved_n != 1 }} typed and not saved</b>{% if fin.unsaved_here != fin.unsaved_n %} ({{ fin.unsaved_here }} at {{ fin.customer_label }}){% endif %} — hatched wherever {{ 'they reach' if fin.unsaved_n != 1 else 'it reaches' }}. They are yours alone until saved: Save writes them to the plan with one reason; Discard drops them.</p>{% elif fin.editable %}<p class="hint">Type a figure and press Enter or Tab: everything in this view recalculates at once — totals above, children beneath by the demand plan's shape, revenue, the variance and the year. A figure typed at a parent is written down to its children as you type it. Every tab shows the same figures. Nothing reaches the rest of the plan until you save.</p>{% elif fin.may and fin.open and fin.reading == 'finance' %}<p class="hint">{{ fin.tab_label }} is calculated, never typed: type a volume or a price on its tab, and this tab shows what it made at once.</p>{% endif %}{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} saved file{{ 's' if fin.n_waiting != 1 }} not yet taken in by a run — shown in the grid already.</p>{% endif %}</div>{% endmacro %}
 {% macro fin_row(fin, r) %}<tbody id="fin-r-{{ r.code }}">{% for m in fin.measures %}<tr class="{{ 'first' if loop.first }} {{ 'total' if r.current and loop.first }}">
-{% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node">{% if r.href %}<a href="{{ r.href }}">{{ r.label }}</a>{% else %}<b>{{ r.label }}</b>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></td>{% endif %}
+{% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node">{% if r.href %}<a href="{{ r.href }}" tabindex="-1">{{ r.label }}</a>{% else %}<b>{{ r.label }}</b>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></td>{% endif %}
 <td class="small muted">{{ m.label }}</td>
 {% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% if x.input %}<input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{% else %}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
 </tr>{% endfor %}</tbody>{% endmacro %}
@@ -835,7 +841,7 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 <div class="finlive"{% if fin.editable %} data-live-post="{{ url_for('plan.finance_cell') }}" data-live-context='{{ fin.live_context|tojson }}'{% endif %}>
 {{ fin_status(fin) }}
 <form method="post" action="{{ url_for('plan.finance_cell') }}" id="fin-grid">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
-<div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}<th class="n {{ 'closed' if p.closed }}">{{ p.label }}</th>{% endfor %}<th class="n">FY{{ fy }}</th></tr></thead>
+<div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}<th class="n {{ 'closed' if p.closed }}"{% if p.closed %} title="a closed period — what happened is read on the actuals, nothing is planned here"{% endif %}>{{ p.label }}{% if p.closed %}<div class="small muted">closed</div>{% endif %}</th>{% endfor %}<th class="n">FY{{ fy }}</th></tr></thead>
 {% for r in fin.rows %}{{ fin_row(fin, r) }}{% else %}<tbody><tr><td colspan="{{ fin.periods|length + 3 }}" class="muted">Nothing in Finance's plan at {{ fin.customer_label }} × {{ fin.path[-1].label }} in FY{{ fy }}.</td></tr></tbody>{% endfor %}
 </table></div>{% if fin.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
 <p class="hint">{% if fin.reading == 'finance' %}The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
@@ -1002,6 +1008,13 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
         if e["state"] == "in_force":
             typed.setdefault((e["scope_material"], e["period"], e["measure"]), e)
     mine = {(t.material, t.period, t.measure): t for t in (wc.typed if wc else []) if t.customer == fc}
+    def over(code, period, measure) -> bool:
+        """An unsaved figure typed at a node above this one (or at a customer above this one) in the period and measure."""
+        under_m = grid.materials_under.get(code, {code}) if grid is not None else set()
+        under_a = grid.accounts_under.get(fc, set()) if grid is not None else set()
+        return any(t.period == period and t.measure == measure and (t.material, t.customer) != (code, fc)
+                   and under_m <= grid.materials_under.get(t.material, {t.material}) and under_a <= grid.accounts_under.get(t.customer, set())
+                   for t in (wc.typed if wc else []))
     touched = wc.touched if wc else {}
     fm_label = _once(reads.node_label)("material", fm)
     levels = {"category": "category", "product": "product", "material": "material", "all": "all materials"}
@@ -1029,6 +1042,8 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                         if F["built"] and _shown_as(k) != "rate":
                             x["built"] = _show(k, F["built"][k])
                         e = typed.get((code, p["period"], k))
+                        if e and over(code, p["period"], k):
+                            e = None                   # a figure typed since, above it and not yet saved, has written over it
                         if e:
                             x["cls"] += " typed"; x["title"] = _edit_title(e); x["moved"] = bool(e["source_moved"])
                         t = mine.get((code, p["period"], k))
@@ -1049,6 +1064,8 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                         x["show"] = _show_var(k, F["var"][k], F["var_d"][k]) if F.get("var") else ("built" if k == "volume" else "")
                         if F.get("var") and (F["var"][k] or 0) < 0:
                             x["cls"] += " down"
+                        if touched and any(c in touched.get(k, ()) for c in ks):
+                            x["cls"] += " unsaved"; x["title"] = "changed by a figure typed and not saved"
                 row["cells"][k].append(x)
         rows.append(row)
     T = _figures([grid.cells[k] for p in periods for k in buckets.get((fm, p["period"]), [])], rules, ["volume", "price", "revenue"]) or {} if grid is not None else {}
@@ -1072,7 +1089,7 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
             "any_built": any(r["built"] for r in rows) or any(s == "built" for s in decl.values()),
             "editable": editable, "may": may, "open": is_open, "status": v.get("status", "unknown"), "holders": _once(reads.holders)("overlay.finance.enter"),
             "post_keep": {**page, "version": version or "", "fy": fy}, "live_context": {"page": {**page, "version": version or "", "fy": fy}},
-            "unsaved_n": len(wc.typed) if wc else 0, "unsaved_here": sum(1 for t in (wc.typed if wc else []) if t.customer == fc), "say": say,
+            "unsaved_n": len(wc.typed) if wc else 0, "unsaved_here": sum(1 for t in (wc.typed if wc else []) if grid is not None and grid.accounts_under.get(t.customer, set()) <= grid.accounts_under.get(fc, set())), "say": say,
             "can_add": editable and _once(reads.is_account)(fc), "add_materials": _once(reads.account_materials)(fc) if editable and _once(reads.is_account)(fc) else [],
             "open_in_fy": [p["period"] for p in periods if p["period"] in opens],
             "reasons": _once(reads.finance_reasons)(), "default_reason": "BUILD" if decl.get(fc) == "built" else "MARKET",
@@ -1099,7 +1116,7 @@ def _back(f) -> str:
 def _cell_refusal(who: str, version: str, v: dict, fc: str, node: str, period: str, measure: str, value: float | None, raw) -> str | None:
     """Why a figure cannot go into the working copy — the same rules a save is held to, judged as it is typed."""
     if not roles.may(who, "overlay.finance.enter"):
-        return f"{who} does not hold overlay.finance.enter — Finance's figures are typed by {', '.join(reads.holders('overlay.finance.enter'))}"
+        return f"{who} does not hold {said('overlay.finance.enter')} — Finance's figures are typed by {', '.join(reads.holders('overlay.finance.enter'))}"
     if v.get("status") != "open":
         return f"{version} is {v.get('status', 'unknown')} — nothing is typed on it"
     if fc not in {c["code"] for c in reads.finance_customer_nodes()}:
@@ -1108,7 +1125,7 @@ def _cell_refusal(who: str, version: str, v: dict, fc: str, node: str, period: s
     if not rule or not rule["breakback"]:
         return f"{measure} is not typed" + (f" — {rule['label'].lower()} = {rule['formula_says']}" if rule and rule["formula_says"] else "")
     if not roles.may(who, rule["verb"]):
-        return f"{who} does not hold {rule['verb']} — {rule['label'].lower()} is typed by {', '.join(reads.holders(rule['verb']))}"
+        return f"{who} does not hold {said(rule['verb'])} — {rule['label'].lower()} is typed by {', '.join(reads.holders(rule['verb']))}"
     if not reads.material_node(node):
         return f"{node} is not a node of the material structure"
     if period not in set(reads.open_periods(version)):
@@ -1117,7 +1134,12 @@ def _cell_refusal(who: str, version: str, v: dict, fc: str, node: str, period: s
         return f"'{raw}' is not a number"
     if (measure == "volume" and value < 0) or (measure == "price" and value <= 0):
         return "cases are zero or more, a price is above zero"
+    if (measure == "volume" and value > FIN_MAX["volume"]) or (measure == "price" and value > FIN_MAX["price"]):
+        return f"{raw} is beyond what one figure here can be — at most {FIN_MAX['volume']:,.0f} cases, or a price of {FIN_MAX['price']:,.0f} a case"
     return None
+
+
+FIN_MAX = {"volume": 100_000_000, "price": 100_000}       # one figure: cases at a node in a period; net per case
 
 
 @plan.post("/finance/cell")
@@ -1140,7 +1162,7 @@ def finance_cell():
                    for k, val in data.items() if k[:2] in ("v|", "p|") and k.count("|") == 2 and str(val).strip()]
     with finance_live.COPIES.lock(who):
         before = _fin_parts(version, fy, page, who) if live else {}
-        said, force, applied = [], [], 0
+        refused, force, applied = [], [], 0
         for node, period, measure, raw in figures:
             value = _num(raw)
             why = _cell_refusal(who, version, v, fc, node, period, measure, value, raw)
@@ -1154,12 +1176,12 @@ def finance_cell():
                 at_node = finance_live.node_value(wc.grid, version, fc, node, period, measure) if wc else None
                 why = None if at_node is not None else f"nothing at {node} for {fc} in {period} to spread to — start a material at an account first"
             if why:
-                said.append(why); force.append(f"fin-r-{node}")
+                refused.append(why); force.append(f"fin-r-{node}")
         if live:
-            after = _fin_parts(version, fy, page, who, say="; ".join(said) or None)
-            return working.reply(before, after, always=tuple(["fin-status"] + force) if said else ())
-    if said:
-        session.say("; ".join(said), False)
+            after = _fin_parts(version, fy, page, who, say="; ".join(refused) or None)
+            return working.reply(before, after, always=tuple(["fin-status"] + force))
+    if refused:
+        session.say("; ".join(refused), False)
     elif applied:
         session.say(f"{applied} figure{'s' if applied != 1 else ''} applied — not yet saved", True)
     return redirect(_back(page))
@@ -1194,9 +1216,10 @@ def finance_start():
 def finance_discard():
     """Drop the working copy: the grid is the plan as last saved again."""
     who = _who(); page = _page_args(request.form); version = page.get("version") or reads.default_version()
-    wc = finance_live.working_copy(who, version, FINANCE)
-    n = len(wc.typed) if wc else 0
-    finance_live.discard(who, version)
+    with finance_live.COPIES.lock(who):
+        wc = finance_live.working_copy(who, version, FINANCE)
+        n = len(wc.typed) if wc else 0
+        finance_live.discard(who, version)
     session.say(f"{n} unsaved figure{'s' if n != 1 else ''} discarded — the grid is the plan as last saved" if n else "nothing unsaved to discard", True)
     return redirect(_back(page))
 
@@ -1210,21 +1233,21 @@ def finance_save():
     version = page.get("version") or reads.default_version(); v = reads.version(version) or {}
     reason = f.get("reason_code", ""); note = (f.get("note") or "").strip()
     reasons = {r["reason_code"]: r for r in reads.finance_reasons()}
-    wc = finance_live.working_copy(who, version, FINANCE)
-    n = len(wc.typed) if wc else 0
-    may = roles.may(who, verb)
-    checks = [
-        {"check": "who may type", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — Finance's figures are typed by {', '.join(reads.holders(verb))}"},
-        {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
-        {"check": "something to save", "ok": n > 0, "says": f"{n} figure{'s' if n != 1 else ''} typed and not saved" if n else "nothing typed since the last save"},
-        {"check": "a reason we know", "ok": reason in reasons, "says": reasons[reason]["description"] if reason in reasons else f"{reason or 'no reason'} is not one of Finance's reasons"},
-        {"check": "a note where the reason needs one", "ok": bool(note) or not (reasons.get(reason) or {}).get("note_required"),
-         "says": note or ("this reason needs a note saying what" if (reasons.get(reason) or {}).get("note_required") else "not needed for this reason")},
-    ]
-    placed = receipts.judge(checks)
-    stamp = dt.datetime.now(); save_id = f"FS-{stamp.strftime('%Y%m%d-%H%M%S-%f')}"
-    if placed:
-        with finance_live.COPIES.lock(who):
+    with finance_live.COPIES.lock(who):        # a figure still being applied lands before the copy is read
+        wc = finance_live.working_copy(who, version, FINANCE)
+        n = len(wc.typed) if wc else 0
+        may = roles.may(who, verb)
+        checks = [
+            {"check": "who may type", "ok": may, "says": f"{who} holds {said(verb)}" if may else f"{who} does not hold {said(verb)} — Finance's figures are typed by {', '.join(reads.holders(verb))}"},
+            {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
+            {"check": "something to save", "ok": n > 0, "says": f"{n} figure{'s' if n != 1 else ''} typed and not saved" if n else "nothing typed since the last save"},
+            {"check": "a reason we know", "ok": reason in reasons, "says": reasons[reason]["description"] if reason in reasons else f"{reason or 'no reason'} is not one of Finance's reasons"},
+            {"check": "a note where the reason needs one", "ok": bool(note) or not (reasons.get(reason) or {}).get("note_required"),
+             "says": note or ("this reason needs a note saying what" if (reasons.get(reason) or {}).get("note_required") else "not needed for this reason")},
+        ]
+        placed = receipts.judge(checks)
+        stamp = dt.datetime.now(); save_id = f"FS-{stamp.strftime('%Y%m%d-%H%M%S-%f')}"
+        if placed:
             FINANCE.place(finance_live.rows_for_save(wc, save_id, stamp, who, reason, note), who)
             finance_live.discard(who, version)
     session.last = receipts.write("finance.save", who, save_id, checks, placed)
@@ -1246,7 +1269,7 @@ def finance_release():
     s = reads.finance_save(sid)
     may = roles.may(who, verb)
     checks = [
-        {"check": "who may release", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb}"},
+        {"check": "who may release", "ok": may, "says": f"{who} holds {said(verb)}" if may else f"{who} does not hold {said(verb)}"},
         {"check": "save on file", "ok": bool(s and s["version_id"] == version), "says": f"{sid} on {version}" if s and s["version_id"] == version else f"{sid} is not on {version}"},
         {"check": "not already released", "ok": bool(s and not s["released"]), "says": "stands" if s and not s["released"] else "already released"},
         {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
@@ -1323,7 +1346,7 @@ def slots():
 
 # ---- how each figure is calculated: the measure register ----
 RULES = """<h1>How each figure is calculated<small>every grid a person types into, its figures and the rule behind each — the calculation reads how a figure adds up and how a figure typed at a total spreads from this table, so what it says here is what the grid does</small></h1>
-{% for g in grids %}<h2 id="{{ g.grid }}"><a href="{{ g.href }}">{{ g.label }}</a><span class="count">{{ g.rows|length }} figures · one tab each</span></h2>
+{% for g in grids %}<h2 id="{{ g.grid }}"><a href="{{ g.href }}">{{ g.label }}</a><span class="count">{{ g.rows|length }} figure{{ 's' if g.rows|length != 1 }}{% if g.tabbed %} · {{ g.tabbed }} with a tab of {{ 'its' if g.tabbed == 1 else 'their' }} own{% endif %}</span></h2>
 <table class="rules"><thead><tr><th>Figure</th><th>How it is set</th><th>At a total</th><th>Typed at a total</th><th>Typed by</th></tr></thead><tbody>
 {% for r in g.rows %}<tr id="{{ g.grid }}-{{ r.measure }}" class="{{ '' if r.built else 'off' }}"><td><b>{{ r.label }}</b><div class="small muted">{{ r.unit }}</div></td>
 <td>{% if r.formula_says %}<b>{{ r.label|lower }} = {{ r.formula_says }}</b><div class="small">{{ r.set_says }}</div>{% else %}<span class="small">{{ r.set_says }}</span>{% endif %}{% if not r.built %}<div class="small muted">{{ r.not_built_says }}</div>{% endif %}</td>
@@ -1340,6 +1363,7 @@ def rules():
         for r in reads.grid_measures():
             g = grids.setdefault(r["grid"], {"grid": r["grid"], "label": r["grid_label"], "href": url_for(r["grid_page"]), "rows": []})
             g["rows"].append({**r, "holders": reads.holders(r["verb"]) if r["verb"] else []})
+            g["tabbed"] = sum(1 for x in g["rows"] if x["grid"] == "finance" and x["measure"] in FIN_TABS)
         return _page(RULES, title="How each figure is calculated", active="rules", grids=list(grids.values()))
     except Busy as e:
         return _busy("How each figure is calculated", e)
@@ -1609,7 +1633,7 @@ def events():
                      groups=reads.promo_groups(), mechanics=reads.mechanics(), pending=promotions.pending(), nbs=reads.neighbours(),
                      families=sorted(fam.items(), key=lambda x: -x[1]), next_start=next_start,
                      may=roles.may(who, "register.promo_calendar.maintain"),
-                     may_map=roles.may(who, "mapping.accept") or roles.may(who, "mapping.alter"), last=session.last)
+                     may_map=roles.may(who, "mapping.accept") or roles.may(who, "mapping.alter"), last=session.last, receipt_acts=("take_in", "neighbour", "event"))
     except Busy as e:
         return _busy("Promotions", e)
 
@@ -1622,12 +1646,15 @@ def _date(x: str | None) -> dt.date | None:
 
 
 def _num(x, blank=None) -> float | None:
+    """A typed number: thousands separators allowed (the page shows figures that way); not-a-number, infinity and
+    anything beyond a trillion are not numbers here."""
     if x is None or str(x).strip() == "":
         return blank
     try:
-        return float(x)
+        v = float(str(x).strip().replace(",", ""))
     except ValueError:
         return None
+    return v if math.isfinite(v) and abs(v) <= 1e12 else None
 
 
 def _window_checks(start: dt.date | None, end: dt.date | None, version: str) -> dict:
@@ -1647,7 +1674,7 @@ def take_in():
     f = next((x for x in promotions.sender_files() if x["file_id"] == fid), None)
     may = roles.may(who, "register.promo_calendar.maintain")
     checks = [
-        {"check": "who may take it in", "ok": may, "says": f"{who} holds register.promo_calendar.maintain" if may else f"{who} does not hold register.promo_calendar.maintain"},
+        {"check": "who may take it in", "ok": may, "says": f"{who} holds {said('register.promo_calendar.maintain')}" if may else f"{who} does not hold {said('register.promo_calendar.maintain')}"},
         {"check": "file waiting", "ok": bool(f and f["events"] and not f["taken_in_at"]),
          "says": f"{fid}: {len(f['events'])} events, {len(f['funding'])} funding lines" if f and f["events"] and not f["taken_in_at"] else f"{fid} is not waiting" + (f" — taken in {f['taken_in_at']}" if f and f["taken_in_at"] else "")},
         {"check": "version open", "ok": bool(version), "says": f"into {version}" if version else "no open version"},
@@ -1833,7 +1860,7 @@ def event_new():
     numbers = all(x is not None and x >= 0 for x in (tpr, scan, fee, media, draw)) and (not up_given or (up is not None and up >= 0)) and (not dip_given or (dip is not None and dip >= 0))
     checks = [
         {"check": "version open", "ok": bool(v and v["status"] == "open"), "says": f"{version} is {v['status'] if v else 'unknown'}"},
-        {"check": "who may enter", "ok": may, "says": f"{who} holds register.promo_calendar.maintain" if may else f"{who} does not hold register.promo_calendar.maintain"},
+        {"check": "who may enter", "ok": may, "says": f"{who} holds {said('register.promo_calendar.maintain')}" if may else f"{who} does not hold {said('register.promo_calendar.maintain')}"},
         {"check": "account's promotions typed here", "ok": acct.get("promotions_master") == "PLAN",
          "says": f"{acct.get('account_code')} promotions are typed in the plan" if acct.get("promotions_master") == "PLAN"
                  else (f"{acct.get('account_code')} promotions come from the promotions system — enter them there" if acct else "unknown account")},
@@ -1884,7 +1911,7 @@ def mapping():
         who = _who(); review = reads.mapping_review()
         return _page(MAPPING, title="Mapping review", active="mapping", width="none", **doors.page_context("TPM", who, review),
                      door_decided=doors.decided("TPM"), missing=sum(1 for r in review if r["review_state"] == "missing"),
-                     pending=len(doors.ACTS.pending()), may_alter=roles.may(who, "mapping.alter"), last=session.last)
+                     pending=len(doors.ACTS.pending()), may_alter=roles.may(who, "mapping.alter"), last=session.last, receipt_acts=("mapping", "tpm."))
     except Busy as e:
         return _busy("Mapping review", e)
 
@@ -1990,7 +2017,7 @@ def mapping_propose():
             codes[r["subject"]][r["local_code"]] = r["local_description"] or ""
     codes = promotions.unmapped(codes)
     may = roles.may(who, "mapping.alter")
-    checks = [{"check": "who may propose", "ok": may, "says": f"{who} holds mapping.alter" if may else f"{who} does not hold mapping.alter"}]
+    checks = [{"check": "who may propose", "ok": may, "says": f"{who} holds {said('mapping.alter')}" if may else f"{who} does not hold {said('mapping.alter')}"}]
     if may:
         n, says, ran = promotions.first_pass(codes, who)
         checks.append({"check": "first pass", "ok": ran, "flag": True, "says": says})
@@ -2096,7 +2123,7 @@ def forecast():
                      door_decided=[d for d in _fcst_decided(version) if showing_all or d["scope_code"] == "ALL" or d["scope_code"] in shown],
                      runs=runs, **door_ctx,
                      departures=reads.forecast_departures(version, sorted(shown)) if run else [], series=series, series_material=mat, series_account=acct,
-                     series_name=names.get(mat, mat), pending=len(fcst.pending()) + len(doors.ACTS.pending()), last=session.last)
+                     series_name=names.get(mat, mat), pending=len(fcst.pending()) + len(doors.ACTS.pending()), last=session.last, receipt_acts=("forecast", "fcs."))
     except Busy as e:
         return _busy("Statistical forecast", e)
 
@@ -2121,7 +2148,7 @@ def forecast_take_in():
     may = roles.may(who, verb, acct, dimension="customer") if acct else False
     source = (reads.account(acct) or {}).get("baseline_source") if acct else None
     checks = [
-        {"check": "who may take it in", "ok": may, "says": f"{who} holds {verb} at {acct}" if may else f"{who} does not hold {verb} at {acct or 'that account'} — the account's planner takes its run in"},
+        {"check": "who may take it in", "ok": may, "says": f"{who} holds {said(verb)} at {acct}" if may else f"{who} does not hold {said(verb)} at {acct or 'that account'} — the account's planner takes its run in"},
         {"check": "run waiting for the account", "ok": bool(a and not a["taken_in_at"]),
          "says": f"{rid} for {acct}: {a['n_series']} series, {len(rows)} rows" if a and not a["taken_in_at"] else (f"{rid} was taken in for {acct} at {a['taken_in_at']}" if a else f"{rid} sends nothing for {acct or 'that account'}")},
         {"check": "account takes the forecast", "ok": source == "FORECAST", "says": f"{acct}'s baseline comes from the forecasting system" if source == "FORECAST" else f"{acct or 'that account'}'s baseline is calculated in the plan"},
@@ -2137,7 +2164,7 @@ def forecast_take_in():
     return redirect(url_for("plan.forecast") + "#sender")
 
 
-MAINTAINED = """<p class="hint">{% if may_edit %}You maintain {{ what }}: an amendment is a new row from a date — the row in force is never edited — and takes effect on the next run.{% else %}You read {{ what }}; they are maintained by {{ holders|join(', ') or 'nobody yet' }} ({{ verb }}). Ask them for a change.{% endif %}</p>"""
+MAINTAINED = """<p class="hint">{% if may_edit %}You maintain {{ what }}: an amendment is a new row from a date — the row in force is never edited — and takes effect on the next run.{% else %}You read {{ what }}; they are maintained by {{ holders|join(', ') or 'nobody yet' }}. Ask them for a change.{% endif %}</p>"""
 
 TERMS = """<h1>Terms<small>the instruments in force, by account — effective-dated; an amendment is a new row from its date</small></h1>
 """ + MAINTAINED + """
@@ -2169,7 +2196,7 @@ def terms():
         verb = "register.terms.maintain"
         return _page(TERMS, title="Terms", active="terms", groups=sorted(groups.values(), key=lambda g: g["account_name"]), version=version,
                      envelopes=reads.envelopes(version) if version else [], may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
-                     what="the terms register", today=dt.date.today(), next_from=_next_monday().isoformat(), last=session.last)
+                     what="the terms register", today=dt.date.today(), next_from=_next_monday().isoformat(), last=session.last, receipt_acts=("terms",))
     except Busy as e:
         return _busy("Terms", e)
 
@@ -2200,7 +2227,7 @@ def terms_amend():
     may = roles.may(who, verb)
     within = bool(row and start and start >= row["valid_from"] and (row["valid_to"] is None or start <= row["valid_to"]))
     checks = [
-        {"check": "who may amend", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — terms are maintained by {', '.join(reads.holders(verb))}"},
+        {"check": "who may amend", "ok": may, "says": f"{who} holds {said(verb)}" if may else f"{who} does not hold {said(verb)} — terms are maintained by {', '.join(reads.holders(verb))}"},
         {"check": "instrument on file", "ok": row is not None, "says": f"{row['instrument_code']} ({row['instrument_kind']}) from {row['valid_from']}" if row else "no such instrument row"},
         {"check": "rate is a number", "ok": rate is not None and rate >= 0 and (row is None or row["driver_basis"] == "lump_sum" or rate < 1),
          "says": (f"{rate:,.0f}" if row and row["driver_basis"] == "lump_sum" else f"{rate:.2%}") if rate is not None and rate >= 0 else "not a number, or below zero"},
@@ -2248,7 +2275,7 @@ def price_lists():
     try:
         who = _who(); verb = "register.price_list.maintain"; lists = reads.price_lists()
         return _page(PRICE_LISTS, title="Price lists", active="pricelists", lists=lists, may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
-                     what="the price lists", next_from=_next_monday().isoformat(), last=session.last,
+                     what="the price lists", next_from=_next_monday().isoformat(), last=session.last, receipt_acts=("price",),
                      materials=sorted({m["material_code"] for pl in lists for m in pl["materials"]}))
     except Busy as e:
         return _busy("Price lists", e)
@@ -2266,7 +2293,7 @@ def price_change():
     may = roles.may(who, verb)
     chg = None if not (cur and price) else price / cur["price_per_case"] - 1
     checks = [
-        {"check": "who may change a price", "ok": may, "says": f"{who} holds {verb}" if may else f"{who} does not hold {verb} — price lists are maintained by {', '.join(reads.holders(verb))}"},
+        {"check": "who may change a price", "ok": may, "says": f"{who} holds {said(verb)}" if may else f"{who} does not hold {said(verb)} — price lists are maintained by {', '.join(reads.holders(verb))}"},
         {"check": "material on the list", "ok": cur is not None, "says": f"{mat} is on {pl} at {cur['price_per_case']:,.2f} {cur['currency']}" if cur else f"{mat or 'nothing'} is not on {pl}"},
         {"check": "price is a number", "ok": price is not None and price > 0, "says": f"{price:,.2f}" + (f" ({chg:+.1%})" if chg is not None else "") if price else "not a number, or not above zero"},
         *_from_checks(start),
@@ -2312,7 +2339,7 @@ RUN = """<h1>Run and health<small>load the landing, evaluate every model and eve
 <div class="cards"><div class="card stat"><b>{{ pending|length }}</b><span>files placed since the last run</span></div>
 <div class="card stat"><b>{{ receipts|length }}</b><span>recent acts</span></div></div>
 <form method="post" action="{{ url_for('plan.run_now') }}"><button class="primary" {{ 'disabled' if not may_run }}>Run</button>
-<span class="hint">{{ 'as ' + who if may_run else who + ' does not hold run.plan' }}</span></form>
+<span class="hint">{{ 'as ' + who if may_run else who + ' may not run the plan' }}</span></form>
 {% if run_log %}<h2>Last run</h2><pre>{{ run_log }}</pre>{% endif %}
 {% if pending %}<h2>Waiting for the next run</h2><table><thead><tr><th>File</th></tr></thead><tbody>{% for p in pending %}<tr><td><code>{{ p.name }}</code></td></tr>{% endfor %}</tbody></table>{% endif %}
 {% if health %}<h2>Health</h2><table><thead><tr><th>Worklist</th><th>Severity</th><th class="n">Items</th><th>What to do</th><th>Whose</th></tr></thead><tbody>

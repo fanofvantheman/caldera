@@ -12,6 +12,7 @@ from chassis.warehouse import Busy, q
 from flask import request
 
 from . import costs
+from .words import said
 
 ROLE = """<h1>Headcount by role<small>FY{{ fy }} · {{ version }} · the factory cost centres — positions priced through each entity's agreement; a change of person moves nothing</small></h1>
 <p class="hint">FTE are positions at 38 paid hours a week; the casual pool is a position for the campaign periods at a 25% loading. Wages land on the schedule's 6100 line and the employer's on-costs on 6150, for every period of the schedule. Penalties, allowances and leave are not yet planned.</p>
@@ -25,8 +26,8 @@ ROLE = """<h1>Headcount by role<small>FY{{ fy }} · {{ version }} · the factory
 {% for a in agreements %}<tr><td class="small">{{ a.agreement_name }} <span class="muted">{{ a.entity_code }}</span></td><td>{{ a.classification_name }}</td>{% for p in agreement_periods %}<td class="n">{{ '%.2f'|format(a.rates[p]) if a.rates.get(p) else '' }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>"""
 
 NAME = """<h1>Headcount by name<small>FY{{ fy }} · {{ version }} · the overhead cost centres — each person's own terms; nothing accrues to a role</small></h1>
-{% if not may %}<p class="lede">This is individual pay. It is read by {{ pay_holders|join(', ') or 'nobody yet' }} ({{ pay_verb }}) — not by the cost centre's owner — and {{ viewer }} does not hold it.</p>
-{% else %}<p class="hint">Individual pay, read under {{ pay_verb }}. Salary × (1 + the incentive at target) for the weeks each person is employed in a period; a named vacancy is planned at a typed figure from its start; the employer's on-costs at the entity's rates. Wages land on the schedule's 6100 line, on-costs on 6150.</p>
+{% if not may %}<p class="lede">This is individual pay. It is read by {{ pay_holders|join(', ') or 'nobody yet' }} — not by the cost centre's owner — and {{ viewer }} does not hold it.</p>
+{% else %}<p class="hint">Individual pay, read by the holders of {{ pay_said }}. Salary × (1 + the incentive at target) for the weeks each person is employed in a period; a named vacancy is planned at a typed figure from its start; the employer's on-costs at the entity's rates. Wages land on the schedule's 6100 line, on-costs on 6150.</p>
 {% for g in groups %}<h2>{{ g.name }}<span class="count">{{ g.code }} · {{ g.entity }}</span></h2>
 <table><thead><tr><th>Person</th><th>Title</th><th class="n">Salary</th><th class="n">Incentive</th><th>From</th><th>To</th><th class="n">FTE in FY{{ fy }}</th><th class="n">FY{{ fy }} wages</th><th class="n">On-costs</th></tr></thead><tbody>
 {% for r in g.rows %}<tr class="{{ 'off' if r.vacancy }}"><td>{{ r.person_name }}{% if r.vacancy %} <span class="state">vacancy</span>{% endif %}</td><td class="small">{{ r.title }}</td><td class="n">{{ '{:,.0f}'.format(r.annual_salary) }}</td><td class="n">{{ r.incentive_pct|pct1 }}</td>
@@ -108,6 +109,6 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                         for p in q("select * from dims.reg_person order by cost_centre_code, entity_code, vacancy, person_id")]
                 groups = _groups(rows, by, mine)
             return page(NAME, title="Headcount by name", active="hc_name", version=version, fy=fy, may=may, viewer=who, groups=groups,
-                        pay_holders=reads.holders(costs.PAY_VERB), pay_verb=costs.PAY_VERB)
+                        pay_holders=reads.holders(costs.PAY_VERB), pay_verb=costs.PAY_VERB, pay_said=said(costs.PAY_VERB))
         except Busy as e:
             return busy("Headcount by name", e)

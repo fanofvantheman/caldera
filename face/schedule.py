@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import math
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ from flask import current_app, redirect, request, url_for
 from calc.schedule import compute, lines_of, read_inputs, rules_from, total
 
 from . import costs
+from .words import said
 
 COLUMNS = ["edit_id", "save_id", "version_id", "entity_code", "cost_centre_code", "account_code", "action", "period", "value", "driver",
            "calc_at_entry", "reason_code", "note", "entered_by", "entered_on"]
@@ -58,12 +60,18 @@ def _stamp() -> tuple:
 
 
 def _num(x):
+    """A typed amount or rate: thousands separators allowed (the grid shows months that way); not-a-number and infinity
+    are not numbers."""
     if x is None or (isinstance(x, str) and not x.strip()):
         return None
     try:
-        return float(x)
+        v = float(str(x).strip().replace(",", ""))
     except (TypeError, ValueError):
         return None
+    return v if math.isfinite(v) else None
+
+
+MAX_MONTH, MAX_RATE = 1_000_000_000, 1_000_000           # one month of one line; a line's rate
 
 
 def _acts_from(rows: list[dict]) -> list[dict]:
@@ -143,7 +151,7 @@ MACROS = """{% macro money(x) %}{{ '' if x is none else '{:,.0f}'.format(x) }}{%
 {% macro rate_shown(x, d) %}{{ '' if x is none else ('{:,.0f}'.format(x) if d == 'none' else ('{:.4f}'.format(x) if d == 'last_year' else '{:,.4f}'.format(x))) }}{% endmacro %}
 {% macro sch_status(s) %}<div id="sch-status" class="hint">{% if s.say %}<b class="no">{{ s.say }}</b> · {% endif %}{% if s.unsaved %}<b class="state unsaved">{{ s.unsaved }} change{{ '' if s.unsaved == 1 else 's' }} typed and not saved</b> — Save to keep them, Discard to drop them{% elif s.editable %}Type a month, or a line's rate; Enter or Tab recalculates at once.{% endif %}</div>{% endmacro %}
 {% macro sch_row(s, l) %}<tr id="sch-l-{{ l.id }}" class="line">
-<td class="sticky"><span>{{ l.account_code }} {{ l.account_name }}</span> <span class="small muted">{{ l.entity_code }}</span>{% if l.n_typed and l.may_month %} <a class="small" href="{{ url_for('plan.schedule_reset', line=l.id, **s.keep) }}">reset…</a>{% endif %}</td>
+<td class="sticky"><span>{{ l.account_code }} {{ l.account_name }}</span> <span class="small muted">{{ l.entity_code }}</span>{% if l.n_typed and l.may_month %} <a class="small" tabindex="-1" href="{{ url_for('plan.schedule_reset', line=l.id, **s.keep) }}">reset…</a>{% endif %}</td>
 <td class="small">{% if l.driver == 'labour_model' %}the labour model{% elif s.may_method and s.open %}<select name="d|{{ l.id }}" onchange="this.form.submit()">{% for d in s.drivers %}<option value="{{ d.driver }}" {{ 'selected' if d.driver == l.driver }}>{{ d.driver_label }}</option>{% endfor %}</select>{% else %}{{ s.driver_label.get(l.driver, l.driver) }}{% endif %}</td>
 <td class="n {{ 'typed' if l.rate_typed }} {{ 'unsaved' if l.rate_unsaved }}">{% if l.driver == 'labour_model' %}<span class="muted">—</span>{% elif s.may_method and s.open %}<input class="cell" name="r|{{ l.id }}" value="{{ rate_shown(l.rate, l.driver) if l.rate_typed else '' }}" placeholder="{{ rate_shown(l.rate_calc, l.driver) }}" data-live='{"cell": "r|{{ l.id }}"}' inputmode="decimal">{% else %}{{ rate_shown(l.rate, l.driver) }}{% endif %}<span class="src">{{ 'from the headcount' if l.driver == 'labour_model' else ('calculated ' ~ rate_shown(l.rate_calc, l.driver) if l.rate_calc is not none else 'no history') }}</span></td>
 {% for p in s.closed %}<td class="n closed">{{ money(l.actual.get(p)) }}</td>{% endfor %}
@@ -157,7 +165,7 @@ PAGE = MACROS + """<h1>Opex schedule<small>FY{{ fy }} · {{ version }} · {{ s.w
 <form class="toolbar" method="get">{{ context_fields() }}<label>entity<select name="entity" onchange="this.form.submit()"><option value="">both</option>{% for e in s.entities %}<option value="{{ e.entity_code }}" {{ 'selected' if e.entity_code == s.entity }}>{{ e.entity_name }}</option>{% endfor %}</select></label>
 <label>cost centre<select name="cc" onchange="this.form.submit()">{% for c in s.centres %}<option value="{{ c.code }}" {{ 'selected' if c.code == s.cc }}>{{ '· ' * c.depth }}{{ c.name }}</option>{% endfor %}</select></label></form>
 <p class="hint">{{ entity_note }}</p>
-{% if s.withheld %}<p class="hint">The labour lines of {{ s.withheld|length }} cost centres planned by name are individual pay, read by {{ s.pay_holders|join(', ') or 'nobody yet' }} ({{ s.pay_verb }}): they are left out here and out of every total shown.</p>{% endif %}
+{% if s.withheld %}<p class="hint">The labour lines of {{ s.withheld|length }} cost centres planned by name are individual pay, read by {{ s.pay_holders|join(', ') or 'nobody yet' }}: they are left out here and out of every total shown.</p>{% endif %}
 {% if not s.open %}<p class="hint">{{ version }} is {{ s.status }}: the schedule is kept on the open latest view, for the twelve periods after the last closed one.</p>{% endif %}
 <div class="schlive"{% if s.editable %} data-live-post="{{ url_for('plan.schedule_cell') }}" data-live-context='{{ s.live_context|tojson }}'{% endif %}>
 {{ sch_status(s) }}
@@ -340,18 +348,22 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             if period not in b["inp"].periods:
                 return f"{period} is not a period the schedule plans"
             if not _may_month(roles, who, line[1]):
-                return f"{who} does not hold {_verb('amount')} at {line[1]}"
+                return f"{who} does not hold {said(_verb('amount'))} at {line[1]}"
             if line in b["inp"].labour_lines:
                 return "a labour line is filled by the labour model, from the headcount and the agreement — not typed here"
             if _num(raw) is None:
                 return f"{raw!r} is not an amount"
+            if abs(_num(raw)) > MAX_MONTH:
+                return f"{raw} is beyond what one month of one line can be — at most {MAX_MONTH:,.0f}"
         else:
             if not _verb("rate") or not roles.may(who, _verb("rate")):
-                return f"{who} does not hold {_verb('rate')} — a line's driver and rate are Commercial finance's"
+                return f"{who} does not hold {said(_verb('rate'))} — a line's driver and rate are Commercial finance's"
             if line in b["inp"].labour_lines:
                 return "a labour line takes its amount from the labour model — it has no driver or rate to type"
             if kind == "r" and str(raw).strip() and _num(raw) is None:
                 return f"{raw!r} is not a rate"
+            if kind == "r" and _num(raw) is not None and abs(_num(raw)) > MAX_RATE:
+                return f"{raw} is beyond what a rate can be — at most {MAX_RATE:,.0f}"
             if kind == "d" and raw not in [d["driver"] for d in q("select driver from dims.ref_cost_driver")]:
                 return f"{raw!r} is not a driver"
         return None
@@ -393,7 +405,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             who = who_fn(); pg = _page_args(request.args)
             s = view(who, pg["version"], pg["fy"], pg, roles)
             return page(PAGE, title="Opex schedule", active="sch_schedule", width="none", version=pg["version"], fy=pg["fy"], s=s,
-                        last=session.last, live_script=working.script(), entity_note=costs.ENTITY_NOTE)
+                        last=session.last, receipt_acts=("schedule",), live_script=working.script(), entity_note=costs.ENTITY_NOTE)
         except Busy as e:
             return busy("Opex schedule", e)
 
@@ -433,15 +445,16 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             if live:
                 after = parts(view(who, version, fy, pg, roles, say="; ".join(said) or None))
                 force = ["sch-status"] + ([f"sch-l-{fields[0][0].split('|')[1]}"] if said and "|" in fields[0][0] else [])
-                return working.reply(before, after, always=tuple(force) if said else ())
+                return working.reply(before, after, always=tuple(force))
         session.say("; ".join(said) if said else (f"{n} change{'s' if n != 1 else ''} applied — not yet saved" if n else "nothing changed"), not said)
         return redirect(_back(pg))
 
     @bp.post("/schedule/discard")
     def schedule_discard():
         who = who_fn(); pg = _page_args(request.form)
-        wc = working_copy(who, pg["version"]); n = len(wc.acts) if wc else 0
-        COPIES.drop(who, ("schedule", pg["version"]))
+        with COPIES.lock(who):                    # a month still being applied lands before the copy is dropped
+            wc = working_copy(who, pg["version"]); n = len(wc.acts) if wc else 0
+            COPIES.drop(who, ("schedule", pg["version"]))
         session.say(f"{n} unsaved change{'s' if n != 1 else ''} discarded" if n else "nothing unsaved to discard", True)
         return redirect(_back(pg))
 
@@ -499,21 +512,21 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         v = reads.version(version) or {}
         reason, note = f.get("reason_code", ""), (f.get("note") or "").strip()
         reasons = {r["reason_code"]: r for r in q("select * from plan.ref_schedule_reason")}
-        wc = working_copy(who, version); n = len(wc.acts) if wc else 0
-        verbs = [x for x in (_verb("amount"), _verb("rate")) if x]
-        may = any(roles.may(who, x) for x in verbs)
-        checks = [
-            {"check": "who may type", "ok": may, "says": f"{who} holds {next(x for x in verbs if roles.may(who, x))}" if may else f"{who} holds none of {', '.join(verbs) or 'the verbs that type the schedule'}"},
-            {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
-            {"check": "something to save", "ok": n > 0, "says": f"{n} change{'s' if n != 1 else ''} typed and not saved" if n else "nothing typed since the last save"},
-            {"check": "a reason we know", "ok": reason in reasons, "says": reasons[reason]["description"] if reason in reasons else f"{reason or 'no reason'} is not a schedule reason"},
-            {"check": "a note where the reason needs one", "ok": bool(note) or not (reasons.get(reason) or {}).get("note_required"),
-             "says": note or ("this reason needs a note" if (reasons.get(reason) or {}).get("note_required") else "not needed for this reason")},
-        ]
-        placed = receipts.judge(checks)
-        stamp = dt.datetime.now(); save_id = f"SS-{stamp.strftime('%Y%m%d-%H%M%S-%f')}"
-        if placed:
-            with COPIES.lock(who):
+        with COPIES.lock(who):                    # a month still being applied lands before the copy is read
+            wc = working_copy(who, version); n = len(wc.acts) if wc else 0
+            verbs = [x for x in (_verb("amount"), _verb("rate")) if x]
+            may = any(roles.may(who, x) for x in verbs)
+            checks = [
+                {"check": "who may type", "ok": may, "says": f"{who} holds {said(next(x for x in verbs if roles.may(who, x)))}" if may else f"{who} holds none of {', '.join(said(x) for x in verbs) or 'the verbs that type the schedule'}"},
+                {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
+                {"check": "something to save", "ok": n > 0, "says": f"{n} change{'s' if n != 1 else ''} typed and not saved" if n else "nothing typed since the last save"},
+                {"check": "a reason we know", "ok": reason in reasons, "says": reasons[reason]["description"] if reason in reasons else f"{reason or 'no reason'} is not a schedule reason"},
+                {"check": "a note where the reason needs one", "ok": bool(note) or not (reasons.get(reason) or {}).get("note_required"),
+                 "says": note or ("this reason needs a note" if (reasons.get(reason) or {}).get("note_required") else "not needed for this reason")},
+            ]
+            placed = receipts.judge(checks)
+            stamp = dt.datetime.now(); save_id = f"SS-{stamp.strftime('%Y%m%d-%H%M%S-%f')}"
+            if placed:
                 LANDING.place(rows_for_save(wc, save_id, stamp, who, reason, note), who)
                 COPIES.drop(who, ("schedule", version))
         session.last = receipts.write("schedule.save", who, save_id, checks, placed)

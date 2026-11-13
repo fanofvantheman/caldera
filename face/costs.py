@@ -32,7 +32,7 @@ def pay_withheld(roles, who: str) -> tuple[str, list[str]]:
     return f"not (is_labour and coalesce(cost_centre_code, '') not in ({keep}))", named
 
 
-PAY_NOTE = """{% if withheld %}<p class="hint">Labour in {{ withheld|length }} cost centre{{ '' if withheld|length == 1 else 's' }} planned by name — and in any ledger cost centre not yet mapped — is individual pay, read by {{ pay_holders|join(', ') or 'nobody yet' }} ({{ pay_verb }}); it is left out of these figures and of every total they sit in.</p>{% endif %}"""
+PAY_NOTE = """{% if withheld %}<p class="hint">Labour in {{ withheld|length }} cost centre{{ '' if withheld|length == 1 else 's' }} planned by name — and in any ledger cost centre not yet mapped — is individual pay, read by {{ pay_holders|join(', ') or 'nobody yet' }}; it is left out of these figures and of every total they sit in.</p>{% endif %}"""
 
 
 def rolling_year() -> list[str]:
@@ -233,6 +233,6 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles=None) -> None:
             who = who_fn()
             return page(MAPPING, title="Mapping review · cost centres", active="cc_mapping", width="none",
                         **doors.page_context("GL", who), door_decided=doors.decided("GL"), pending=len(doors.ACTS.pending()),
-                        last=session.last, entity_note=ENTITY_NOTE, withheld=[])
+                        last=session.last, receipt_acts=("gl.",), entity_note=ENTITY_NOTE, withheld=[])
         except Busy as e:
             return busy("Mapping review", e)
