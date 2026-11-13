@@ -11,7 +11,7 @@ The wheel sits beside this file and is declared in `pyproject.toml`:
 dependencies = ["chassis", ...]
 
 [tool.uv.sources]
-chassis = { path = "99_core_clones/chassis-0.9.0-py3-none-any.whl" }
+chassis = { path = "99_core_clones/chassis-0.9.1-py3-none-any.whl" }
 ```
 
 `uv sync` installs it. A new wheel version: replace the file, bump the path, `uv lock && uv sync`.
