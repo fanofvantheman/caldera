@@ -775,8 +775,9 @@ FINANCE_SECTION = """<h2 id="finance">Financial forecast<span class="count">FY{{
 <label>customer<select name="fc" onchange="this.form.submit()">{% for c in fin.customers %}<option value="{{ c.code }}" {{ 'selected' if c.code == fin.fc }}>{{ '— ' * c.depth }}{{ c.label }}{% if fin.source_of.get(c.code) == 'built' %} · built by Finance{% endif %}</option>{% endfor %}</select></label>
 <span class="crumbs">{% for n in fin.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}</span></form>
 <nav class="tabs">{% for t in fin.readings %}<a href="{{ t.href }}" class="{{ 'active' if t.on }}">{{ t.label }}</a>{% endfor %}</nav>
+<form method="post" action="{{ url_for('plan.run_now') }}" id="finance-run"><input type="hidden" name="next" value="{{ fin.back }}"></form>
 {% if fin.editable %}<form method="post" action="{{ url_for('plan.finance_save') }}" id="finance-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}{% endif %}
-{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} figure{{ 's' if fin.n_waiting != 1 }} typed at {{ fin.customer_label }} {{ 'are' if fin.n_waiting != 1 else 'is' }} waiting for the next run, shown hatched where typed. The run spreads each beneath its row and carries it into the totals — <a href="{{ url_for('plan.run') }}">run the plan</a>.</p>{% endif %}
+{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} figure{{ 's' if fin.n_waiting != 1 }} typed at {{ fin.customer_label }} {{ 'are' if fin.n_waiting != 1 else 'is' }} waiting for the next run, shown hatched where typed. The run spreads each beneath its row and carries it into the totals. {% if fin.may_run %}<button form="finance-run" onclick="this.textContent='Running…'">Run now</button>{% else %}<a href="{{ url_for('plan.run') }}">Run and health</a>{% endif %}</p>{% endif %}
 <div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}<th class="n {{ 'closed' if p.closed }}">{{ p.label }}</th>{% endfor %}<th class="n">FY{{ fy }}</th></tr></thead><tbody>
 {% for r in fin.rows %}{% for m in fin.measures %}<tr class="{{ 'first' if loop.first }} {{ 'total' if r.current and loop.first }}">
 {% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node">{% if r.href %}<a href="{{ r.href }}">{{ r.label }}</a>{% else %}<b>{{ r.label }}</b>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></td>{% endif %}
@@ -791,7 +792,7 @@ FINANCE_SECTION = """<h2 id="finance">Financial forecast<span class="count">FY{{
 <label class="small">cases <input name="add_volume" inputmode="decimal" size="8"></label><label class="small">net per case <input name="add_price" inputmode="decimal" size="8"></label></div>{% endif %}
 <div class="form-row"><label class="small">reason <select name="reason_code">{% for r in fin.reasons %}<option value="{{ r.reason_code }}" {{ 'selected' if r.reason_code == fin.default_reason }}>{{ r.description }}</option>{% endfor %}</select></label>
 <label class="small grow">note <input name="note" placeholder="what Finance knows that the demand plan does not"></label>
-<button class="primary">Save</button><span class="hint">one reason for every figure changed in this save · on {{ version }}, in the plan after the next run</span></div></form>
+<button class="primary">Save</button>{% if fin.may_run %}<button class="primary" name="then" value="run" onclick="this.textContent='Running…'">Save and run</button>{% endif %}<span class="hint">one reason for every figure changed in this save · on {{ version }}, in the plan after the next run</span></div></form>
 {% elif not fin.may %}<p class="hint">Finance's figures are typed by {{ fin.holders|join(', ') or 'nobody yet' }}.</p>{% elif not fin.open %}<p class="hint">{{ version }} is {{ fin.status }} — nothing is typed on it.</p>{% endif %}
 {% if last and last.act and last.act.startswith('finance') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
@@ -956,7 +957,7 @@ def _finance_ctx(version: str | None, fy: int, L) -> dict:
     return {"fc": fc, "fm": fm, "reading": reading, "customers": customers, "customer_label": next((x["label"] for x in customers if x["code"] == fc), fc), "source_of": decl,
             "path": [{**n, "href": L(fm=n["code"]) + "#finance"} for n in reads.node_path("material", fm)] or [{"code": "ALL", "label": "All materials", "href": L(fm="ALL") + "#finance"}],
             "readings": [{"label": lab, "on": key == reading, "href": L(reading=key) + "#finance"} for key, lab in READINGS],
-            "n_waiting": n_waiting, "row_head": fm_label, "periods": periods, "measures": MEASURES, "rows": rows, "tot": tot,
+            "n_waiting": n_waiting, "may_run": _may_run(who), "back": L() + "#finance", "row_head": fm_label, "periods": periods, "measures": MEASURES, "rows": rows, "tot": tot,
             "any_built": any(r["built"] for r in rows) or any(s == "built" for s in decl.values()),
             "editable": editable, "may": may, "open": is_open, "status": v.get("status", "unknown"), "holders": reads.holders("overlay.finance.enter"),
             "keep": keep, "post_keep": {"version": version or "", "fy": fy, "fc": fc, "fm": fm, "reading": reading},
@@ -1037,6 +1038,11 @@ def finance_save():
     session.last = receipts.write("finance.save", who, save_id, checks, placed)
     session.say(f"{save_id} placed — {len(figures)} figure{'s' if len(figures) != 1 else ''} at {fc}, in Finance's plan after the next run" if placed
                 else "save refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), placed)
+    if placed and f.get("then") == "run" and _may_run(who):
+        if _run_plan(who):
+            session.say(f"{save_id} saved and the plan run — {len(figures)} figure{'s' if len(figures) != 1 else ''} at {fc} spread beneath and carried into the totals", True)
+        else:
+            return redirect(url_for("plan.run"))
     return redirect(_back(f))
 
 
@@ -2090,6 +2096,17 @@ def _may_run(who: str) -> bool:
     return roles.may(who, "run.plan")
 
 
+def _run_plan(who: str) -> bool:
+    """The run, from wherever it was asked for: the landing loaded, every model and check evaluated, a receipt."""
+    _close_warehouse(None)              # the run writes the file: this request lets go of its read first
+    log = Runner().run()
+    session.run_log = log
+    ok = "✗" not in log
+    receipts.act("run", who, "plan", ok, "run completed" if ok else "run stopped — see the log")
+    session.say("run completed — the pages read the new plan" if ok else "run stopped; the log says where", ok)
+    return ok
+
+
 @plan.get("/run")
 def run():
     who = _who() if _principals_ok() else ""
@@ -2114,13 +2131,9 @@ def run_now():
     if not _may_run(who):
         session.say(f"{who} may not run the plan", False)
         return redirect(url_for("plan.run"))
-    _close_warehouse(None)              # the run writes the file: this request lets go of its read first
-    log = Runner().run()
-    session.run_log = log
-    ok = "✗" not in log
-    receipts.act("run", who, "plan", ok, "run completed" if ok else "run stopped — see the log")
-    session.say("run completed — the pages read the new plan" if ok else "run stopped; the log says where", ok)
-    return redirect(url_for("plan.run"))
+    ok = _run_plan(who)
+    nxt = request.form.get("next") or ""
+    return redirect(nxt if ok and nxt.startswith("/") and not nxt.startswith("//") else url_for("plan.run"))
 
 
 def main() -> None:
