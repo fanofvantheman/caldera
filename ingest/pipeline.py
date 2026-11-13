@@ -46,6 +46,11 @@ REFERENCE = {
     "reg_cost_centre_map": (),
     "dim_gl_account": (),
     "ref_cost_driver": ("ord",),
+    # labour: each entity's agreement, the on-costs, the positions (by role) and the people (by name)
+    "reg_agreement": ("hourly_rate",),
+    "ref_on_cost": ("rate",),
+    "reg_position": ("fte", "hours_per_week"),
+    "reg_person": ("annual_salary", "incentive_pct"),
     "reg_capacity_machine": ("shifts", "working_days", "available_hours", "planned_downtime_hours", "efficiency_assumption"),
     "reg_assumption": ("value",),
     "ref_reason_code": (),

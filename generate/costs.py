@@ -220,3 +220,79 @@ def schedule_edits(version: str, actuals: list[dict], window: list[str]) -> list
         reason="ONE_OFF", note="boiler overhaul in the shutdown", by="plant.manager@caldera")
     return rows
 
+
+# ---- labour: two models (DEC-20261113-02) — by role in the factory cost centres, by name in the overhead ones ----------
+# each entity's agreement: classification → (name, hourly rate before the increase); the increase from the period that
+# holds 1 January 2027. Riverbend kept its own agreement, about 3% below Caldera's.
+AGREEMENTS = {"CF": ("CFPA-2025", "Caldera Food Processing Agreement 2025", 1.00), "RBF": ("RBF-2024", "Riverbend Fruit Agreement 2024", 0.97)}
+CLASSIFICATIONS = [
+    ("PO1", "Process operator grade 1", 34.50), ("PO2", "Process operator grade 2", 37.00), ("PO3", "Leading hand", 40.50),
+    ("TT", "Trades technician", 47.50), ("ST", "Storeperson", 34.00), ("LT", "Laboratory technician", 42.50), ("LOG", "Logistics coordinator", 44.00),
+]
+AGREEMENT_STEP, STEP_PERIOD, CASUAL_LOADING, HOURS = 0.035, "2027P07", 0.25, 38.0
+ON_COSTS = {"CF": {"super": 0.12, "payroll_tax": 0.0485, "workers_comp": 0.025}, "RBF": {"super": 0.12, "payroll_tax": 0.0495, "workers_comp": 0.025}}
+# the mix of classifications by the kind of factory centre, from the ledger centre's headcount
+MIX = {"hall": [("PO1", 0.55), ("PO2", 0.27), ("PO3", 0.10), ("TT", 0.08)], "maint": [("TT", 0.8), ("PO2", 0.2)],
+       "whse": [("ST", 0.85), ("PO3", 0.15)], "qa": [("LT", 0.85), ("PO3", 0.15)], "log": [("LOG", 1.0)]}
+KIND_OF = {"1100": "hall", "1110": "hall", "1120": "hall", "1130": "hall", "LX-PRD": "hall", "1150": "maint", "LX-ENG": "maint",
+           "1160": "whse", "LX-WHS": "whse", "1300": "qa", "LX-QA": "qa", "1200": "log"}
+FIRST = ["Aisha", "Ben", "Chloe", "Dev", "Elena", "Finn", "Grace", "Hamish", "Ines", "Jack", "Keira", "Liam", "Mei", "Noah", "Olive", "Priya",
+         "Quinn", "Rosa", "Sam", "Tara", "Umar", "Vera", "Will", "Xin", "Yasmin", "Zac"]
+LAST = ["Abbott", "Barlow", "Castellan", "Dunmore", "Ellery", "Fairweather", "Galloway", "Hartigan", "Ivers", "Jardine", "Kellaway", "Lindqvist",
+        "Marchetti", "Northey", "Okafor", "Pemberton", "Quarrie", "Rennick", "Sallis", "Tregear", "Underhill", "Varga", "Whitlam", "Yeoh"]
+TITLES = {"CC_PROC": ("Head of procurement", "Grower liaison officer"), "CC_PLAN": ("Supply planning manager", "Supply planner"),
+          "CC_SALES": ("National sales manager", "Key account manager"), "CC_MKT": ("Marketing director", "Brand manager"),
+          "CC_TM": ("Trade marketing manager", "Trade marketing analyst"), "CC_FIN": ("Finance manager", "Financial analyst"),
+          "CC_HR": ("People and culture manager", "People partner"), "CC_IT": ("IT manager", "Systems analyst"),
+          "CC_EXEC": ("Managing director", "General manager")}
+
+
+def labour_registers(periods: list[dict]) -> dict[str, list[dict]]:
+    """The agreements, the positions (role-based) and the people (name-based), from each ledger centre's headcount in the
+    actuals; deterministic, drawing nothing."""
+    start = {p["period"]: p["period_start"] for p in periods}
+    to = {(e, cc): p for e, cc, _, p in LEDGER_COST_CENTRES if p}
+    entity_of = {cc: e for e, cc, _, _ in LEDGER_COST_CENTRES}
+    agreement = [{"agreement": a, "agreement_name": n, "entity_code": e, "classification": c, "classification_name": cn,
+                  "hourly_rate": round(r * f * (1 + AGREEMENT_STEP) ** k, 2), "valid_from_period": vp}
+                 for e, (a, n, f) in AGREEMENTS.items() for c, cn, r in CLASSIFICATIONS for k, vp in ((0, "2025P01"), (1, STEP_PERIOD))]
+    on_cost = [{"entity_code": e, "component": k, "rate": v} for e, comps in ON_COSTS.items() for k, v in comps.items()]
+    positions, people = [], []
+    n = 0
+    for cc, kind in KIND_OF.items():
+        ent = entity_of[cc]; plan_cc = to[(ent, cc)]; fte = LABOUR[cc][0]
+        for cls, share in MIX[kind]:
+            n += 1
+            positions.append({"position_id": f"POS-{n:03d}", "entity_code": ent, "cost_centre_code": plan_cc, "agreement": AGREEMENTS[ent][0],
+                              "classification": cls, "employment_type": "permanent", "fte": round(fte * share, 1), "hours_per_week": HOURS,
+                              "from_period": "2025P01", "to_period": "", "shown_name": ""})
+        if cc in CAMPAIGN_HALLS:
+            for fy in (2027, 2028):
+                n += 1
+                positions.append({"position_id": f"POS-{n:03d}", "entity_code": ent, "cost_centre_code": plan_cc, "agreement": AGREEMENTS[ent][0],
+                                  "classification": "PO1", "employment_type": "casual", "fte": round(fte * CAMPAIGN_HALLS[cc], 1), "hours_per_week": HOURS,
+                                  "from_period": f"{fy}P{CAMPAIGN[0]:02d}", "to_period": f"{fy}P{CAMPAIGN[1]:02d}", "shown_name": "campaign casual pool"})
+    positions[0]["shown_name"] = "Rosa Marchetti (shown; carries nothing)"
+    i = 0
+    for cc, (fte, avg) in LABOUR.items():
+        if cc in KIND_OF or cc == "LX-ENV":
+            continue
+        ent = entity_of[cc]; plan_cc = to[(ent, cc)]
+        head, staff = TITLES.get(plan_cc, ("Manager", "Officer"))
+        for k in range(fte):
+            i += 1
+            lead = k == 0 and ent == "CF"
+            incentive = 0.30 if plan_cc == "CC_EXEC" else (0.15 if lead else 0.05)
+            pay = avg * (1.6 if lead and plan_cc != "CC_EXEC" else 1.0) * (0.92 + 0.04 * (i % 5)) / (1 + incentive) * (1 + WAGE_STEP)
+            people.append({"person_id": f"PER-{i:03d}", "entity_code": ent, "cost_centre_code": plan_cc,
+                           "name": f"{FIRST[(i * 7) % len(FIRST)]} {LAST[(i * 5) % len(LAST)]}", "title": head if lead else staff,
+                           "annual_salary": round(pay, -2), "incentive_pct": incentive, "start_date": "2019-07-01", "end_date": "", "vacancy": "N"})
+    # one leaver and one starter in the horizon, and a named vacancy at a typed figure
+    people[3]["end_date"] = str(start["2027P09"] - __import__("datetime").timedelta(days=1))
+    i += 1
+    people.append({"person_id": f"PER-{i:03d}", "entity_code": "CF", "cost_centre_code": "CC_IT", "name": "Hana Okafor", "title": "Data engineer",
+                   "annual_salary": 132_000.0, "incentive_pct": 0.05, "start_date": str(start["2027P07"]), "end_date": "", "vacancy": "N"})
+    i += 1
+    people.append({"person_id": f"PER-{i:03d}", "entity_code": "CF", "cost_centre_code": "CC_MKT", "name": "Vacant — category manager", "title": "Category manager",
+                   "annual_salary": 145_000.0, "incentive_pct": 0.05, "start_date": str(start["2027P08"]), "end_date": "", "vacancy": "Y"})
+    return {"reg_agreement": agreement, "ref_on_cost": on_cost, "reg_position": positions, "reg_person": people}

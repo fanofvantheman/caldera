@@ -16,6 +16,25 @@ ENTITY_NOTE = ("Two legal entities, each on its own ledger with its own cost cen
                "Intercompany charges between them are left out — each entity's costs are its own spend with third parties.")
 
 
+PAY_VERB = "read.pay"
+
+
+def pay_withheld(roles, who: str) -> tuple[str, list[str]]:
+    """Individual pay is read under its own verb (DEC-20261113-02): for anyone without it, labour is shown only where the
+    cost centre's labour is by role — a position's cost is its classification's, not a person's. Elsewhere (by name, or a
+    ledger centre not yet mapped) the labour lines are withheld and so are the totals they would be read from.
+    Returns (an SQL condition that keeps a row of plan.cost_actual, the cost centres withheld)."""
+    if roles is None or roles.may(who, PAY_VERB):
+        return "true", []
+    role = [r["cost_centre_code"] for r in q("select cost_centre_code from dims.dim_cost_centre where labour_model = 'role'")]
+    named = [r["cost_centre_code"] for r in q("select cost_centre_code from dims.dim_cost_centre where labour_model = 'name'")]
+    keep = ",".join(f"'{c}'" for c in role) or "''"
+    return f"not (is_labour and coalesce(cost_centre_code, '') not in ({keep}))", named
+
+
+PAY_NOTE = """{% if withheld %}<p class="hint">Labour in {{ withheld|length }} cost centre{{ '' if withheld|length == 1 else 's' }} planned by name — and in any ledger cost centre not yet mapped — is individual pay, read by {{ pay_holders|join(', ') or 'nobody yet' }} ({{ pay_verb }}); it is left out of these figures and of every total they sit in.</p>{% endif %}"""
+
+
 def rolling_year() -> list[str]:
     """The last twelve closed periods — the window a rate is calculated over and actuals are compared on."""
     return [r["period"] for r in q("select period from dims.dim_period where period_state = 'CLOSED' order by period desc limit 12")][::-1]
@@ -44,7 +63,7 @@ def planning_cost_centres() -> list[dict]:
 
 
 # ---- pages ----
-TABS_NOTE = """<p class="hint">{{ entity_note }}</p>"""
+TABS_NOTE = """<p class="hint">{{ entity_note }}</p>""" + PAY_NOTE
 
 CENTRES = """<h1>Cost centres<small>the plan's cost centres — one set over each entity's own — with the ledger cost centres mapped to each, and the last twelve closed periods' actuals ({{ year[0] }}–{{ year[-1] }})</small></h1>
 """ + TABS_NOTE + """
@@ -100,18 +119,24 @@ MAPPING = """<h1>Mapping review<small>a ledger cost centre with no planning cost
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
 
-def register(bp, page, who_fn, ctx_fn, busy, session) -> None:
+def register(bp, page, who_fn, ctx_fn, busy, session, roles=None) -> None:
     """The cost pages on the plan's blueprint. `page(body, **ctx)` draws in the shell; `who_fn()` the person;
-    `ctx_fn()` the context; `busy(title, e)` the page a run in progress gets."""
+    `ctx_fn()` the context; `busy(title, e)` the page a run in progress gets; `roles` who holds what."""
+    from . import reads
+
+    def pay(who: str) -> tuple[str, dict]:
+        cond, named = pay_withheld(roles, who)
+        return cond, {"withheld": named, "pay_holders": reads.holders(PAY_VERB), "pay_verb": PAY_VERB}
 
     @bp.get("/costs/centres")
     def cost_centres():
         try:
             year = rolling_year()
             ents = entities()
+            cond, paid = pay(who_fn())
             amounts, totals = {}, {}
             for r in q(f"""select cost_centre_code cc, entity_code e, sum(amount) a from plan.cost_actual
-                           where state = 'mapped' and period in ({','.join('?' * len(year))}) group by all""", *year):
+                           where state = 'mapped' and {cond} and period in ({','.join('?' * len(year))}) group by all""", *year):
                 amounts[(r["cc"], r["e"])] = r["a"]
                 amounts[(r["cc"], None)] = amounts.get((r["cc"], None), 0) + r["a"]
                 totals[r["e"]] = totals.get(r["e"], 0) + r["a"]
@@ -134,10 +159,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session) -> None:
                           order by m.ledger_cost_centre"""):
                 mapped.setdefault((m["cost_centre_code"], m["entity_code"]), []).append(m)
             outside = q(f"""select entity_code, ledger_cost_centre, any_value(ledger_name) ledger_name, state, sum(amount) amount from plan.cost_actual
-                            where state <> 'mapped' and period in ({','.join('?' * len(year))}) group by all order by 1, 2""", *year)
+                            where state <> 'mapped' and {cond} and period in ({','.join('?' * len(year))}) group by all order by 1, 2""", *year)
             waiting = q("select count(*) n from plan.worklist_cost_centre_unmapped")[0]["n"]
             return page(CENTRES, title="Cost centres", active="cc_tree", entities=ents, centres=centres, mapped=mapped, amounts=amounts,
-                        totals=totals, outside=outside, year=year, waiting=waiting, entity_note=ENTITY_NOTE)
+                        totals=totals, outside=outside, year=year, waiting=waiting, entity_note=ENTITY_NOTE, **paid)
         except Busy as e:
             return busy("Cost centres", e)
 
@@ -146,16 +171,17 @@ def register(bp, page, who_fn, ctx_fn, busy, session) -> None:
         try:
             year = rolling_year()
             inn = ",".join("?" * len(year))
+            cond, paid = pay(who_fn())
             ledgers = q(f"""select l.entity_code, l.ledger_cost_centre, l.ledger_name, m.cost_centre_code, c.cost_centre_name, m.valid_from, m.how, m.mapped_by, m.note,
                                    (select sum(a.amount) from plan.cost_actual a where a.entity_code = l.entity_code and a.ledger_cost_centre = l.ledger_cost_centre
-                                    and a.period in ({inn})) as year
+                                    and a.period in ({inn}) and {cond.replace('is_labour', 'a.is_labour').replace('cost_centre_code,', 'a.cost_centre_code,')}) as year
                             from dims.dim_ledger_cost_centre l
                             left join plan.cost_centre_map m on m.entity_code = l.entity_code and m.ledger_cost_centre = l.ledger_cost_centre
                             left join plan.planning_cost_centre c on c.cost_centre_code = m.cost_centre_code
                             order by l.entity_code, l.ledger_cost_centre""", *year)
             ents = [{**e, "n": sum(1 for l in ledgers if l["entity_code"] == e["entity_code"]),
                      "year": sum(l["year"] or 0 for l in ledgers if l["entity_code"] == e["entity_code"])} for e in entities()]
-            return page(ENTITIES, title="Entities and ledgers", active="cc_entities", entities=ents, ledgers=ledgers, entity_note=ENTITY_NOTE)
+            return page(ENTITIES, title="Entities and ledgers", active="cc_entities", entities=ents, ledgers=ledgers, entity_note=ENTITY_NOTE, **paid)
         except Busy as e:
             return busy("Entities and ledgers", e)
 
@@ -168,7 +194,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session) -> None:
             at = "ledger" if request.args.get("at") == "ledger" else ""
             ents = entities()
             periods = [r["period"] for r in q("select period from dims.dim_period where fiscal_year = ? and period_state = 'CLOSED' order by period", fy)]
-            rows = q("""select * from plan.cost_actual where fiscal_year = ? and (? = '' or entity_code = ?) order by entity_code, ledger_cost_centre, account_code""",
+            cond, paid = pay(who_fn())
+            rows = q(f"""select * from plan.cost_actual where fiscal_year = ? and (? = '' or entity_code = ?) and {cond} order by entity_code, ledger_cost_centre, account_code""",
                      fy, entity, entity) if periods else []
             groups: dict = {}
             outside: dict = {}
@@ -196,7 +223,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session) -> None:
                 out.append({**g, "beneath": g["beneath"] or " · ".join(sorted(g["ledgers"])), "rows": [g["rows"][a] for a in sorted(g["rows"])]})
             label = next((e["entity_name"] for e in ents if e["entity_code"] == entity), "both entities")
             return page(ACTUALS, title="Actuals", active="cc_actuals", width="100%", fy=fy, periods=periods, groups=out, outside=list(outside.values()),
-                        total=total, total_all=sum(total.values()), years=years, entities=ents, entity=entity, entity_label=label, at=at, entity_note=ENTITY_NOTE)
+                        total=total, total_all=sum(total.values()), years=years, entities=ents, entity=entity, entity_label=label, at=at, entity_note=ENTITY_NOTE, **paid)
         except Busy as e:
             return busy("Actuals", e)
 
@@ -206,6 +233,6 @@ def register(bp, page, who_fn, ctx_fn, busy, session) -> None:
             who = who_fn()
             return page(MAPPING, title="Mapping review · cost centres", active="cc_mapping", width="none",
                         **doors.page_context("GL", who), door_decided=doors.decided("GL"), pending=len(doors.ACTS.pending()),
-                        last=session.last, entity_note=ENTITY_NOTE)
+                        last=session.last, entity_note=ENTITY_NOTE, withheld=[])
         except Busy as e:
             return busy("Mapping review", e)

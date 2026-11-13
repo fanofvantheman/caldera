@@ -27,6 +27,7 @@ from . import doors
 from . import finance_live
 from . import costs
 from . import schedule
+from . import headcount
 
 plan = Blueprint("plan", __name__)
 
@@ -1296,6 +1297,8 @@ def slots():
             today["promotions"] = f"{ev} events in the calendar"
             sch = q("select count(distinct entity_code || cost_centre_code || account_code) n, sum(amount) a from plan.opex_schedule where version_id = ? and fiscal_year = ?", version, fy)[0]
             today["opex"] = f"{sch['n']} lines, ${sch['a'] / 1e6:,.1f}M planned in FY{fy}'s open periods on {version}" if sch["n"] else None
+            lab = q("select sum(amount) a, count(distinct cost_centre_code) n from plan.labour_cost where version_id = ? and fiscal_year = ?", version, fy)[0]
+            today["labour"] = f"${lab['a'] / 1e6:,.1f}M in FY{fy}'s open periods across {lab['n']} cost centres on {version}" if lab["n"] else None
         rows = []
         for s_ in reads.slots():
             href = url_for("plan.rung", slug=SLOT_RUNG[s_["slot_key"]]) if s_["page"] == "plan.rung" and s_["slot_key"] in SLOT_RUNG else (url_for(s_["page"]) if s_["page"] else None)
@@ -2380,8 +2383,9 @@ def run_now():
 
 
 # the cost side's pages, in their own module, on this blueprint
-costs.register(plan, _page, _who, _ctx, _busy, session)
+costs.register(plan, _page, _who, _ctx, _busy, session, roles)
 schedule.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED)
+headcount.register(plan, _page, _who, _ctx, _busy, session, roles)
 
 
 def main() -> None:

@@ -106,6 +106,10 @@ def main() -> None:
         assert "does not hold register.cost_input.maintain" in reply.get("sch-status", "")
         print("refused         the plant manager at Sales (outside OPS) and on a rate; the general manager sees none of Finance's changes")
         session.become(FINANCE)
+        wages = ("CF", "CC_E_TOM", "6100")
+        reply = post(f"m|{S.line_id(wages)}|{p1}", 1)
+        assert "filled by the labour model" in reply.get("sch-status", ""), reply.get("sch-status")
+        print("refused         a month on a labour line: it is the labour model's, from the headcount and the agreement")
 
         # 5 · Reset to base: the confirmation names the typed months it removes; confirmed, the month is calculated again
         r = c.get(f"/schedule/reset?line={S.line_id(repairs)}&" + "&".join(f"{k}={v}" for k, v in page.items()))

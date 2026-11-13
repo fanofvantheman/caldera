@@ -153,3 +153,8 @@ SELECT edit_id, action, period, driver FROM @this_model
 WHERE action NOT IN ('driver', 'rate', 'month', 'reset')
    OR (action = 'month' AND (period IS NULL OR value IS NULL))
    OR (action = 'driver' AND driver NOT IN ('cases_made_ech', 'cases_made_lox', 'cases_shipped', 'net_sales', 'none', 'last_year'));
+
+AUDIT (name labour_model_declared);
+/* blocking: one model per cost centre — a line from the other model than the one declared is not taken, and a cost
+   centre never carries both */
+SELECT version_id, cost_centre_code, period FROM @this_model GROUP BY ALL HAVING COUNT(DISTINCT model) > 1;

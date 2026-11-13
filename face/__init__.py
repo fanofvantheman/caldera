@@ -97,6 +97,9 @@ PROCESSES = [
         Area("costs", "Operating costs", [
             Section("schedule", "Opex schedule", "plan.schedule", uses=("version", "fy"), tabs=[
                 Tab("sch_schedule", "Schedule", "plan.schedule", verbs=COST_READ)]),
+            Section("headcount", "Headcount", "plan.headcount_role", uses=("version", "fy"), tabs=[
+                Tab("hc_role", "By role", "plan.headcount_role", verbs=COST_READ),
+                Tab("hc_name", "By name", "plan.headcount_name", verbs=["read.pay"])]),
             Section("costcentres", "Cost centres", "plan.cost_centres", tabs=[
                 Tab("cc_tree", "Cost centres", "plan.cost_centres", verbs=COST_READ),
                 Tab("cc_entities", "Entities and ledgers", "plan.cost_entities", verbs=COST_READ),
@@ -174,6 +177,7 @@ MAP_NODES = [
     Node("supply", "made", "Supply plan", "stock, lines and purchases", "plan.rung", {"slug": "supply"}, built=False),
     Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),
     Node("schedule", "made", "Opex schedule", "driver × rate, by cost centre", "plan.schedule"),
+    Node("labour", "plan", "Headcount", "by role through the agreement; by name", "plan.headcount_role"),
     Node("accuracy", "read", "Forecast accuracy", "the plan judged as a forecast", "plan.accuracy"),
     Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
     Node("revenue", "read", "Versions in net sales", "the versions over one another", "plan.revenue_versions"),
@@ -187,7 +191,7 @@ MAP_FLOWS = [
     ("people", "layers", "entries"), ("people", "calendar", "typed events"), ("people", "submissions", "acts"), ("people", "finance", "Finance's figures"),
     ("structures", "stack", ""), ("baseline", "stack", ""), ("calendar", "stack", ""), ("layers", "stack", ""), ("submissions", "stack", ""),
     ("versions", "stack", ""), ("rates", "valued", ""),
-    ("stack", "valued", ""), ("costcentres", "schedule", ""), ("stack", "schedule", "drivers"), ("schedule", "statements", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
+    ("stack", "valued", ""), ("costcentres", "schedule", ""), ("labour", "schedule", "labour lines"), ("people", "labour", "positions, people"), ("stack", "schedule", "drivers"), ("schedule", "statements", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
     ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "finance", "feeds"), ("valued", "statements", ""), ("supply", "statements", ""),
 ]
 

@@ -61,7 +61,9 @@ def main() -> None:
         "dim_line": [{"line_code": l[0], "plant_code": l[1], "area_code": l[2], "line_name": l[3], "rate_uom": l[4]} for l in LINES],
         "ref_lane": [{"from_node": l[0], "to_code": l[1], "to_kind": l[2], "mode": l[3], "transit_days": l[4], "cost_per_pallet": l[5]} for l in LANES],
         "ref_route": build_routes(materials),
-        "dim_cost_centre": [{"cost_centre_code": c[0], "cost_centre_name": c[1], "parent_code": c[2], "kind": c[3]} for c in COST_CENTRES],
+        # the labour model is declared per cost centre: by role where the entitlement accrues to the role, by name where not
+        "dim_cost_centre": [{"cost_centre_code": c[0], "cost_centre_name": c[1], "parent_code": c[2], "kind": c[3],
+                             "labour_model": {"factory": "role", "overhead": "name"}.get(c[3], "")} for c in COST_CENTRES],
         "reg_capacity_machine": capacity_register(weeks),
         "reg_assumption": assumptions(),
         "ref_reason_code": reason_codes(),
@@ -94,6 +96,7 @@ def main() -> None:
     waiting = sender.next_export(events, {p["period"]: p["period_start"] for p in cal.periods(weeks)}, PLAN_FY)
     periods = cal.periods(weeks)
     tables.update(costs.reference(periods))           # the entities, their ledgers' cost centres, the mapping, the chart
+    tables.update(costs.labour_registers(periods))    # the agreements, positions by role, people by name, on-costs
     history["cost_actual"] = costs.cost_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, args.seed)   # a stream of its own
     plan["reg_schedule_edit"] = costs.schedule_edits(f"LV-{LATEST_CLOSED}", history["cost_actual"],
                                                      [p["period"] for p in periods if p["period"] <= LATEST_CLOSED][-12:])   # the opex schedule's acts; draws nothing

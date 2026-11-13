@@ -29,7 +29,7 @@ def _records(df: pd.DataFrame) -> list[dict]:
     "plan.opex_schedule",
     kind="FULL",
     grain=["version_id", "entity_code", "cost_centre_code", "account_code", "period"],
-    depends_on=["plan.cost_actual", "plan.schedule_edit", "plan.ref_grid_measure", "plan.demand_financialised", "history.shipments",
+    depends_on=["plan.cost_actual", "plan.schedule_edit", "plan.labour_cost", "plan.ref_grid_measure", "plan.demand_financialised", "history.shipments",
                 "dims.dim_period", "dims.ctl_version", "dims.ref_route", "dims.reg_assumption"],
     columns={c: TYPES[c] for c in COLUMNS},
     description="The opex schedule: each line a driver and a rate; each month calculated until typed.",
@@ -42,6 +42,6 @@ def execute(context: ExecutionContext, start: datetime, end: datetime, execution
     acts = fetch(f"select * from {T('plan.schedule_edit')} order by entered_on, edit_id")
     rows: list[dict] = []
     for v in versions:
-        inp = read_inputs(fetch, T, v, labour=False)
+        inp = read_inputs(fetch, T, v, labour=True)
         rows += compute(inp, [a for a in acts if a["version_id"] == v], rules).values()
     return pd.DataFrame(rows, columns=COLUMNS)

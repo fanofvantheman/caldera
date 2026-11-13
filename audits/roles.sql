@@ -17,7 +17,7 @@ WHERE NOT (action SIMILAR TO 'layer\.[1-9]\.(enter|withdraw|submit|reopen)'
         OR action SIMILAR TO 'review\.(portfolio|demand|supply|reconciliation|mbr)\.close'
         OR action SIMILAR TO 'decision\.(record|accept)'
         OR action IN ('capex.project.enter', 'capex.approve', 'policy.production.accept', 'tier.step.accept', 'headcount.enter', 'schedule.line.enter', 'run.plan')
-        OR action SIMILAR TO 'read\.(plan|reading|drill|health|proof)');
+        OR action SIMILAR TO 'read\.(plan|reading|drill|health|proof|pay)');
 
 AUDIT (name role_scope_is_a_node);
 /* blocking: an assignment at a scope that is not a node of its dimension grants nothing */

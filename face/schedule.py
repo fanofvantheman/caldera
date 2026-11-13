@@ -29,7 +29,7 @@ from . import costs
 COLUMNS = ["edit_id", "save_id", "version_id", "entity_code", "cost_centre_code", "account_code", "action", "period", "value", "driver",
            "calc_at_entry", "reason_code", "note", "entered_by", "entered_on"]
 LANDING = LogLanding("plan", "reg_schedule_edit", COLUMNS)
-LABOUR_MODEL = False                 # the labour model fills the labour lines once it is built (plan.labour_cost)
+LABOUR_MODEL = True                  # the labour lines are filled by the labour model (plan.labour_cost)
 RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_schedule_edit"],
        ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.schedule_edit+", "--auto-apply", "--no-prompts"]]
 COPIES = Copies()
@@ -157,6 +157,7 @@ PAGE = MACROS + """<h1>Opex schedule<small>FY{{ fy }} · {{ version }} · {{ s.w
 <form class="toolbar" method="get">{{ context_fields() }}<label>entity<select name="entity" onchange="this.form.submit()"><option value="">both</option>{% for e in s.entities %}<option value="{{ e.entity_code }}" {{ 'selected' if e.entity_code == s.entity }}>{{ e.entity_name }}</option>{% endfor %}</select></label>
 <label>cost centre<select name="cc" onchange="this.form.submit()">{% for c in s.centres %}<option value="{{ c.code }}" {{ 'selected' if c.code == s.cc }}>{{ '· ' * c.depth }}{{ c.name }}</option>{% endfor %}</select></label></form>
 <p class="hint">{{ entity_note }}</p>
+{% if s.withheld %}<p class="hint">The labour lines of {{ s.withheld|length }} cost centres planned by name are individual pay, read by {{ s.pay_holders|join(', ') or 'nobody yet' }} ({{ s.pay_verb }}): they are left out here and out of every total shown.</p>{% endif %}
 {% if not s.open %}<p class="hint">{{ version }} is {{ s.status }}: the schedule is kept on the open latest view, for the twelve periods after the last closed one.</p>{% endif %}
 <div class="schlive"{% if s.editable %} data-live-post="{{ url_for('plan.schedule_cell') }}" data-live-context='{{ s.live_context|tojson }}'{% endif %}>
 {{ sch_status(s) }}
@@ -244,12 +245,22 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
                        and period in ({','.join('?' * len(closed))}) group by all""", *closed):
             actual[(r["entity_code"], r["cost_centre_code"], r["account_code"])][r["period"]] = r["a"]
     by_line = lines_of(cells)
+    month_verb, may_cc = _verb("amount"), {}
+    def may_at(cc_: str) -> bool:                  # one question per cost centre, not per line
+        if cc_ not in may_cc:
+            may_cc[cc_] = bool(month_verb) and roles.may(who, month_verb, cc_, dimension="organisation")
+        return may_cc[cc_]
     order = {c["code"]: i for i, c in enumerate(tree)}
     groups: dict[str, dict] = {}
     unsaved = len(wc.acts) if wc else 0
+    _, withheld = costs.pay_withheld(roles, who)
+    role_ccs = {r["cost_centre_code"] for r in q("select cost_centre_code from dims.dim_cost_centre where labour_model = 'role'")} if withheld else set()
+    labour_accts = {r["account_code"] for r in q("select account_code from dims.dim_gl_account where is_labour")}
     for line in sorted(set(by_line) | set(actual), key=lambda l: (order.get(l[1], 999), l[2], l[0])):
         if line[1] not in shown or (entity and line[0] != entity):
             continue
+        if withheld and line[2] in labour_accts and line[1] not in role_ccs:
+            continue                      # individual pay: read under read.pay only, and left out of every total
         cs = {c["period"]: c for c in by_line.get(line, [])}
         for p, c in cs.items():
             s0 = saved.get((*line, p)) or {}
@@ -261,7 +272,7 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
              "driver": first["driver"] if first else "last_year", "rate": first["rate"] if first else None, "rate_calc": first["rate_calc"] if first else None,
              "rate_typed": bool(first and first["rate_typed"]), "rate_unsaved": bool(first and s0 and (s0.get("rate") != first["rate"] or s0.get("driver") != first["driver"])),
              "cells": {p: cs[p] for p in planned if p in cs}, "actual": actual[line], "fy": fy_amt,
-             "n_typed": sum(1 for c in cs.values() if c["state"] == "typed"), "may_month": _may_month(roles, who, line[1]) and v.get("status") == "open"}
+             "n_typed": sum(1 for c in cs.values() if c["state"] == "typed"), "may_month": may_at(line[1]) and v.get("status") == "open"}
         g = groups.setdefault(line[1], {"code": line[1], "name": next((c["name"] for c in tree if c["code"] == line[1]), line[1]), "lines": [], "by": defaultdict(float), "fy": 0.0})
         g["lines"].append(l)
         for p in closed:
@@ -287,6 +298,7 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
             "may_method": may_method, "editable": editable, "unsaved": unsaved, "say": say, "keep": keep, "live_context": {"page": keep},
             "drivers": drivers, "driver_label": {d["driver"]: d["driver_label"] for d in drivers},
             "measures": [r for r in rules.values()], "reasons": q("select * from plan.ref_schedule_reason"),
+            "withheld": withheld, "pay_holders": R.holders(costs.PAY_VERB), "pay_verb": costs.PAY_VERB,
             "month_holders": R.holders(_verb("amount")) if _verb("amount") else [], "method_holders": R.holders(_verb("rate")) if _verb("rate") else []}
 
 
