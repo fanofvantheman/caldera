@@ -171,6 +171,11 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   tabs — the demand area's entries are *Demand plan* (plan · entries · new entry), *Submissions*, *Baseline*
   (statistical forecast · forecast accuracy), *Promotions* (events · calendar · mapping review · their structure to
   ours), *Prices and terms* (terms · price lists) and *Revenue bridge*; a person sees the tabs their roles reach.
+  Above the menu, the **context**: version, year, customer (all, a unit or an account) and material (all, a category, a
+  product or a material), chosen once and held in the page's address, so every link carries it and a link sent opens on
+  the same context. A person whose assignments name customers or materials is offered those; a page that does not use a
+  selection says so beside it. The demand plan opens its cells when the customer is an account; the financial forecast,
+  its versions chart, submissions (a unit by account) and the promotions calendar read it too.
   **Every door decides the same way.** The promotions system and the forecasting system are taken in by an act whose
   declarations are checked as data; each disagreement between what arrived and the plan's own structures is an item of
   a declared kind (`plan.ref_door_resolution`: per door and kind, the decisions a person may make, what each names of

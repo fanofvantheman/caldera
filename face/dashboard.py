@@ -33,7 +33,6 @@ svg.addEventListener('mouseleave',()=>{tip.hidden=true;cross.style.display='none
 """
 
 HEAD_PAGE = """<h1>Demand<small>{{ version }} · FY{{ fy }} · {{ who }} · what the run says this morning</small></h1>
-<form class="toolbar" method="get"><label>version<select name="version" onchange="this.form.submit()">{% for v in versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == version }}>{{ v.version_id }} · {{ v.status }}</option>{% endfor %}</select></label></form>
 <div class="cards tiles">
 <a class="card stat" href="{{ links.demand }}"><span>FY{{ fy }} net sales · AUD</span><b>{{ t.value|m }}</b><div class="small delta {{ t.value_d|dir }}">{{ t.value_d|pct }} vs FY{{ fy - 1 }} invoiced</div></a>
 <a class="card stat" href="{{ links.money }}"><span>Net sales P{{ rev.p_from[5:]|int }}–P{{ rev.p_to[5:]|int }} vs {{ rev.ref_id }}</span><b>{{ rev.net_sales|m }}</b><div class="small delta {{ rev.d|dir }}">{{ rev.d|pct }} on the periods both value</div></a>
@@ -220,16 +219,14 @@ def _points(keys, view, ref, py, X, Y, series) -> str:
     return json.dumps(pts).replace("'", "&#39;")
 
 
-REVENUE_PAGE = """<form class="toolbar" method="get"><label>version<select name="version" onchange="this.form.submit()">{% for v in versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == version }}>{{ v.version_id }} · {{ v.status }}</option>{% endfor %}</select></label></form>
-<h1>Financial forecast<small>{{ version }} · FY{{ fy }} · net sales invoiced, the latest view and {{ ref_id or 'no reference' }} laid over one another, per week</small></h1>
-{% if years|length > 1 %}<nav class="tabs">{% for y in years %}<a href="{{ y.href }}" class="{{ 'active' if y.fy == fy }}">FY{{ y.fy }}</a>{% endfor %}</nav>{% endif %}
+REVENUE_PAGE = """<h1>Financial forecast<small>{{ version }} · FY{{ fy }} · net sales invoiced, the latest view and {{ ref_id or 'no reference' }} laid over one another, per week</small></h1>
 <div class="cards tiles">
 <div class="card stat"><span>FY{{ fy }} latest view · AUD</span><b>{{ lfl.year|m }}</b><div class="small delta {{ d.py|dir }}">{% if lfl.py_year %}{{ d.py|pct }} vs FY{{ fy - 1 }} invoiced{% elif lfl.py_part %}FY{{ fy - 1 }} is still closing — no year to read against{% else %}no FY{{ fy - 1 }} invoiced to read against{% endif %}</div></div>
 <div class="card stat"><span>Invoiced to date</span><b>{{ lfl.invoiced|m }}</b><div class="small muted">{% if series.n_actual %}{{ series.n_actual }} closed period{{ 's' if series.n_actual > 1 }} of {{ table|length }}{% else %}no period closed yet{% endif %}</div></div>
 <div class="card stat"><span>{% if lfl.from %}{{ lfl.from.label.split(' ')[0] }}–{{ lfl.to.label.split(' ')[0] }} vs {{ ref_id }}{% else %}Against the reference{% endif %}</span><b>{{ lfl.gap|aud if lfl.gap is not none else '—' }}</b><div class="small delta {{ d.lfl|dir }}">{% if lfl.from %}{{ d.lfl|pct }} on the periods both value{% else %}no periods both value{% endif %}</div></div>
 <div class="card stat"><span>{{ ref_id or 'Reference' }} · FY{{ fy }}</span><b>{{ lfl.ref_year|m if lfl.ref_year else '—' }}</b><div class="small muted">{{ ref_kind or 'this version names no reference' }}</div></div>
 </div>
-<div class="card fig"><div class="fighead"><b>Net sales per week</b><span class="crumbs">{% for n in drill.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}<a class="switch" href="{{ drill.other }}">by {{ 'material' if drill.dim == 'customer' else 'customer' }}</a><span class="seg">{% for g in grains %}{% if g.on %}<b>{{ g.label }}</b>{% else %}<a href="{{ g.href }}">{{ g.label }}</a>{% endif %}{% endfor %}</span></span><span class="legend">
+<div class="card fig"><div class="fighead"><b>Net sales per week</b><span class="crumbs">{% for n in drill.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}{% if drill.across %} × {{ drill.across }}{% endif %}<a class="switch" href="{{ drill.other }}">by {{ 'material' if drill.dim == 'customer' else 'customer' }}</a><span class="seg">{% for g in grains %}{% if g.on %}<b>{{ g.label }}</b>{% else %}<a href="{{ g.href }}">{{ g.label }}</a>{% endif %}{% endfor %}</span></span><span class="legend">
 <span class="key"><i class="sw actual"></i>invoiced</span><span class="key"><i class="sw plan"></i>{{ version }}</span>{% if ref_id %}<span class="key"><i class="sw ref"></i>{{ ref_id }}</span>{% endif %}<span class="key"><i class="sw py"></i>FY{{ fy - 1 }} invoiced</span></span></div>
 {{ chart|safe }}<div class="tip" hidden></div>
 <p class="hint">Every point is a rate per week{% if grain == 'period' %} — the period's total over its weeks, the week count in the label — so a five-week period does not read as a step{% else %} — the weeks themselves, a rule at each period boundary{% endif %}. History is what was invoiced; the plan is cases at the list and terms in force.</p></div>

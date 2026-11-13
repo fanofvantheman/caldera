@@ -37,11 +37,11 @@ def accounts() -> list[dict]:
     return q("select distinct account_code from plan.unconstrained_demand_period order by 1")
 
 
-def demand(version_id: str, account: str | None) -> dict:
+def demand(version_id: str, customer: str | None = None, material: str | None = None) -> dict:
     """One row per standard material; every period across — closed periods as actuals (marked), open ones as plan — then,
-    at the end, each fiscal year's total beside its comparatives: the prior year's actual and the reference version."""
-    acct = " and account_code = ?" if account else ""
-    ap = [account] if account else []
+    at the end, each fiscal year's total beside its comparatives: the prior year's actual and the reference version. At a
+    node of either structure (an account, a unit, all; a category, a product, a material)."""
+    acct, ap = _scope_sql(customer, material, "account_code", "standard_material")
     rows = q(f"select standard_material, fiscal_year, period, source, sum(cases) cases from plan.demand_review where version_id = ?{acct} group by all order by 3", version_id, *ap)
     v = version(version_id) or {}
     fys = sorted({r["fiscal_year"] for r in rows})
@@ -109,9 +109,10 @@ def demand(version_id: str, account: str | None) -> dict:
             "n_actual": sum(1 for p in periods if source_of[p] == "actual")}
 
 
-def by_layer(version_id: str, account: str | None) -> list[dict]:
-    where = "where version_id = ?" + (" and account_code = ?" if account else "")
-    params = [version_id] + ([account] if account else [])
+def by_layer(version_id: str, customer: str | None = None, material: str | None = None) -> list[dict]:
+    w, wp = _scope_sql(customer, material, "account_code", "standard_material")
+    where = "where version_id = ?" + w
+    params = [version_id] + wp
     return q(f"""select fiscal_year, sum(l1_baseline) l1, sum(l2_adjustment) l2, sum(l4_distribution) l4, sum(l6_promotions) l6,
                         sum(l7_innovation) l7, sum(l8_exit) l8, sum(cases) cases
                  from plan.unconstrained_demand_period {where} group by fiscal_year order by fiscal_year""", *params)
@@ -569,6 +570,11 @@ def ladder(version_id: str) -> list[dict]:
 def account_of_ship_to(ship_to: str) -> str | None:
     r = one("select account_code from dims.dim_ship_to where ship_to_code = ?", ship_to)
     return r["account_code"] if r else None
+
+
+def accounts_under(node: str) -> set[str]:
+    """The accounts at or beneath a node of the customer structure."""
+    return {r["d"] for r in q("select descendant_code d from dims.dim_customer_hierarchy where ancestor_code = ? and descendant_level = 'account'", node)}
 
 
 def unit_of_account(account: str) -> str | None:

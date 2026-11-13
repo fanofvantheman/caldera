@@ -19,8 +19,12 @@ from chassis.roles import WarehouseRoles
 from chassis.session import Session, default_holder
 from dataclasses import dataclass, field
 
-from chassis.ui import Area, Process, Section, Shell, Tab
+from chassis.ui import Area, Choice, Process, Section, Shell, Tab
 from chassis.warehouse import q
+
+from flask import request
+
+from . import reads
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 chassis.configure(root=ROOT, db="data/caldera.duckdb", receipts="data/receipts", landing="data/landing",
@@ -35,6 +39,7 @@ ENTER = [f"layer.{n}.enter" for n in (1, 2, 4, 6, 7, 8, 9)]
 HEALTH = "plan.run_health"      # one row per worklist; every worklist row carries `whose`
 RUNG = "plan.rung"
 FIN_READ = ["register.assumptions.maintain", "overlay.finance.enter", "read.proof"]
+CONTEXT_ALL = ("version", "fy", "customer", "material")          # the context keys a page applies (DEC-20261113-07)
 
 # ---- the processes in play: a register, not a menu ----
 PROCESSES = [
@@ -42,23 +47,23 @@ PROCESSES = [
         # an object with several views is one entry with tabs; the menu stays process → area → entry
         Area("demand", "Demand", [
             Section("demandplan", "Demand plan", "plan.demand", tabs=[
-                Tab("demand", "Plan", "plan.demand", verbs=READ),
-                Tab("entries", "Entries", "plan.entries", verbs=READ),
+                Tab("demand", "Plan", "plan.demand", verbs=READ, uses=("version", "customer", "material")),
+                Tab("entries", "Entries", "plan.entries", verbs=READ, uses=("version",)),
                 Tab("new", "New entry", "plan.entry_new", verbs=ENTER)]),
-            Section("submissions", "Submissions", "plan.submissions", verbs=READ),
+            Section("submissions", "Submissions", "plan.submissions", verbs=READ, uses=("version", "customer")),
             Section("baseline", "Baseline", "plan.forecast", tabs=[
                 Tab("forecast", "Statistical forecast", "plan.forecast", verbs=["layer.1.enter", "read.drill"]),
                 Tab("accuracy", "Forecast accuracy", "plan.accuracy", verbs=READ)]),
             Section("promotions", "Promotions", "plan.events", tabs=[
                 Tab("events", "Events", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
-                Tab("calendar", "Calendar", "plan.calendar", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill", "read.plan"]),
+                Tab("calendar", "Calendar", "plan.calendar", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill", "read.plan"], uses=("customer",)),
                 Tab("mapping", "Mapping review", "plan.mapping", verbs=["mapping.accept", "mapping.alter"]),
                 Tab("structure", "Their structure to ours", "plan.mapping_structure", verbs=["mapping.accept", "mapping.alter", "register.promo_calendar.maintain", "read.drill"])]),
             # the rate registers: every planner reads them; only Finance (the holders of the maintain verbs) amends them
             Section("prices", "Prices and terms", "plan.terms", tabs=[
                 Tab("terms", "Terms", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill", "read.plan"]),
                 Tab("pricelists", "Price lists", "plan.price_lists", verbs=["register.price_list.maintain", "read.drill", "read.plan"])]),
-            Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"]),
+            Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"], uses=("version",)),
         ]),
         Area("supply", "Supply", [
             Section("supply", "Supply plan", RUNG, {"slug": "supply"}, verbs=["delta.supply.enter", "register.supply_plan.maintain", "policy.production.accept", "read.proof"]),
@@ -66,11 +71,11 @@ PROCESSES = [
             Section("inventory", "Inventory", RUNG, {"slug": "inventory"}, verbs=["register.service_level.maintain", "register.sourcing.maintain", "delta.supply.enter", "read.proof"]),
         ]),
         Area("innovation", "Innovation", [
-            Section("launches", "Launches", "plan.launches", verbs=["layer.7.enter", "structure.material.maintain", "read.drill"]),
-            Section("exits", "Exits", "plan.exits", verbs=["layer.8.enter", "structure.material.maintain", "read.drill"]),
+            Section("launches", "Launches", "plan.launches", verbs=["layer.7.enter", "structure.material.maintain", "read.drill"], uses=("version",)),
+            Section("exits", "Exits", "plan.exits", verbs=["layer.8.enter", "structure.material.maintain", "read.drill"], uses=("version",)),
         ]),
         Area("reconciliation", "Reconciliation", [
-            Section("gap", "Gap to reference", "plan.gap", verbs=["review.reconciliation.close", "delta.allocation.enter", "shaping.enter", "version.name", "decision.accept", "read.proof"]),
+            Section("gap", "Gap to reference", "plan.gap", verbs=["review.reconciliation.close", "delta.allocation.enter", "shaping.enter", "version.name", "decision.accept", "read.proof"], uses=("version",)),
             Section("scenarios", "Scenarios", RUNG, {"slug": "scenarios"}, verbs=["scenario.create", "scenario.promote", "decision.accept"]),
         ]),
         Area("management", "Management", [
@@ -90,7 +95,7 @@ PROCESSES = [
         Area("statements", "Planned statements", [
             # the financial forecast: one tab per measure of the register, each a view of the same working copy, then the
             # versions laid over one another in net sales
-            Section("revenue", "Financial forecast", "plan.revenue", tabs=[
+            Section("revenue", "Financial forecast", "plan.revenue", uses=CONTEXT_ALL, tabs=[
                 Tab("fin_volume", "Volume", "plan.revenue", {"measure": "volume"}, verbs=FIN_READ),
                 Tab("fin_price", "Price", "plan.revenue", {"measure": "price"}, verbs=FIN_READ),
                 Tab("fin_revenue", "Revenue", "plan.revenue", {"measure": "revenue"}, verbs=FIN_READ),
@@ -172,8 +177,65 @@ MAP_FLOWS = [
     ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "finance", "feeds"), ("valued", "statements", ""), ("supply", "statements", ""),
 ]
 
+# ---- the context: the selections that mean the same on every page, chosen once in the navigation (DEC-20261113-07) ----
+# Held in the address and carried on every link; a person's assignments bound what is offered, not what may be read.
+def _scope(who: str | None, dimension: str) -> set | None:
+    """The nodes of one structure this person's assignments reach — None when they name none there, or name the root."""
+    nodes = {r["node"] for r in q("select distinct node from dims.effective_entitlements where principal = ? and scope_dimension = ?", who or "", dimension)}
+    return None if not nodes or "ALL" in nodes else nodes
+
+
+def _bounded(who: str | None, dimension: str, opts: list[dict]) -> str | None:
+    return "the nodes your assignments reach" if _scope(who, dimension) is not None else None
+
+
+def _versions(who, chosen) -> list[dict]:
+    return [{"value": v["version_id"], "label": f"{v['version_id']} · {v['status']}"} for v in reads.versions()]
+
+
+def _years(who, chosen) -> list[dict]:
+    return [{"value": str(y), "label": f"FY{y}"} for y in reads.fiscal_years(chosen["version"])] if chosen.get("version") else []
+
+
+def _year_default(who, chosen, opts) -> str | None:
+    own = str((reads.version(chosen.get("version") or "") or {}).get("fiscal_year") or "")
+    return own if any(o["value"] == own for o in opts) else (opts[0]["value"] if opts else None)
+
+
+def _customers(who, chosen) -> list[dict]:
+    """All, the planning units, the accounts — never a ship-to — in tree order."""
+    mine = _scope(who, "customer")
+    return [{"value": n["code"], "label": n["label"], "depth": n["depth"]} for n in reads.finance_customer_nodes() if mine is None or n["code"] in mine]
+
+
+def _materials(who, chosen) -> list[dict]:
+    """All, every category and its products, and the materials of the product in play — the one chosen, or the chosen
+    material's — so the list stays short and a material is reached through its product."""
+    here = request.args.get("material") or "ALL"
+    product = here if q("select 1 ok from dims.dim_material where product_code = ? limit 1", here) else \
+        next((r["product_code"] for r in q("select product_code from dims.dim_material where material_code = ?", here)), None)
+    rows = q("""select category_code, any_value(category_name) category_name, product_code, any_value(product_name) product_name
+                from dims.dim_material group by all order by category_code, product_code""")
+    out, cat = [{"value": "ALL", "label": "All materials", "depth": 0}], None
+    for r in rows:
+        if r["category_code"] != cat:
+            cat = r["category_code"]; out.append({"value": cat, "label": r["category_name"], "depth": 1})
+        out.append({"value": r["product_code"], "label": r["product_name"], "depth": 2})
+        if r["product_code"] == product:
+            out += [{"value": m, "label": x["label"], "depth": 3} for m, x in reads.material_tree_under(product).items()]
+    mine = _scope(who, "material")
+    return [o for o in out if mine is None or o["value"] in mine]
+
+
+CONTEXT = [
+    Choice("version", "Version", _versions, default=lambda who, chosen, opts: reads.default_version(), strict=True),
+    Choice("fy", "Year", _years, default=_year_default, strict=True),
+    Choice("customer", "Customer", _customers, note=lambda who, opts: _bounded(who, "customer", opts)),
+    Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts)),
+]
+
 SHELL = Shell(brand="Caldera", strapline="integrated planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map")],
-              skin=SPECIMEN_SKIN if "--skin" in sys.argv[1:] else None)
+              context=CONTEXT, skin=SPECIMEN_SKIN if "--skin" in sys.argv[1:] else None)
 
 # the entry file's contract — every column the landing writes; the generator writes the same
 SUBMISSION_COLUMNS = ["submission_id", "action", "version_id", "subject", "scope_node", "submitted_by", "submitted_on", "note"]

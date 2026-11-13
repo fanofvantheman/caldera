@@ -87,8 +87,13 @@ def _page(body: str, **ctx) -> str:
     return SHELL.page(body, who=who, held=held, principals=principals, flash=session.flash(), **ctx)
 
 
+def _ctx() -> dict:
+    """The context in force: version, fy, customer, material — from the address, or the person's defaults."""
+    return SHELL.chosen(_who())
+
+
 def _version() -> str | None:
-    return request.args.get("version") or reads.default_version()
+    return _ctx()["version"]
 
 
 def _z(x: float | None, scale: float = 1, d: int = 0) -> float | None:
@@ -112,8 +117,9 @@ plan.add_app_template_filter(lambda x: "" if x is None else f"{x * 100:+.1f} pp"
 plan.add_app_template_filter(lambda x: "" if x is None else ("up" if x > 0.0005 else "down" if x < -0.0005 else "flat"), "dir")
 plan.add_app_template_filter(lambda x: "" if x is None else ("high" if x > 0.02 else "low" if x < -0.02 else ""), "hl")
 
-VERSION_PICKER = """<form class="toolbar" method="get"><label>version<select name="version" onchange="this.form.submit()">
-{% for v in versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == version }}>{{ v.version_id }} · {{ v.status }}</option>{% endfor %}</select></label>{{ extra|safe }}</form>"""
+# a page's own controls; the version, year, customer and material are the context, chosen once in the navigation and kept
+# by every form here (DEC-20261113-07)
+TOOLBAR = """{% if extra %}<form class="toolbar" method="get">{{ context_fields() }}{{ extra|safe }}</form>{% endif %}"""
 
 
 def _busy(title: str, e: Busy) -> str:
@@ -186,11 +192,11 @@ def _where(surface: str, r: dict) -> str | None:
             return url_for("plan.entries", version=v, layer=r.get("layer_no") or "", withdrawn=1) + f"#{r['entry_id']}"
         if r.get("ship_to_code"):
             acct = reads.account_of_ship_to(r["ship_to_code"])
-            return url_for("plan.demand", version=v, account=acct) if acct else url_for("plan.demand", version=v)
+            return url_for("plan.demand", version=v, customer=acct) if acct else url_for("plan.demand", version=v)
         if r.get("subject"):
             node = r.get("node"); lvl = r.get("level")
             unit = node if lvl == "planning_unit" else (reads.unit_of_account(node) if lvl == "account" else None)
-            return url_for("plan.submissions", version=v, unit=unit) if unit else url_for("plan.submissions", version=v)
+            return url_for("plan.submissions", version=v, customer=unit) if unit else url_for("plan.submissions", version=v)
     except Exception:
         return None
     return None
@@ -241,7 +247,7 @@ def _head(who: str, held: set[str]) -> str:
     """The home page of someone who submits the demand plan: the plan as a whole, read from the run — tiles, the year by
     period, the tree by category, the units and their submissions, the ladder and the one act at its end."""
     version = _version(); v = reads.version(version) or {}
-    fy = int(v.get("fiscal_year") or 0)
+    fy = int(_ctx().get("fy") or v.get("fiscal_year") or 0)
     lag = 3
     ps = reads.accuracy_periods(lag); last, prior = ps[-12:], ps[-24:-12]
     acc = (reads.accuracy(lag, last) or [{}])[0]; acc_prior = (reads.accuracy(lag, prior) or [{}])[0]
@@ -276,7 +282,7 @@ def _head(who: str, held: set[str]) -> str:
     links = {"demand": url_for("plan.demand", version=version), "money": url_for("plan.gap", version=version), "accuracy": url_for("plan.accuracy"),
              "submissions": url_for("plan.submissions", version=version), "versions": url_for("plan.versions")}
     for u in units:
-        u["href"] = url_for("plan.submissions", version=version, unit=u["code"])
+        u["href"] = url_for("plan.submissions", version=version, customer=u["code"])
     # the figure's drill: a node of one structure, its children as small multiples beneath
     # read per week (the 4-4-5 calendar steps a period total every third period); the grain and measure travel with every link
     dim = request.args.get("dim") if request.args.get("dim") in ("customer", "material") else "customer"
@@ -284,7 +290,7 @@ def _head(who: str, held: set[str]) -> str:
     grain = request.args.get("grain") if request.args.get("grain") in ("period", "week") else "period"
     leaf = dim == "material" and reads.is_material(node)             # cases mean one thing at a material and nothing above it
     measure = "cases" if leaf and request.args.get("measure") == "cases" else "net_sales"
-    def L(**kw): return url_for("plan.home", **{"version": version, "dim": dim, "node": node, "grain": grain, "measure": measure, **kw})
+    def L(**kw): return url_for("plan.home", **{"dim": dim, "node": node, "grain": grain, "measure": measure, **kw})
     at = {"customer": node} if dim == "customer" else {"material": node}
     series = reads.demand_series(version, fy, grain=grain, measure=measure, **at)
     drill = {"dim": dim, "node": node, "label": reads.node_label(dim, node),
@@ -299,7 +305,7 @@ def _head(who: str, held: set[str]) -> str:
             drill["children"].append({**ch, "href": L(node=ch["code"]), "total": cs["total"],
                                       "chart": dashboard.chart(cs, fy, width=360, height=110, small=True)})
     drill["children"].sort(key=lambda c: -c["total"])
-    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", links=links, drill=drill, fig=fig, version=version, versions=reads.versions(), fy=fy, lag=lag,
+    return _page(dashboard.HEAD_PAGE, title="Demand", active=None, width="none", uses=("version", "fy"), links=links, drill=drill, fig=fig, version=version, versions=reads.versions(), fy=fy, lag=lag,
                  t=t, rev=rev, acc=acc, acc_of=acc_of, tree=tree, units=units, ladder=ladder, now=now, plan_cell=plan_cell, status_line=status_line,
                  series=series, chart=dashboard.chart(series, fy), mine=_mine(who, held), actions=actions)
 
@@ -320,10 +326,10 @@ def home():
 
 
 # ---- the demand plan ----
-DEMAND = VERSION_PICKER + """
-<h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material{% if account %} · {{ account }}{% endif %} · {{ d.n_actual }} closed periods as actuals, then the plan · totals by fiscal year with comparatives</small></h1>
+DEMAND = TOOLBAR + """
+<h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material · {{ where }} · {{ d.n_actual }} closed periods as actuals, then the plan · totals by fiscal year with comparatives</small></h1>
 {% if editable %}<p class="hint">Cells are open: click one, type the total you want, Enter, give a reason. What is placed is an entry on layer {{ layer }} for the difference; the cell shows the run's number until the next run takes it in.</p>
-{% elif can_enter %}<p class="hint">Choose an account to open the cells for input.</p>{% endif %}
+{% elif can_enter %}<p class="hint">Choose an account as the customer in the context to open the cells for input.</p>{% endif %}
 <div class="wide"><table class="plan tree" {% if editable %}data-cells-post="{{ url_for('plan.cell') }}" data-cells-reasons="reasons"{% endif %}><thead>
 <tr><th rowspan="2" class="sticky">Material</th><th colspan="{{ d.periods|length }}" style="text-align:center">Periods</th>
 {% for c in d.comps %}<th colspan="{{ 1 + (1 if c.py else 0) + (1 if c.ref else 0) }}" style="text-align:center;border-left:1px solid var(--rule)">FY{{ c.fy }}</th>{% endfor %}<th class="n" rowspan="2">Horizon</th></tr>
@@ -367,7 +373,9 @@ def _pending_cells(version: str, account: str | None) -> dict[str, float]:
 def demand():
     try:
         import json
-        who = _who(); version = _version(); account = request.args.get("account") or None
+        who = _who(); c = _ctx(); version = c["version"]
+        customer, material = c.get("customer") or "ALL", c.get("material") or "ALL"
+        account = customer if reads.is_account(customer) else None               # cells open at an account; a unit or all reads summed
         v = reads.version(version) or {}
         enterable = [n for n in roles.layers_enterable(who) if n != 1]           # layer 1 is computed on an open version; a typed change is an adjustment
         layer = int(request.args.get("layer") or (enterable[0] if enterable else 0))
@@ -375,22 +383,21 @@ def demand():
         editable = can_enter and bool(account) and layer in enterable
         reasons = [{"code": r["reason_code"], "says": r["description"]} for r in reads.reasons() if str(layer) in r["layers"].split(",")] or \
                   [{"code": r["reason_code"], "says": r["description"]} for r in reads.reasons()]
-        accounts = reads.accounts()
-        extra = ('<label>account<select name="account" onchange="this.form.submit()"><option value="">all</option>'
-                 + "".join(f'<option value="{a["account_code"]}" {"selected" if a["account_code"] == account else ""}>{a["account_code"]}</option>' for a in accounts) + "</select></label>")
+        extra = ""
         if can_enter:
             names = {l["layer_no"]: l["layer_name"] for l in reads.layers()}
             extra += ('<label>enter as layer<select name="layer" onchange="this.form.submit()">'
                       + "".join(f'<option value="{n}" {"selected" if n == layer else ""}>{n} {names.get(n, "")}</option>' for n in enterable) + "</select></label>")
-        return _page(DEMAND, title="Demand plan", active="demand", width="100%", versions=reads.versions(), version=version, account=account,
-                     d=reads.demand(version, account), layers=reads.by_layer(version, account), extra=extra,
+        where = " × ".join(reads.node_label(dim, n) for dim, n in (("customer", customer), ("material", material)) if n != "ALL") or "all customers × all materials"
+        return _page(DEMAND, title="Demand plan", active="demand", width="100%", versions=reads.versions(), version=version, account=account, where=where,
+                     d=reads.demand(version, customer, material), layers=reads.by_layer(version, customer, material), extra=extra,
                      editable=editable, can_enter=can_enter, layer=layer, reasons_json=json.dumps(reasons), pending=_pending_cells(version, account))
     except Busy as e:
         return _busy("Demand plan", e)
 
 
 # ---- entries ----
-ENTRIES_PAGE = VERSION_PICKER + """
+ENTRIES_PAGE = TOOLBAR + """
 <h1>{{ title }}<small>{{ version }} · {{ lede }}</small></h1>
 <table><thead><tr><th>Layer</th><th>Entry</th><th>By</th><th>On</th><th>Reason</th><th>Material</th><th>Customer</th><th>Window</th><th class="n">Value</th><th>Spread</th><th>Note</th><th></th></tr></thead><tbody>
 {% for e in rows %}<tr id="{{ e.entry_id }}" class="{{ 'off' if e.withdrawn and e.withdrawn_by_owner }}">
@@ -559,7 +566,7 @@ def cell():
 
 
 # ---- submissions: the matrix, and the acts ----
-SUBMISSIONS_PAGE = VERSION_PICKER + """
+SUBMISSIONS_PAGE = TOOLBAR + """
 <h1>Submissions<small>{{ version }} · who has declared what complete, where — every state derived by the run from the acts and the entries</small></h1>
 <table class="matrix"><thead><tr><th>Subject</th>{% for u in units %}<th class="stage">{{ u.unit_name }}</th>{% endfor %}<th class="stage">Demand plan</th></tr></thead><tbody>
 {% for row in rows %}<tr><td>{{ row.label }}</td>{% for cell in row.cells %}<td class="stage {{ 'can' if cell.can }}" title="{{ cell.title }}">
@@ -613,8 +620,10 @@ def _cell(who: str, st: dict | None) -> dict:
 @plan.get("/submissions")
 def submissions():
     try:
-        who = _who(); version = _version(); unit = request.args.get("unit") or None
+        who = _who(); c = _ctx(); version = c["version"]; cust = c.get("customer") or "ALL"
         units = reads.units(); matrix = reads.submission_matrix(version)
+        # the context's customer opens a unit by account: the unit itself, or an account's unit
+        unit = cust if any(u["code"] == cust for u in units) else (reads.unit_of_account(cust) if cust != "ALL" and reads.is_account(cust) else None)
         by = {(r["subject"], r["node"]): r for r in matrix}
         names = {f"layer:{l['layer_no']}": l["layer_name"] for l in reads.layers()}
         subjects = [sj for sj in SUBJECT_ORDER if any(k[0] == sj for k in by)]
@@ -628,8 +637,7 @@ def submissions():
             for sj in subjects:
                 if by.get((sj, accounts[0]["code"]), {}).get("state", "n/a") != "n/a" if accounts else False:
                     acct_rows.append({"subject": sj, "label": _label(sj, names.get(sj)), "cells": [_cell(who, by.get((sj, a["code"]))) for a in accounts]})
-        extra = ('<label>unit by account<select name="unit" onchange="this.form.submit()"><option value="">none</option>'
-                 + "".join(f'<option value="{u["code"]}" {"selected" if u["code"] == unit else ""}>{u["unit_name"]}</option>' for u in units) + "</select></label>")
+        extra = ""
         return _page(SUBMISSIONS_PAGE, title="Submissions", active="submissions", versions=reads.versions(), version=version, units=units, rows=rows,
                      unit=unit, unit_name=unit_name, accounts=accounts, acct_rows=acct_rows, acts=reads.submission_acts(version), extra=extra, pending=SUBMISSIONS.pending())
     except Busy as e:
@@ -663,7 +671,7 @@ def submit():
 
 
 # ---- the revenue bridge ----
-MONEY = VERSION_PICKER + """
+MONEY = TOOLBAR + """
 <h1>Revenue bridge<small>{{ version }} · every line valued through the gross-to-net at the list and terms in force</small></h1>
 {% if b.gap %}<div class="cards">
 <div class="card stat"><b>{{ b.gap.plan_net_sales|n }}</b><span>net sales, this version</span></div>
@@ -690,7 +698,7 @@ def money():
 
 
 # ---- reconciliation: the gap to the reference version ----
-GAP = VERSION_PICKER + """
+GAP = TOOLBAR + """
 <h1>Gap to reference<small>{{ version }} against {{ g.reference }} · the difference the cycle exists to close</small></h1>
 {% if not g.reference %}<p class="lede">This version names no reference.</p>{% else %}
 <h2>By period</h2>
@@ -715,7 +723,7 @@ def gap():
 # ---- financial planning: the financial forecast, one tab per measure, and the versions laid over one another ----
 def _fy(version: str | None, v: dict) -> tuple[int, list[int]]:
     years = reads.fiscal_years(version) if version else []
-    fy = request.args.get("fy", type=int)
+    fy = int(_ctx().get("fy") or 0)
     if fy not in years:
         fy = int(v.get("fiscal_year") or 0) if int(v.get("fiscal_year") or 0) in years else (years[0] if years else 0)
     return fy, years
@@ -728,13 +736,14 @@ def revenue():
     as Finance types (_finance_ctx, finance_cell). Every tab is a view of the same working copy."""
     try:
         version = _version(); v = reads.version(version) or {}
-        fy, years = _fy(version, v)
-        page = {**_page_args(request.args), "version": version, "fy": fy}
+        fy, _ = _fy(version, v)
+        c = _ctx()
+        page = {**_page_args(request.args), "version": version, "fy": fy, "customer": c.get("customer") or "ALL", "material": c.get("material") or "ALL"}
         measure = page.get("measure") if page.get("measure") in FIN_TABS else "volume"
         page["measure"] = measure
         fin = _finance_ctx(version, fy, page)
         return _page(FINANCE_PAGE, title=f"Financial forecast · {fin['tab_label']}", active=f"fin_{measure}", width="none", version=version,
-                     versions=reads.versions(), years=years, fy=fy, fin=fin, last=session.last, live_script=working.script())
+                     fy=fy, fin=fin, last=session.last, live_script=working.script())
     except Busy as e:
         return _busy("Financial forecast", e)
 
@@ -746,12 +755,14 @@ def revenue_versions():
     below as a split."""
     try:
         version = _version(); v = reads.version(version) or {}
-        fy, years = _fy(version, v)
+        fy, _ = _fy(version, v)
+        # the chart reads the context's customer × material; which structure it is split along is the page's own
+        c = _ctx(); cust, mat = c.get("customer") or "ALL", c.get("material") or "ALL"
         dim = request.args.get("dim") if request.args.get("dim") in ("customer", "material") else "customer"
-        node = request.args.get("node") or "ALL"
+        node = cust if dim == "customer" else mat
         grain = request.args.get("grain") if request.args.get("grain") in ("period", "week") else "period"
-        def L(**kw): return url_for("plan.revenue_versions", **{"version": version, "fy": fy, "dim": dim, "node": node, "grain": grain, **kw})
-        def at(n): return {"customer": n} if dim == "customer" else {"material": n}
+        def L(**kw): return url_for("plan.revenue_versions", **{"dim": dim, "grain": grain, **kw})
+        def at(n): return {"customer": n, "material": mat} if dim == "customer" else {"customer": cust, "material": n}
         series = reads.demand_series(version, fy, **at(node))               # by period: the table, the tiles, the like-for-like
         shown = series if grain == "period" else reads.demand_series(version, fy, grain="week", **at(node))
         lfl = reads.like_for_like(series)
@@ -771,17 +782,20 @@ def revenue_versions():
             cs = reads.demand_series(version, fy, **at(ch["code"]))
             if cs["view"]:
                 cl = reads.like_for_like(cs)
-                split.append({**ch, "href": L(node=ch["code"]), "lfl": cl, "py_d": _d(cl["year"], cl["py_year"]), "gap_d": _d(cl["view"], cl["ref"])})
+                split.append({**ch, "href": L(**{dim: ch["code"]}), "lfl": cl, "py_d": _d(cl["year"], cl["py_year"]), "gap_d": _d(cl["view"], cl["ref"])})
         split.sort(key=lambda c: -c["lfl"]["year"])
         level = split[0]["level"] if split else ""
         split_of = {"planning_unit": "unit", "account": "account", "category": "category", "product": "product"}.get(level, level.replace("_", " ") or "level below")
         ref_id = series["ref_id"] if series["ref"] else None              # a reference that does not carry this year is not shown against it
         ref_kind = (reads.version(ref_id) or {}).get("cycle") if ref_id else (f"{series['ref_id']} does not carry FY{fy}" if series["ref_id"] else None)
-        drill = {"dim": dim, "label": reads.node_label(dim, node), "path": [{**n, "href": L(node=n["code"])} for n in reads.node_path(dim, node)],
-                 "other": L(dim=("material" if dim == "customer" else "customer"), node="ALL")}
+        other = "material" if dim == "customer" else "customer"
+        across = reads.node_label(other, cust if other == "customer" else mat) if (cust if other == "customer" else mat) != "ALL" else None
+        drill = {"dim": dim, "label": reads.node_label(dim, node) + (f" × {across}" if across else ""), "across": across,
+                 "path": [{**n, "href": L(**{dim: n["code"]})} for n in reads.node_path(dim, node)],
+                 "other": L(dim=other)}
         return _page(dashboard.REVENUE_PAGE, title="Financial forecast · Versions", active="fin_versions", width="none",
                      version=version, versions=reads.versions(), fy=fy,
-                     years=[{"fy": y, "href": L(fy=y)} for y in years], grain=grain, grains=[{"label": g, "on": g == grain, "href": L(grain=g)} for g in ("period", "week")],
+                     grain=grain, grains=[{"label": g, "on": g == grain, "href": L(grain=g)} for g in ("period", "week")],
                      series=series, chart=dashboard.chart(shown, fy), lfl=lfl, d=d, table=table, split=split, split_of=split_of, drill=drill,
                      ref_id=ref_id, ref_kind=ref_kind)
     except Busy as e:
@@ -809,12 +823,9 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 
 FINANCE_PAGE = FIN_MACROS + """<h1>Financial forecast<small>FY{{ fy }} · {{ version }} · {{ fin.tab_label }} · Finance's volume × price = revenue, the demand plan beneath every figure</small></h1>
 {{ fin_tiles(fin) }}
-<form class="toolbar" method="get" action="{{ url_for('plan.revenue') }}">{% for k, val in fin.keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
-<label>version<select name="version" onchange="this.form.submit()">{% for x in versions %}<option value="{{ x.version_id }}" {{ 'selected' if x.version_id == version }}>{{ x.version_id }} · {{ x.status }}</option>{% endfor %}</select></label>
-<label>year<select name="fy" onchange="this.form.submit()">{% for y in years %}<option value="{{ y }}" {{ 'selected' if y == fy }}>FY{{ y }}</option>{% endfor %}</select></label>
-<label>customer<select name="fc" onchange="this.form.submit()">{% for c in fin.customers %}<option value="{{ c.code }}" {{ 'selected' if c.code == fin.fc }}>{{ '— ' * c.depth }}{{ c.label }}{% if fin.source_of.get(c.code) == 'built' %} · built by Finance{% endif %}</option>{% endfor %}</select></label>
+<div class="toolbar"><span class="small muted">{{ fin.customer_label }}{% if fin.source_of.get(fin.fc) == 'built' %} · built by Finance{% endif %} ×</span>
 <span class="crumbs">{% for n in fin.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}</span>
-<span class="seg">{% for t in fin.readings %}{% if t.on %}<b>{{ t.label }}</b>{% else %}<a href="{{ t.href }}">{{ t.label }}</a>{% endif %}{% endfor %}</span></form>
+<span class="seg">{% for t in fin.readings %}{% if t.on %}<b>{{ t.label }}</b>{% else %}<a href="{{ t.href }}">{{ t.label }}</a>{% endif %}{% endfor %}</span></div>
 {% for say in fin.not_built %}<p class="hint notbuilt">{{ say }} Nothing on this tab is estimated: a figure that cannot be calculated yet is left empty.</p>{% endfor %}
 <div class="finlive"{% if fin.editable %} data-live-post="{{ url_for('plan.finance_cell') }}" data-live-context='{{ fin.live_context|tojson }}'{% endif %}>
 {{ fin_status(fin) }}
@@ -856,7 +867,7 @@ table.fin td.closed,table.fin th.closed{color:var(--muted)}.toolbar .seg{display
 # measure with the lines it is calculated from above it where that makes it readable (caldera ambiguity #20 f)
 FIN_TABS = {"volume": ["volume"], "price": ["price"], "revenue": ["revenue"], "cogs": ["volume", "std_cost", "cogs"], "margin": ["revenue", "cogs", "margin"]}
 READINGS = [("finance", "Finance plan"), ("source", "Demand plan"), ("variance", "Variance")]
-PAGE_KEYS = ("version", "fy", "fc", "fm", "reading", "measure")      # where the financial forecast stands
+PAGE_KEYS = ("version", "fy", "customer", "material", "reading", "measure")      # where the financial forecast stands
 _FIN_MODULE: dict = {}
 
 
@@ -956,9 +967,9 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                  "formula": rules[m]["formula_says"], "rollup_says": rules[m]["rollup_says"], "breakback_says": rules[m]["breakback_says"]} for m in lines]
     def L(**kw): return url_for("plan.revenue", **{**page, **kw})
     customers = _once(reads.finance_customer_nodes)()
-    fc = page.get("fc") or "ALL"
+    fc = page.get("customer") or "ALL"
     fc = fc if fc in {c["code"] for c in customers} else "ALL"
-    fm = page.get("fm") or "ALL"
+    fm = page.get("material") or "ALL"
     fm = fm if fm == "ALL" or _once(reads.material_node)(fm) else "ALL"
     reading = page.get("reading") if page.get("reading") in dict(READINGS) else "finance"
     may, is_open = _once(roles.may)(who, "overlay.finance.enter"), v.get("status") == "open"
@@ -998,7 +1009,7 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
         nb = sum(1 for k in all_keys if grid.cells[k]["source"] != "fed")
         lvl = kids[code]["lvl"] if code != fm else None
         has_kids = code != fm and kids[code]["has_kids"]
-        row = {"code": code, "label": kids[code]["label"] if code != fm else fm_label, "current": code == fm, "href": L(fm=code) if has_kids else None,
+        row = {"code": code, "label": kids[code]["label"] if code != fm else fm_label, "current": code == fm, "href": L(material=code) if has_kids else None,
                "level": ("this node" if code == fm else levels.get(lvl, lvl or "")), "built": ("built by Finance" if nb and nb == len(all_keys) else "part built" if nb else ""),
                "cells": {m["key"]: [] for m in MEASURES}}
         for p in periods + [{"period": "FY", "closed": False}]:
@@ -1043,8 +1054,6 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
            "built_rev": (T.get("built") or {}).get("revenue") if T.get("built") else (fin_t.get("revenue") if T.get("built_only") else None),
            "built_vol": (T.get("built") or {}).get("volume") if T.get("built") else (fin_t.get("volume") if T.get("built_only") else None)}
     decl = {d["account_code"]: d["source"] for d in _once(reads.finance_sources)() if d["material_code"] == "ALL" and d["valid"]}
-    keep = {k: page[k] for k in ("reading", "measure") if page.get(k)}
-    keep.update({"fm": fm})
     unsaved_rows = [{"scope_material": t.material, "period": t.period, "measure": t.measure, "typed": _show(t.measure, t.value),
                      "now": _show(t.measure, finance_live.node_value(grid, version, fc, t.material, t.period, t.measure)),
                      "then": _show(t.measure, t.source_at_entry), "src_now": _show(t.measure, t.source_at_entry), "source_moved": False,
@@ -1052,12 +1061,12 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                     for t in reversed(wc.typed if wc else []) if t.customer == fc and t.material in nodes and t.period in {p["period"] for p in periods}]
     return {"fy": fy, "fc": fc, "fm": fm, "reading": reading, "measure": measure, "tab_label": rules[measure]["label"],
             "not_built": [rules[m]["not_built_says"] for m in lines if not rules[m]["built"] and rules[m]["not_built_says"]][:1], "customers": customers, "customer_label": next((x["label"] for x in customers if x["code"] == fc), fc), "source_of": decl,
-            "path": [{**n, "href": L(fm=n["code"])} for n in _once(reads.node_path)("material", fm)] or [{"code": "ALL", "label": "All materials", "href": L(fm="ALL")}],
+            "path": [{**n, "href": L(material=n["code"])} for n in _once(reads.node_path)("material", fm)] or [{"code": "ALL", "label": "All materials", "href": L(material="ALL")}],
             "readings": [{"label": lab, "on": key == reading, "href": L(reading=key)} for key, lab in READINGS],
             "n_waiting": len(FINANCE.pending()), "row_head": fm_label, "periods": periods, "measures": MEASURES, "rows": rows, "tot": tot,
             "any_built": any(r["built"] for r in rows) or any(s == "built" for s in decl.values()),
             "editable": editable, "may": may, "open": is_open, "status": v.get("status", "unknown"), "holders": _once(reads.holders)("overlay.finance.enter"),
-            "keep": keep, "post_keep": {**page, "version": version or "", "fy": fy}, "live_context": {"page": {**page, "version": version or "", "fy": fy}},
+            "post_keep": {**page, "version": version or "", "fy": fy}, "live_context": {"page": {**page, "version": version or "", "fy": fy}},
             "unsaved_n": len(wc.typed) if wc else 0, "unsaved_here": sum(1 for t in (wc.typed if wc else []) if t.customer == fc), "say": say,
             "can_add": editable and _once(reads.is_account)(fc), "add_materials": _once(reads.account_materials)(fc) if editable and _once(reads.is_account)(fc) else [],
             "open_in_fy": [p["period"] for p in periods if p["period"] in opens],
@@ -1118,7 +1127,7 @@ def finance_cell():
     page["version"] = version
     fy = int(page.get("fy") or v.get("fiscal_year") or 0)
     page["fy"] = fy
-    fc = page.get("fc") or "ALL"
+    fc = page.get("customer") or "ALL"
     if live:
         figures = [(str(data.get("node") or ""), str(data.get("period") or ""), str(data.get("measure") or ""), data.get("value"))]
     else:
@@ -1156,7 +1165,7 @@ def finance_start():
     """Start a material at an account where nothing stands: its first volume and price, into the working copy."""
     f = request.form; who = _who(); page = _page_args(f)
     version = page.get("version") or reads.default_version(); v = reads.version(version) or {}
-    fc = page.get("fc") or ""; mat = (f.get("add_material") or "").strip(); period = f.get("add_period") or ""
+    fc = page.get("customer") or ""; mat = (f.get("add_material") or "").strip(); period = f.get("add_period") or ""
     av, ap = _num(f.get("add_volume")), _num(f.get("add_price"))
     why = None
     if not reads.is_account(fc):
@@ -1497,7 +1506,7 @@ The mix by family: {% for f, n in families %}{{ f.replace('_', ' ') }} {{ n }}{{
 <h2 id="calendar">The calendar<span class="count">every event the plan carries, by window — the promotions system's codes beside ours</span></h2>
 <table><thead><tr><th>Event</th><th>Source</th><th>Account</th><th>Promo group</th><th>Window</th><th>Mechanic</th><th class="n">Uplift</th><th class="n">Dip</th><th>Response</th>
 <th class="n">Price reduction / case</th><th class="n">Scan / case</th><th class="n">Lump sums</th><th>Status</th><th>Their codes</th><th>Funding not yet priced</th></tr></thead><tbody>
-{% for e in cal %}<tr id="{{ e.event_id }}"><td><a href="{{ url_for('plan.calendar', account=e.account_code, event=e.event_id) }}">{{ e.event_id }}</a></td><td>{{ 'promotions system' if e.source == 'sender' else 'typed' }}</td><td>{{ e.account_code }}</td><td>{{ e.promo_group_code }}</td>
+{% for e in cal %}<tr id="{{ e.event_id }}"><td><a href="{{ url_for('plan.calendar', customer=e.account_code, event=e.event_id) }}">{{ e.event_id }}</a></td><td>{{ 'promotions system' if e.source == 'sender' else 'typed' }}</td><td>{{ e.account_code }}</td><td>{{ e.promo_group_code }}</td>
 <td>{{ e.window_start }} – {{ e.window_end }}{% if e.off_week %} <span class="state" title="{{ e.off_week_says }}">off week</span>{% endif %}</td><td>{{ e.mechanic }} <span class="muted small">{{ e.mechanic_family.replace('_', ' ') }}</span></td><td class="n">{{ e.uplift_pct|pct1 }}</td><td class="n">{{ e.dip_pct|pct1 }}</td>
 <td class="small">{{ e.response_source }}{% if e.note %} — {{ e.note }}{% endif %}</td><td class="n">{{ e.tpr_per_case|n(2) }}</td><td class="n">{{ e.scan_funding_per_case|n(2) }}</td>
 <td class="n" title="fixed fee {{ e.fixed_fee|n }} · retail media {{ e.media_fee|n }} · co-op drawdown {{ e.envelope_drawdown|n }}">{{ e.lump_sums|n }}{% if e.media_fee %}<div class="small muted">media {{ e.media_fee|n }}</div>{% endif %}{% if e.envelope_drawdown %}<div class="small muted">co-op {{ e.envelope_drawdown|n }}</div>{% endif %}</td>
@@ -1643,12 +1652,10 @@ def take_in():
     return redirect(url_for("plan.events") + "#sender")
 
 
-CALENDAR = """<h1>Promotions calendar<small>{{ version }} · our trading weeks as the grid, each event as a bar on its true dates{% if account %} · {{ account.account_name }}{% endif %}</small></h1>
-<form class="toolbar" method="get"><label>account<select name="account" onchange="this.form.submit()"><option value="">every account</option>
-{% for a in accounts %}<option value="{{ a.account_code }}" {{ 'selected' if account and a.account_code == account.account_code }}>{{ a.account_code }} · {{ a.account_name }}</option>{% endfor %}</select></label>
-<label>promo group<select name="group" onchange="this.form.submit()"><option value="">every group</option>{% for g in groups %}<option value="{{ g }}" {{ 'selected' if g == group }}>{{ g }}</option>{% endfor %}</select></label></form>
+CALENDAR = """<h1>Promotions calendar<small>{{ version }} · our trading weeks as the grid, each event as a bar on its true dates · {{ where }}</small></h1>
+<form class="toolbar" method="get">{{ context_fields() }}<label>promo group<select name="group" onchange="this.form.submit()"><option value="">every group</option>{% for g in groups %}<option value="{{ g }}" {{ 'selected' if g == group }}>{{ g }}</option>{% endfor %}</select></label></form>
 <p class="lede">Our weeks run Monday to Sunday, every week in one period. A customer's promotional week need not: {% for a in weeks_of %}{{ a.account_code }} from {{ a.promo_week_start }}{{ ', ' if not loop.last }}{% else %}none of these accounts keeps one{% endfor %}{% if no_week %}; {{ no_week|join(', ') }} keep{{ 's' if no_week|length == 1 }} none{% endif %}. So a grocer's event starts mid-week and straddles two of our weeks — the plan cuts it by days, never snaps it.</p>
-{% if not rows %}<p class="muted">No event in the calendar{{ ' for this account' if account }}.</p>{% else %}
+{% if not rows %}<p class="muted">No event in the calendar for {{ where }}.</p>{% else %}
 <div class="cal" style="--n:{{ weeks|length }}">
 <div class="calrow head"><div class="lab"></div><div class="lane">{% for pp in periods %}<span class="per" style="left:{{ pp.left }}%;width:{{ pp.width }}%">{{ pp.period }}</span>{% endfor %}</div></div>
 <div class="calrow head wk"><div class="lab small muted">week starting</div><div class="lane">{% for w in weeks %}{% if loop.index0 % 2 == 0 %}<span class="wk" style="left:{{ w.left }}%">{{ w.week_start.strftime('%d %b') }}</span>{% endif %}{% endfor %}</div></div>
@@ -1691,10 +1698,12 @@ def calendar():
     try:
         version = reads.default_version()
         accts = reads.accounts_master(); by_code = {a["account_code"]: a for a in accts}
-        account = by_code.get(request.args.get("account") or "")
+        cust = _ctx().get("customer") or "ALL"                                 # the context's customer: the accounts beneath it
+        account = by_code.get(cust)
+        under = None if cust == "ALL" else reads.accounts_under(cust)
         group = request.args.get("group") or ""
         cal = reads.events()
-        shown = [e for e in cal if (not account or e["account_code"] == account["account_code"]) and (not group or e["promo_group_code"] == group)]
+        shown = [e for e in cal if (under is None or e["account_code"] in under) and (not group or e["promo_group_code"] == group)]
         rows, weeks, periods, days, lo = [], [], [], 1, None
         if shown:
             first = min(e["window_start"] for e in shown); last = max(e["window_end"] for e in shown) + dt.timedelta(days=7)
@@ -1715,13 +1724,14 @@ def calendar():
                 rows.append({**e, "account_head": e["account_code"] != prev, "account_name": a.get("account_name"), "promo_week_start": day, "ticks": ticks,
                              "left": _pct(e["window_start"], lo, days), "width": round(((e["window_end"] - e["window_start"]).days + 1) / days * 100, 3),
                              "dip_width": round(7 / days * 100, 3) if e["dip_pct"] else 0,
-                             "href": url_for("plan.calendar", account=request.args.get("account") or None, group=group or None, event=e["event_id"]) + "#split"})
+                             "href": url_for("plan.calendar", group=group or None, event=e["event_id"]) + "#split"})
                 prev = e["account_code"]
         sel = request.args.get("event")
         ev = next((e for e in cal if e["event_id"] == sel), None)
         split = reads.event_split(sel) if ev else []
         in_view = [by_code[c] for c in sorted({e["account_code"] for e in shown})] if shown else ([account] if account else [])
         return _page(CALENDAR, title="Promotions calendar", active="calendar", width="none", version=version, accounts=accts, account=account,
+                     where=reads.node_label("customer", cust),
                      groups=sorted({e["promo_group_code"] for e in cal}), group=group, rows=rows, weeks=weeks, periods=periods, days=days,
                      weeks_of=[a for a in in_view if a.get("promo_week_start")], no_week=[a["account_code"] for a in in_view if not a.get("promo_week_start")],
                      sel=sel, ev=ev, split=split, split_nb=any(w["neighbour_cases"] for w in split),
@@ -2016,7 +2026,7 @@ FORECAST = """<h1>Statistical forecast<small>{{ version }} · the baseline each 
 {% else %}<p class="muted">Nothing in the outbox.</p>{% endif %}
 {% if run %}<h2 id="departs">Where the run departs most from our calculation<span class="count">material × account over the run's weeks · open one to read it by period</span></h2>
 <table><thead><tr><th>Material</th><th>Account</th><th class="n">From the run</th><th class="n">Our calculation</th><th class="n">Difference</th><th class="n">Departure</th></tr></thead><tbody>
-{% for d in departures %}<tr><td><a href="{{ url_for('plan.forecast', material=d.material_code, account=d.account_code) }}#series">{{ d.material_name }}</a> <span class="muted">{{ d.material_code }}</span></td><td>{{ d.account_code }}</td>
+{% for d in departures %}<tr><td><a href="{{ url_for('plan.forecast', series_material=d.material_code, series_account=d.account_code) }}#series">{{ d.material_name }}</a> <span class="muted">{{ d.material_code }}</span></td><td>{{ d.account_code }}</td>
 <td class="n">{{ d.landed|n }}</td><td class="n">{{ d.ours|n if d.ours else '' }}</td><td class="n">{{ d.diff|signed }}</td><td class="n delta {{ d.departure|dir }}">{{ d.departure|pct1s if d.departure is not none else '' }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 {% if series %}<h2 id="series">{{ series_name }}<span class="count">{{ series_material }} at {{ series_account }} · cases by period over the run's weeks</span></h2>
 <table><thead><tr><th>Period</th><th class="n">Weeks</th><th class="n">From the run</th><th class="n">Our calculation</th><th class="n">Departure</th><th class="n">Shipped, same period last year</th></tr></thead><tbody>
@@ -2048,7 +2058,7 @@ def forecast():
         reach = lambda i: {x.strip() for x in str(i.get("reaches") or i.get("scope_code") or "").split(",")}
         queue = [i for i in reads.forecast_queue() if showing_all or reach(i) & shown]
         landed = sum(a["landed"] or 0 for a in sources); ours = sum(a["ours"] or 0 for a in sources)
-        mat, acct = request.args.get("material"), request.args.get("account")
+        mat, acct = request.args.get("series_material"), request.args.get("series_account")
         series = reads.forecast_series(version, mat, acct) if run and mat and acct else []
         names = {m["material_code"]: m["material_name"] for m in reads.materials()}
         holders = {a: ", ".join(p for p in reads.holders("layer.1.enter") if roles.may(p, "layer.1.enter", a, dimension="customer")) for a in fc_accts}

@@ -45,12 +45,12 @@ def main() -> None:
         fy = int(M.reads.version(V)["fiscal_year"])
         P = M.reads.open_periods(V)[0] if int(M.reads.open_periods(V)[0][:4]) == fy else None
     assert P, "an open period in the version's own year"
-    page = {"version": V, "fy": fy, "dim": "customer", "node": "ALL", "grain": "period", "fc": "ALL", "fm": "ALL"}
+    page = {"version": V, "fy": fy, "customer": "ALL", "material": "ALL"}
     timings: list[float] = []
 
     def post(node: str, measure: str, value: float, fc: str = "ALL", fm: str = "ALL", period: str = P):
         t = time.perf_counter()
-        r = c.post("/finance/cell", data=json.dumps({"page": {**page, "fc": fc, "fm": fm}, "node": node, "period": period, "measure": measure, "value": str(value)}), headers=LIVE)
+        r = c.post("/finance/cell", data=json.dumps({"page": {**page, "customer": fc, "material": fm}, "node": node, "period": period, "measure": measure, "value": str(value)}), headers=LIVE)
         timings.append(time.perf_counter() - t)
         assert r.status_code == 200, r.status_code
         return r
@@ -123,14 +123,19 @@ def main() -> None:
         assert abs(var_after - var_before) > 1
 
         # 4 · navigating away and back: still marked unsaved
-        r = c.get(f"/revenue?version={V}&fy={fy}&fc={acct}&fm={kids[0]}")
+        r = c.get(f"/revenue?version={V}&fy={fy}&customer={acct}&material={kids[0]}")
         assert b"not saved" in r.data and UNSAVED_CELL.search(r.data.decode())
-        r = c.get(f"/revenue?version={V}&fy={fy}&fc=ALL&fm=ALL")
+        r = c.get(f"/revenue?version={V}&fy={fy}&customer=ALL&material=ALL")
         assert b"4 figures typed and not saved" in r.data, "the working copy survives navigation"
+        # every tab is a view of the same working copy: revenue, typed nowhere, shows what the volumes and prices made
+        r = c.get(f"/revenue?measure=revenue&version={V}&fy={fy}&customer={acct}&material={kids[0]}")
+        assert b"4 figures typed and not saved" in r.data and UNSAVED_CELL.search(r.data.decode()), "the revenue tab reads the same copy"
+        assert f"/revenue?measure=volume&amp;version={V}&amp;fy={fy}&amp;customer={acct}&amp;material={kids[0]}" in r.data.decode(), "a tab keeps the context"
+        print(f"tabs           revenue tab at {acct} × {kids[0]}: the unsaved figures show, and the volume tab's link keeps the context")
 
         # 5 · a second person sees none of it
         session.become(OTHER)
-        r = c.get(f"/revenue?version={V}&fy={fy}&fc=ALL&fm=ALL")
+        r = c.get(f"/revenue?version={V}&fy={fy}&customer=ALL&material=ALL")
         assert r.status_code == 200 and b"not saved" not in r.data and not UNSAVED_CELL.search(r.data.decode())
         assert at("ALL", cat, "volume", who=OTHER) != at("ALL", cat, "volume")
         session.become(FINANCE_USER)
