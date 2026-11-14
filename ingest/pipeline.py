@@ -26,6 +26,7 @@ REFERENCE = {
     "ctl_period": ("fiscal_year", "fiscal_period", "quarter", "weeks"),
     "ctl_version": ("horizon_periods", "horizon_quarters"),
     "ref_version_kind": ("horizon_periods", "horizon_quarters", "ord"),
+    "ref_verb": ("ord",),
     "ref_step_horizon": ("horizon_periods", "ord"),
     "dim_category": (),
     "dim_product": (),
@@ -93,6 +94,7 @@ PLAN = {
     "reg_version_act": (),
     "reg_strategic_plan": ("first_year", "last_year"),
     "reg_strategic_growth": ("fiscal_year", "growth_pct"),
+    "reg_role": (),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})

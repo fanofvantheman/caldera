@@ -111,16 +111,16 @@ def checks_for(grid: str, version: str, subject: str, acts: list[dict], who: str
     standing = [a for a in acts if a["standing"] == "stands" and a["act"] not in ("withdraw", "withdrawal", "release")]
     authors = {a["by_whom"] for a in acts}
     if grid == "finance":
-        may, verb = roles.may(who, FIN_VERB), FIN_VERB
+        may, verb = roles.may(who, FIN_VERB, kind=v.get("version_kind")), FIN_VERB
     elif grid == "schedule":
         verbs = [x for x in (S._verb("rate"),) if x]
         ccs = {r["cost_centre_code"] for r in q("select distinct cost_centre_code from plan.schedule_edit where edit_id = ? or save_id = ?", subject, subject)}
-        month_ok = bool(ccs) and bool(S._verb("amount")) and all(roles.may(who, S._verb("amount"), c, dimension="organisation") for c in ccs)
-        may, verb = (authors == {who}) or any(roles.may(who, x) for x in verbs) or month_ok, verbs[0] if verbs else "the schedule's verbs"
+        month_ok = bool(ccs) and bool(S._verb("amount")) and all(roles.may(who, S._verb("amount"), c, dimension="organisation", kind=v.get("version_kind")) for c in ccs)
+        may, verb = (authors == {who}) or any(roles.may(who, x, kind=v.get("version_kind")) for x in verbs) or month_ok, verbs[0] if verbs else "the schedule's verbs"
     else:
         layer = acts[0]["what"].split(" ")[1] if acts else "?"
         verb = f"layer.{layer}.withdraw"
-        may = roles.may(who, verb)
+        may = roles.may(who, verb, kind=v.get("version_kind"))
     out = [
         {"check": "on file", "ok": bool(acts), "says": f"{subject} on {version}, {len(acts)} act{'s' if len(acts) != 1 else ''}" if acts else f"{subject} is not on {version}, or the warehouse has not seen it yet"},
         {"check": "still standing", "ok": bool(standing), "says": f"{len(standing)} of them stand" if standing else "nothing in it stands — already withdrawn, overwritten or refused"},

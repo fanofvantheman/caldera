@@ -238,9 +238,10 @@ def _scope(who: str) -> set | None:
     return nodes or None
 
 
-def _may_month(roles, who: str, cc: str) -> bool:
+def _may_month(roles, who: str, cc: str, kind: str | None = None) -> bool:
+    """A month at a cost centre, on a kind of plan: a budget holder may hold the right for the budget and not the forecast."""
     v = _verb("amount")
-    return bool(v) and roles.may(who, v, cc, dimension="organisation")
+    return bool(v) and roles.may(who, v, cc, dimension="organisation", kind=kind)
 
 
 def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = None) -> dict:
@@ -263,7 +264,7 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
     cc = page.get("cc") if page.get("cc") in visible else (roots[0]["code"] if roots else "")
     entity = page.get("entity") or ""
     shown = under.get(cc, set()) & visible
-    may_method = bool(_verb("rate")) and roles.may(who, _verb("rate"))
+    may_method = bool(_verb("rate")) and roles.may(who, _verb("rate"), kind=v.get("version_kind"))
     accounts = {a["account_code"]: a["account_name"] for a in q("select account_code, account_name from dims.dim_gl_account")}
     # the version says which periods are actual, not the calendar: its actual periods of the year it is named for, then
     # the periods the schedule plans — its own window, never longer than the version's horizon — past the year end
@@ -284,7 +285,7 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
     month_verb, may_cc = _verb("amount"), {}
     def may_at(cc_: str) -> bool:                  # one question per cost centre, not per line
         if cc_ not in may_cc:
-            may_cc[cc_] = bool(month_verb) and roles.may(who, month_verb, cc_, dimension="organisation")
+            may_cc[cc_] = bool(month_verb) and roles.may(who, month_verb, cc_, dimension="organisation", kind=v.get("version_kind"))
         return may_cc[cc_]
     order = {c["code"]: i for i, c in enumerate(tree)}
     groups: dict[str, dict] = {}
@@ -381,8 +382,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
                 if upto and period and period <= upto:
                     return f"{period} is an actual period of {version} — nothing is typed there, by anyone"
                 return f"{period} is not a period the schedule plans"
-            if not _may_month(roles, who, line[1]):
-                return f"{who} does not hold {said(_verb('amount'))} at {line[1]}"
+            if not _may_month(roles, who, line[1], v.get("version_kind")):
+                return f"{who} does not hold {said(_verb('amount'))} at {line[1]}{reads.for_kind(roles, who, _verb('amount'), v, line[1], 'organisation')}"
             if line in b["inp"].labour_lines:
                 return "a labour line is filled by the labour model, from the headcount and the agreement — not typed here"
             if _num(raw) is None:
@@ -390,7 +391,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             if abs(_num(raw)) > MAX_MONTH:
                 return f"{raw} is beyond what one month of one line can be — at most {MAX_MONTH:,.0f}"
         else:
-            if not _verb("rate") or not roles.may(who, _verb("rate")):
+            if not _verb("rate") or not roles.may(who, _verb("rate"), kind=v.get("version_kind")):
                 return f"{who} does not hold {said(_verb('rate'))} — a line's driver and rate are Commercial finance's"
             if line in b["inp"].labour_lines:
                 return "a labour line takes its amount from the labour model — it has no driver or rate to type"
@@ -567,7 +568,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         with COPIES.lock(who):                    # a month still being applied lands before the copy is read
             wc = working_copy(who, version); n = len(wc.acts) if wc else 0
             verbs = [x for x in (_verb("amount"), _verb("rate")) if x]
-            may = any(roles.may(who, x) for x in verbs)
+            may = any(roles.may(who, x, kind=v.get("version_kind")) for x in verbs)
             checks = [
                 {"check": "who may type", "ok": may, "says": f"{who} holds {said(next(x for x in verbs if roles.may(who, x)))}" if may else f"{who} holds none of {', '.join(said(x) for x in verbs) or 'the verbs that type the schedule'}"},
                 {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},

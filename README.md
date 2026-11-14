@@ -26,7 +26,7 @@ checks that individual pay shows only to the holders of its verb (read only); `u
 and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote); `uv run python -m tests.version_horizon` checks
 that every grid takes its actual and plan periods from the version, and that an actual period, a year and a period past
 the horizon are refused (nothing saved). `uv run python -m tests.undo_before_save` types, undoes and redoes on Finance's grid and the opex
-schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.horizon_act` changes the latest view's horizon on the Versions page and checks every grid takes it (it removes what it wrote); `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
+schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.horizon_act` changes the latest view's horizon on the Versions page and checks every grid takes it (it removes what it wrote); `uv run python -m tests.role_compose` reads the rights, composes a role of the client's own and checks the kind of plan on an assignment (it removes what it wrote); `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
 and a layer entry through the confirmation page and checks the plan after the run is what the page said (it removes
 what it wrote).
 
@@ -213,7 +213,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   overhead ones (each person's salary, incentive and dates; a named vacancy at a typed figure) — which is individual pay,
   read only by the holders of `read.pay` (Commercial finance, People and culture): without it the tab is not offered and
   the name-based labour is left out of the schedule's and the cost centre pages' figures and totals, with a line saying
-  so; and under Admin the **structures as loaded** — read-only: each structure's
+  so; under Admin the **roles** — every right the plan has as a closed register, by group (layers, registers, versions,
+  the budget …) or by class of right (enters, keeps, decides, runs, reads); the shipped roles and the client's own beside
+  them, each held by a person at a node for a kind of plan (blank: every kind — the sales director holds the Sales budget
+  lines for the business plan only); and *Compose a role* from the rights, which grants nothing until it is assigned; and under Admin the **structures as loaded** — read-only: each structure's
   system, its latest load and the one before, what changed between them, the members not yet fit to plan with whom to
   ask, the members held provisionally ahead of the client's master, and the open disagreements by door. The plan does
   not maintain master data; this is what it says about the state of what it was given. Every act writes a receipt under `data/receipts/`. What a page shows is what

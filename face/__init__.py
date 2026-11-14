@@ -163,6 +163,13 @@ PROCESSES = [
             Section("run", "Run and health", "plan.run", verbs=["run.plan", "read.health"]),
         ]),
         # read-only: what the plan was given, from whom and when, and what is not yet fit to plan — maintained elsewhere
+        # set-up: the rights the plan has, the roles made of them, and composing one of the client's own (DEC-20261114-04)
+        Area("roles", "Roles", [
+            Section("roles", "Roles", "plan.roles", verbs=["register.roles.maintain", "read.proof"], tabs=[
+                Tab("roles_rights", "Rights", "plan.roles", verbs=["register.roles.maintain", "read.proof"]),
+                Tab("roles_roles", "Roles", "plan.roles_list", verbs=["register.roles.maintain", "read.proof"]),
+                Tab("roles_compose", "Compose a role", "plan.role_compose", verbs=["register.roles.maintain"])]),
+        ]),
         Area("structures", "Structures", [
             Section("structures", "Structures as loaded", "plan.structures", verbs=["read.plan", "read.health", "structure.material.maintain",
                                                                                       "structure.customer.maintain", "structure.location.maintain"]),

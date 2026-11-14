@@ -14,7 +14,7 @@ from . import calendar as cal
 from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIALS, CATEGORIES, PRODUCTS, FORMATS,
                          PROMO_GROUPS, ACCOUNTS, PROMOTIONS_MASTER, BASELINE_SOURCE, PROMO_WEEK_START, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
 from .history import forecast_snapshots, generate_demand, generate_prices, value_shipments
-from .registers import versions, period_control, roles, capacity_register, assumptions, assumption_amendments, version_acts, strategic_plan, strategic_growth, version_kinds, step_horizons
+from .registers import versions, period_control, roles, verbs, composed_roles, capacity_register, assumptions, assumption_amendments, version_acts, strategic_plan, strategic_growth, version_kinds, step_horizons
 from .plan import business_plan_entries, latest_view_entries, promo_events, promo_neighbours, terms_register, reason_codes, submissions, finance_edits, finance_sources
 from .emit import emit_all, dataclass_rows
 from . import sender
@@ -73,6 +73,7 @@ def main() -> None:
     }
     defs, acts, asg = roles()
     tables["ctl_role_definition"], tables["ctl_role_action"], tables["ctl_role_assignment"] = defs, acts, asg
+    tables["ref_verb"] = verbs()
 
     shipments = generate_demand(materials, history_weeks, rng, FIRST_FY)
     period_order = [p["period"] for p in cal.periods(weeks)]
@@ -95,6 +96,7 @@ def main() -> None:
         "reg_version_act": version_acts(PLAN_FY),                            # closing and reopening versions; draws nothing
         "reg_strategic_plan": strategic_plan(PLAN_FY, LATEST_CLOSED),         # the five-year plan and the growth beyond the latest view; draw nothing
         "reg_strategic_growth": strategic_growth(PLAN_FY),
+        "reg_role": composed_roles(),                                         # the client's own roles, composed from the rights
     }
     fcst, fcst_waiting = forecaster.run(shipments, materials, weeks, LATEST_CLOSED, {a[0]: BASELINE_SOURCE.get(a[0], "PLAN") for a in ACCOUNTS},
                                         f"LV-{LATEST_CLOSED}")       # after the last draw on rng above: it draws nothing

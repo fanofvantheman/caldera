@@ -33,6 +33,7 @@ from . import assumptions
 from . import versions as versions_page
 from . import strategic
 from . import withdrawals
+from . import rights
 from .words import said
 
 plan = Blueprint("plan", __name__)
@@ -513,7 +514,7 @@ def _enter(f: dict, who: str) -> tuple[dict, bool, str]:
         value = float(f["value"])
     except (ValueError, TypeError):
         value = None
-    may = roles.may(who, f"layer.{layer}.enter")
+    may = roles.may(who, f"layer.{layer}.enter", kind=(reads.version(version) or {}).get("version_kind"))     # for this kind of plan
     ms, cs = reads.material_scope_resolves(f["scope_material"]), reads.customer_scope_resolves(f["scope_customer"])
     win = f["period_from"] in hz and f["period_to"] in hz and f["period_from"] <= f["period_to"]
     offered = bool(reason and str(layer) in reason["layers"].split(","))
@@ -992,8 +993,9 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
     fm = page.get("material") or "ALL"
     fm = fm if fm == "ALL" or _once(reads.material_node)(fm) else "ALL"
     reading = page.get("reading") if page.get("reading") in dict(READINGS) else "finance"
-    may, is_open = _once(roles.may)(who, "overlay.finance.enter"), v.get("status") == "open"
-    may_type = {m: bool(rules[m]["verb"]) and _once(roles.may)(who, rules[m]["verb"]) for m in lines}
+    kind = v.get("version_kind")                         # a right held for one kind of plan opens the grid on that kind only
+    may, is_open = roles.may(who, "overlay.finance.enter", kind=kind), v.get("status") == "open"
+    may_type = {m: bool(rules[m]["verb"]) and roles.may(who, rules[m]["verb"], kind=kind) for m in lines}
     editable = bool(version) and may and is_open and reading == "finance" and may_type[measure] and bool(rules[measure]["breakback"])     # a tab takes input in its own measure only
     kids = _once(reads.material_tree_under)(fm)
     nodes = [fm] + list(kids)
@@ -1161,8 +1163,8 @@ def _back(f) -> str:
 
 def _cell_refusal(who: str, version: str, v: dict, fc: str, node: str, period: str, measure: str, value: float | None, raw) -> str | None:
     """Why a figure cannot go into the working copy — the same rules a save is held to, judged as it is typed."""
-    if not roles.may(who, "overlay.finance.enter"):
-        return f"{who} does not hold {said('overlay.finance.enter')} — Finance's figures are typed by {', '.join(reads.holders('overlay.finance.enter'))}"
+    if not roles.may(who, "overlay.finance.enter", kind=v.get("version_kind")):
+        return f"{who} does not hold {said('overlay.finance.enter')}{reads.for_kind(roles, who, 'overlay.finance.enter', v)} — Finance's figures are typed by {', '.join(reads.holders('overlay.finance.enter'))}"
     if v.get("status") != "open":
         return f"{version} is {v.get('status', 'unknown')} — nothing is typed on it"
     if fc not in {c["code"] for c in reads.finance_customer_nodes()}:
@@ -1170,7 +1172,7 @@ def _cell_refusal(who: str, version: str, v: dict, fc: str, node: str, period: s
     rule = finance_live.rules().get(measure)
     if not rule or not rule["breakback"]:
         return f"{measure} is not typed" + (f" — {rule['label'].lower()} = {rule['formula_says']}" if rule and rule["formula_says"] else "")
-    if not roles.may(who, rule["verb"]):
+    if not roles.may(who, rule["verb"], kind=v.get("version_kind")):
         return f"{who} does not hold {said(rule['verb'])} — {rule['label'].lower()} is typed by {', '.join(reads.holders(rule['verb']))}"
     if not reads.material_node(node):
         return f"{node} is not a node of the material structure"
@@ -1308,7 +1310,7 @@ def finance_save():
     with finance_live.COPIES.lock(who):        # a figure still being applied lands before the copy is read
         wc = finance_live.working_copy(who, version, FINANCE)
         n = len(wc.typed) if wc else 0
-        may = roles.may(who, verb)
+        may = roles.may(who, verb, kind=v.get("version_kind"))
         checks = [
             {"check": "who may type", "ok": may, "says": f"{who} holds {said(verb)}" if may else f"{who} does not hold {said(verb)} — Finance's figures are typed by {', '.join(reads.holders(verb))}"},
             {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
@@ -2484,6 +2486,7 @@ headcount.register(plan, _page, _who, _ctx, _busy, session, roles)
 assumptions.register(plan, _page, _who, _ctx, _busy, session, roles)
 versions_page.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
 withdrawals.register(plan, _page, _who, _busy, session, roles, _run_plan, ENTRIES, FINANCE)
+rights.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
 strategic.register(plan, _page, _busy)
 
 

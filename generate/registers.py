@@ -105,7 +105,7 @@ ROLE_ACTIONS = {
     "PLANT_MANAGER":        ["policy.production.accept", "tier.step.accept", "headcount.enter", "schedule.line.enter", "capex.project.enter", "read.plan", "read.reading", "read.drill", "read.health"],
     "QUALITY":              ["register.yield.maintain", "register.shelf_life.maintain", "read.plan", "read.reading", "read.drill"],
     "PEOPLE":               ["structure.position.maintain", "register.agreement.maintain", "register.unproductive_hours.maintain", "read.plan", "read.reading", "read.pay"],
-    "COMMERCIAL_FINANCE":   ["register.assumptions.maintain", "register.cost_input.maintain", "register.cost_centre_map.maintain", "schedule.line.enter", "register.timing_policy.maintain", "register.customs.maintain", "register.hedge_book.maintain", "register.calendar.maintain", "version.name", "version.freeze", "version.declare_reference", "scenario.create", "standard.derive", "standard.declare", "cycle.open", "cycle.close", "run.plan", "read.plan", "read.reading", "read.drill", "read.health", "read.proof", "read.pay"],
+    "COMMERCIAL_FINANCE":   ["register.assumptions.maintain", "register.cost_input.maintain", "register.cost_centre_map.maintain", "schedule.line.enter", "register.timing_policy.maintain", "register.customs.maintain", "register.hedge_book.maintain", "register.calendar.maintain", "version.name", "version.freeze", "version.declare_reference", "scenario.create", "standard.derive", "standard.declare", "cycle.open", "cycle.close", "register.roles.maintain", "run.plan", "read.plan", "read.reading", "read.drill", "read.health", "read.proof", "read.pay"],
     "RECONCILIATION_OWNER": ["delta.allocation.enter", "delta.timing.enter", "shaping.enter", "register.customer_priority.maintain", "scenario.promote", "decision.record", "review.reconciliation.close", "read.plan", "read.reading", "read.drill", "read.health"],
     "EXECUTIVE":            ["decision.accept", "capex.approve", "review.mbr.close", "read.plan", "read.reading", "read.drill", "read.proof"],
     "PLAN_READER":          ["read.plan", "read.reading"],
@@ -144,15 +144,59 @@ ROLE_ASSIGNMENTS = [
     ("gm@caldera",              "EXECUTIVE",            "organisation", "CAL"),
     ("board.pack@caldera",      "PLAN_READER",          "organisation", "CAL"),
     ("auditor@caldera",         "AUDITOR",              "organisation", "CAL"),
+    # a role the client composed for itself, held for one kind of plan: the sales director types the Sales cost centre's
+    # months on the budget, and not on the forecast (DEC-20261114-04 point 3)
+    ("sales.director@caldera",  "SALES_BUDGET_HOLDER",  "organisation", "CC_SALES", "business_plan"),
 ]
+
+# The rights the plan has: every verb a role may grant, closed — a role, shipped or composed, grants only these. Each
+# carries its group (where in the plan it acts) and its class of right, read off its last word by one rule.
+EXTRA_VERBS = ["mapping.propose"]            # held by no person: the mapping tool's first pass
+GROUPS = [("layer.", "Layers"), ("demand.", "Submissions"), ("delta.", "Constrained plan"), ("shaping.", "Constrained plan"),
+          ("overlay.finance.", "Finance's plan"), ("register.", "Registers"), ("structure.", "Structures"), ("bom.", "Structures"),
+          ("mapping.", "Structures"), ("version.", "Versions"), ("scenario.", "Versions"), ("headcount.", "Budget"), ("schedule.", "Budget"),
+          ("capex.project.", "Budget"), ("policy.", "Policy"), ("tier.", "Policy"), ("standard.", "Standard"), ("cycle.", "Cycle"),
+          ("review.", "Cycle"), ("decision.", "Decision"), ("capex.approve", "Decision"), ("run.", "Run"), ("read.", "Read")]
+CLASS_OF = {"enter": "enter", "withdraw": "enter", "propose": "enter", "maintain": "maintain", "release": "maintain", "name": "maintain",
+            "create": "maintain", "derive": "run", "plan": "run", "submit": "decide", "reopen": "decide", "accept": "decide", "alter": "decide",
+            "approve": "decide", "declare": "decide", "declare_reference": "decide", "freeze": "decide", "promote": "decide", "record": "decide",
+            "open": "decide", "close": "decide"}
+
+
+def verb_class(verb: str) -> str:
+    if verb.startswith("read."):
+        return "read"
+    return CLASS_OF[verb.rsplit(".", 1)[1]]
+
+
+def verbs() -> list[dict]:
+    held = {a for al in ROLE_ACTIONS.values() for a in al} | {a for al in COMPOSED_ROLES.values() for a in al[2]}
+    order = [g for _, g in GROUPS]
+    out = []
+    for v in sorted(held | set(EXTRA_VERBS)):
+        group = next(g for p, g in GROUPS if v.startswith(p))
+        out.append({"verb": v, "verb_group": group, "right_class": verb_class(v), "ord": order.index(group)})
+    return out
+
+
+# a role the client composed from the rights above — its own row beside the canonical ones, under register.roles.maintain
+COMPOSED_ROLES = {"SALES_BUDGET_HOLDER": ("Sales budget holder", "The sales director's own budget lines: the Sales cost centre's months and headcount.",
+                                          ["schedule.line.enter", "headcount.enter", "read.plan", "read.reading"])}
+ROLE_COLUMNS = ["role_code", "role_name", "description", "action", "composed_by", "composed_on"]
+
+
+def composed_roles() -> list[dict]:
+    return [{"role_code": code, "role_name": name, "description": d, "action": a, "composed_by": "finance.manager@caldera", "composed_on": "2026-11-03T09:00:00"}
+            for code, (name, d, acts) in COMPOSED_ROLES.items() for a in acts]
 
 
 def roles() -> tuple[list[dict], list[dict], list[dict]]:
     defs = [{"role_code": c, "role_name": n, "built_in": "Y", "description": d} for c, n, d in ROLE_DEFINITIONS]
     acts = [{"role_code": r, "action": a} for r, al in ROLE_ACTIONS.items() for a in al]
-    asg = [{"principal": p, "principal_type": "user", "role_code": r, "scope_dimension": d, "scope_node": n,
-            "valid_from": "2026-06-29", "valid_to": "", "assigned_by": "gm@caldera", "assigned_on": "2026-06-29"}
-           for p, r, d, n in ROLE_ASSIGNMENTS]
+    asg = [{"principal": a[0], "principal_type": "user", "role_code": a[1], "scope_dimension": a[2], "scope_node": a[3],
+            "valid_from": "2026-06-29", "valid_to": "", "assigned_by": "gm@caldera", "assigned_on": "2026-06-29",
+            "version_kind": a[4] if len(a) > 4 else ""}            # blank: held for every kind of plan
+           for a in ROLE_ASSIGNMENTS]
     return defs, acts, asg
 
 

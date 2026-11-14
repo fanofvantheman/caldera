@@ -32,3 +32,12 @@ AUDIT (name signal_segregation, blocking false);
 SELECT principal FROM @this_model
 GROUP BY principal
 HAVING BOOL_OR(action SIMILAR TO 'layer\.[1-9]\.enter') AND BOOL_OR(action = 'delta.supply.enter');
+
+AUDIT (name role_action_registered);
+/* blocking: a role, shipped or composed, grants only a right the plan has — every audit is written on these, so a role
+   holding one the register lacks would hold something no audit knows */
+SELECT role_code, action FROM @this_model WHERE action NOT IN (SELECT verb::TEXT FROM bronze.ref_verb);
+
+AUDIT (name verb_class_vocabulary);
+/* blocking: a right is one of five classes */
+SELECT verb, right_class FROM @this_model WHERE right_class NOT IN ('enter', 'maintain', 'decide', 'read', 'run');

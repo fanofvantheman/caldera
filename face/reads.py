@@ -910,3 +910,13 @@ def provisional() -> list[dict]:
                        (select any_value(sent_description) from plan.forecast_series s where s.sent_code = r.item_code) description,
                        (select sum(cases) from plan.forecast_series s where s.sent_code = r.item_code) cases
                 from plan.forecast_resolution r where r.resolution = 'place_under' order by r.acted_at desc""")
+
+
+def for_kind(roles, who: str, verb: str, v: dict, scope: str | None = None, dimension: str | None = None) -> str:
+    """Said after a refusal when the person holds the right, but for another kind of plan than this version's."""
+    kind = (v or {}).get("version_kind")
+    if not kind or not roles.may(who, verb, scope, dimension=dimension):
+        return ""
+    kinds = [r["version_kind"] for r in q("""select distinct version_kind from dims.effective_entitlements where principal = ? and action = ?
+                                           and version_kind is not null order by 1""", who, verb)]
+    return f" for {(v.get('version_kind') or '').replace('_', ' ')} — held for {', '.join(k.replace('_', ' ') for k in kinds) or 'another kind of plan'} only"
