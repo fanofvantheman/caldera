@@ -1393,7 +1393,7 @@ def slots():
             ti = q("select count(*) n from plan.terms")[0]["n"]
             pl = q("select count(distinct price_list) n from history.price_list")[0]["n"]
             today["price"] = f"{pl} price lists, {ti} terms instruments"
-            ev = q("select count(*) n from plan.promo_event")[0]["n"]
+            ev = q("select count(*) n from plan.promo_event where version_id = ?", version)[0]["n"]
             today["promotions"] = f"{ev} events in the calendar"
             sch = q("select count(distinct entity_code || cost_centre_code || account_code) n, sum(amount) a from plan.opex_schedule where version_id = ? and fiscal_year = ?", version, fy)[0]
             today["opex"] = f"{sch['n']} lines, ${sch['a'] / 1e6:,.1f}M planned in FY{fy}'s open periods on {version}" if sch["n"] else None
@@ -1638,7 +1638,7 @@ The mix by family: {% for f, n in families %}{{ f.replace('_', ' ') }} {{ n }}{{
 {% if nbs %}<table><thead><tr><th>Event</th><th>Neighbour</th><th>Effect</th><th class="n">Rate on its baseline</th><th class="n">Materials</th><th>By</th><th>At</th><th>Note</th></tr></thead><tbody>
 {% for n in nbs %}<tr class="{{ '' if n.event_in_calendar else 'off' }}"><td>{{ n.event_id }}</td><td>{{ n.scope_material }}</td><td>{{ n.effect_type }}</td><td class="n">{{ n.rate|pct1s }}</td><td class="n">{{ n.materials }}</td><td>{{ n.entered_by }}</td><td class="small">{{ n.entered_at }}</td><td class="small">{{ n.note or '' }}</td></tr>{% endfor %}
 </tbody></table>{% else %}<p class="muted">No neighbour line is declared.</p>{% endif %}
-{% if may %}<form class="entry" method="post" action="{{ url_for('plan.neighbour_new') }}" style="margin-top:1rem">
+{% if may %}<form class="entry" method="post" action="{{ url_for('plan.neighbour_new') }}" style="margin-top:1rem"><input type="hidden" name="version" value="{{ version }}">
 <label>event<select name="event_id">{% for e in cal %}{% if e.owner == who %}<option value="{{ e.event_id }}">{{ e.event_id }} · {{ e.account_code }} · {{ e.promo_group_code }} · {{ e.window_start }}</option>{% endif %}{% endfor %}</select></label>
 <label>neighbour (a promo group or a material of ours)<input name="scope_material" list="nb_scopes" required placeholder="PG_VALLEY_825"><datalist id="nb_scopes">{% for g in groups %}<option value="{{ g.promo_group_code }}">{{ g.promo_group_name }}</option>{% endfor %}</datalist></label>
 <label>effect<select name="effect_type"><option value="cannibalisation">cannibalisation — takes from it</option><option value="halo">halo — lends to it</option></select></label>
@@ -1661,7 +1661,7 @@ The mix by family: {% for f, n in families %}{{ f.replace('_', ' ') }} {{ n }}{{
 {% for c in cancelled %}<tr><td>{{ c.event_id }}</td><td class="small">{{ c.local_account }} · {{ c.local_product_group }}</td><td>{{ c.window_start }} – {{ c.window_end }}</td><td><code>{{ c.sender_file }}</code></td></tr>{% endfor %}</tbody></table>{% endif %}
 {% if pending %}<p class="hint">{{ pending|length }} file{{ '' if pending|length == 1 else 's' }} placed since the last run — the calendar shows them after the run.</p>{% endif %}
 {% if may %}<h2 id="new">New event<span class="count">for an account whose promotions are typed here — the window defaults to the account's promotional week; the plan supplies the response from the mechanic unless you override it, with a note</span></h2>
-<form class="entry" method="post" action="{{ url_for('plan.event_new') }}" id="newevent">
+<form class="entry" method="post" action="{{ url_for('plan.event_new') }}" id="newevent"><input type="hidden" name="version" value="{{ version }}">
 <label>account<select name="account_code" id="ne_account">{% for a in accounts %}<option value="{{ a.account_code }}" data-week="{{ a.promo_week_start or '' }}" data-next="{{ next_start[a.account_code] }}">{{ a.account_code }} · {{ a.account_name }}{{ ' (promotions system)' if a.promotions_master == 'TPM' }}{{ ' · weeks start ' + a.promo_week_start if a.promo_week_start }}</option>{% endfor %}</select></label>
 <label>promo group<select name="promo_group_code">{% for g in groups %}<option value="{{ g.promo_group_code }}">{{ g.promo_group_code }} · {{ g.promo_group_name }}</option>{% endfor %}</select></label>
 <label>shopper window from<input name="window_start" id="ne_start" type="date" required></label>
@@ -1696,8 +1696,8 @@ def _next_promo_start(day: str | None, after: dt.date) -> dt.date:
 @plan.get("/events")
 def events():
     try:
-        who = _who(); version = reads.default_version()
-        cal = reads.events(); accts = reads.accounts_master()
+        who = _who(); version = _version() or reads.default_version()
+        cal = reads.events(version); accts = reads.accounts_master()
         fam: dict[str, int] = {}
         for e in cal:
             fam[e["mechanic_family"]] = fam.get(e["mechanic_family"], 0) + 1
@@ -1705,9 +1705,9 @@ def events():
         next_start = {a["account_code"]: _next_promo_start(a["promo_week_start"], after).isoformat() for a in accts}
         return _page(EVENTS, title="Promotions", active="events", width="none", version=version, cal=cal,
                      n_sender=sum(1 for e in cal if e["source"] == "sender"), n_plan=sum(1 for e in cal if e["source"] == "plan"),
-                     held_events=reads.events_held(), refused=reads.events_refused(), cancelled=reads.events_cancelled(),
+                     held_events=reads.events_held(version), refused=reads.events_refused(version), cancelled=reads.events_cancelled(version),
                      files=promotions.sender_files(), waiting=len(promotions.waiting()), accounts=accts,
-                     groups=reads.promo_groups(), mechanics=reads.mechanics(), pending=promotions.pending(), nbs=reads.neighbours(),
+                     groups=reads.promo_groups(), mechanics=reads.mechanics(), pending=promotions.pending(), nbs=reads.neighbours(version),
                      families=sorted(fam.items(), key=lambda x: -x[1]), next_start=next_start,
                      may=roles.may(who, "register.promo_calendar.maintain"),
                      may_map=roles.may(who, "mapping.accept") or roles.may(who, "mapping.alter"), last=session.last, receipt_acts=("take_in", "neighbour", "event"))
@@ -1812,13 +1812,13 @@ def calendar():
     """The calendar as a picture: our weeks as the grid, each event a bar on its true dates, filterable by account (and
     promo group); an event opened shows the split it produces — days and cases in each trading week it touches."""
     try:
-        version = reads.default_version()
+        version = _version() or reads.default_version()
         accts = reads.accounts_master(); by_code = {a["account_code"]: a for a in accts}
         cust = _ctx().get("customer") or "ALL"                                 # the context's customer: the accounts beneath it
         account = by_code.get(cust)
         under = None if cust == "ALL" else reads.accounts_under(cust)
         group = request.args.get("group") or ""
-        cal = reads.events()
+        cal = reads.events(version)
         shown = [e for e in cal if (under is None or e["account_code"] in under) and (not group or e["promo_group_code"] == group)]
         rows, weeks, periods, days, lo = [], [], [], 1, None
         if shown:
@@ -1844,7 +1844,7 @@ def calendar():
                 prev = e["account_code"]
         sel = request.args.get("event")
         ev = next((e for e in cal if e["event_id"] == sel), None)
-        split = reads.event_split(sel) if ev else []
+        split = reads.event_split(version, sel) if ev else []
         in_view = [by_code[c] for c in sorted({e["account_code"] for e in shown})] if shown else ([account] if account else [])
         return _page(CALENDAR, title="Promotions calendar", active="calendar", width="none", version=version, accounts=accts, account=account,
                      where=reads.node_label("customer", cust),
@@ -1887,8 +1887,8 @@ def _envelope_check(account: str | None, draw: float | None, start: dt.date | No
 def neighbour_new():
     """A neighbour line on an event the person owns, from either door: recorded as ours (the sender's file is never
     expected to carry it). A rate of zero takes an existing line out."""
-    f = request.form; who = _who(); version = reads.default_version() or ""
-    ev = reads.event(f.get("event_id", ""))
+    f = request.form; who = _who(); version = f.get("version") or reads.default_version() or ""
+    ev = reads.event(version, f.get("event_id", ""))
     scope = (f.get("scope_material") or "").strip()
     rate = _num(f.get("rate_pct"))
     rate = None if rate is None else rate / 100
@@ -1896,7 +1896,7 @@ def neighbour_new():
     groups = {g["promo_group_code"] for g in reads.promo_groups()}
     resolves = scope in groups or reads.is_material(scope)
     may = roles.may(who, "register.promo_calendar.maintain")
-    existing = next((n for n in reads.neighbours() if ev and n["event_id"] == ev["event_id"] and n["scope_material"] == scope), None)
+    existing = next((n for n in reads.neighbours(version) if ev and n["event_id"] == ev["event_id"] and n["scope_material"] == scope), None)
     checks = [
         {"check": "who may declare", "ok": may and bool(ev and ev["owner"] == who),
          "says": f"{who} owns {ev['event_id']}" if may and ev and ev["owner"] == who else (f"{ev['event_id']} is owned by {ev['owner']}" if ev else "no such event in the calendar")},
@@ -1921,7 +1921,7 @@ def neighbour_new():
 @plan.post("/events/new")
 def event_new():
     """An event typed in the plan: the plan's checks, then the act — a file in the landing and a receipt."""
-    f = request.form; who = _who(); version = reads.default_version() or ""
+    f = request.form; who = _who(); version = f.get("version") or reads.default_version() or ""
     v = reads.version(version)
     acct = reads.account(f.get("account_code", "")) or {}
     mech = next((m for m in reads.mechanics() if m["mechanic"] == f.get("mechanic")), None)
@@ -2047,10 +2047,10 @@ def mapping_structure():
             for m in rows:
                 m["what"] = _what(subj, m["ours"])
         example = None
-        sent = next((e for e in reads.events() if e["source"] == "sender" and e["local_codes"]), None)
+        sent = next((e for e in reads.events(reads.default_version()) if e["source"] == "sender" and e["local_codes"]), None)
         if sent:
-            raw = q("select local_account, local_product_group, local_tactic, local_status, account_code, promo_group_code, mechanic, status from plan.promo_sender_event where event_id = ?", sent["event_id"])[0]
-            fund = q("select local_fund_type, funding_type from plan.promo_funding where event_id = ? order by line_no", sent["event_id"])
+            raw = q("select local_account, local_product_group, local_tactic, local_status, account_code, promo_group_code, mechanic, status from plan.promo_sender_event where event_id = ? and version_id = ?", sent["event_id"], sent["version_id"])[0]
+            fund = q("select local_fund_type, funding_type from plan.promo_funding where event_id = ? and version_id = ? order by line_no", sent["event_id"], sent["version_id"])
             pairs = [("customer", raw["local_account"], raw["account_code"]), ("material", raw["local_product_group"], raw["promo_group_code"]),
                      ("mechanic", raw["local_tactic"], raw["mechanic"]), ("status", raw["local_status"], raw["status"])] + \
                     [("funding_type", f_["local_fund_type"], f_["funding_type"]) for f_ in fund]

@@ -12,9 +12,9 @@ long AS (
                                          warehouse_allowance, scan_funding, settlement_discount, returns_and_ullage, claims, net_sales))
 ),
 lump AS (
-  SELECT event_id, 'promotional_fixed_fee' AS measure, fixed_fee AS amount FROM plan.promo_event WHERE fixed_fee > 0
-  UNION ALL SELECT event_id, 'promotional_media', media_fee FROM plan.promo_event WHERE media_fee > 0
-  UNION ALL SELECT event_id, 'coop_envelope_drawdown', envelope_drawdown FROM plan.promo_event WHERE envelope_drawdown > 0
+  SELECT version_id, event_id, 'promotional_fixed_fee' AS measure, fixed_fee AS amount FROM plan.promo_event WHERE fixed_fee > 0
+  UNION ALL SELECT version_id, event_id, 'promotional_media', media_fee FROM plan.promo_event WHERE media_fee > 0
+  UNION ALL SELECT version_id, event_id, 'coop_envelope_drawdown', envelope_drawdown FROM plan.promo_event WHERE envelope_drawdown > 0
 ),
 fee_scope AS (
   SELECT r.event_id, r.version_id, s.layer_no, s.line_source, s.effect_type, s.material_code, s.ship_to_code, s.account_code, s.week_id, s.period,
@@ -24,8 +24,8 @@ fee_scope AS (
   WHERE s.cases > 0
 ),
 fee_share AS (
-  SELECT f.*, l.measure, l.amount * f.in_window_cases / SUM(f.in_window_cases) OVER (PARTITION BY f.event_id, l.measure) AS fee
-  FROM fee_scope f JOIN lump l ON l.event_id = f.event_id
+  SELECT f.*, l.measure, l.amount * f.in_window_cases / SUM(f.in_window_cases) OVER (PARTITION BY f.version_id, f.event_id, l.measure) AS fee
+  FROM fee_scope f JOIN lump l ON l.event_id = f.event_id AND l.version_id = f.version_id
 ),
 fees AS (
   SELECT version_id, layer_no, line_source, effect_type, material_code, ship_to_code, account_code, week_id, period, measure,

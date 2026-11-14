@@ -8,7 +8,8 @@ from chassis.warehouse import one, q
 # a version as the face reads it: its status is its state — open or closed — read from the acts (plan.version_state);
 # what it was named (open, frozen, closed) is kept beside it
 _VERSIONS = """select v.* replace (coalesce(s.state, case v.status when 'open' then 'open' else 'closed' end) as status), v.status as named_status,
-                      s.last_act, s.last_act_by, s.last_act_on, s.last_act_reason, s.reference_of, coalesce(s.is_reference, false) is_reference
+                      s.last_act, s.last_act_by, s.last_act_on, s.last_act_reason, s.reference_of, coalesce(s.is_reference, false) is_reference,
+                      coalesce(s.is_latest_view, false) is_latest_view, s.promoted_by, s.promoted_on, s.promoted_reason
                from dims.ctl_version v left join plan.version_state s using (version_id)"""
 
 
@@ -25,7 +26,11 @@ def version(version_id: str) -> dict | None:
 
 
 def default_version() -> str | None:
-    r = one(f"{_VERSIONS} where s.state = 'open' order by v.named_on desc limit 1")
+    """The version a page opens on: the latest view in force — moved only by promotion, never by naming a version from a
+    base — while it is open; else the open version named last that was not named from a base; else any open one."""
+    r = (one(f"{_VERSIONS} where s.state = 'open' and s.is_latest_view")
+         or one(f"{_VERSIONS} where s.state = 'open' and v.base_version is null order by v.named_on desc limit 1")
+         or one(f"{_VERSIONS} where s.state = 'open' order by v.named_on desc limit 1"))
     return r["version_id"] if r else None
 
 
@@ -215,26 +220,26 @@ def bridge(version_id: str) -> dict:
     return {"by_layer": rows, "by_period": by_period, "gap": gap}
 
 
-def events() -> list[dict]:
-    """The one calendar: both doors, each event with its source and, for the sender's, its own codes beside ours."""
+def events(version_id: str | None) -> list[dict]:
+    """The one calendar on a version: both doors, each event with its source and, for the sender's, its own codes beside ours."""
     return q("""select e.*, x.uplift_cases, x.dip_cases, x.neighbour_cases, x.net_incremental_cases, x.uplift_net_sales, x.neighbour_net_sales,
                        x.net_incremental_net_sales, x.given_on_other_cases, x.net_return, x.neighbours
-                from plan.promo_event e left join plan.promo_event_effect x on x.event_id = e.event_id
-                order by e.window_start, e.account_code""")
+                from plan.promo_event e left join plan.promo_event_effect x on x.event_id = e.event_id and x.version_id = e.version_id
+                where e.version_id = ? order by e.window_start, e.account_code""", version_id)
 
 
-def neighbours() -> list[dict]:
+def neighbours(version_id: str | None) -> list[dict]:
     """Every neighbour line in force, one row per line (not per material), with how many of our materials it reaches."""
     return q("""select version_id, event_id, scope_material, any_value(effect_type) effect_type, any_value(rate) rate, any_value(entered_by) entered_by,
                        any_value(entered_at) entered_at, any_value(note) note, count(material_code) materials, bool_and(event_in_calendar) event_in_calendar
-                from plan.promo_neighbour group by all order by event_id, scope_material""")
+                from plan.promo_neighbour where version_id = ? group by all order by event_id, scope_material""", version_id)
 
 
-def event(event_id: str) -> dict | None:
-    return one("select * from plan.promo_event where event_id = ?", event_id)
+def event(version_id: str | None, event_id: str) -> dict | None:
+    return one("select * from plan.promo_event where version_id = ? and event_id = ?", version_id, event_id)
 
 
-def event_split(event_id: str) -> list[dict]:
+def event_split(version_id: str | None, event_id: str) -> list[dict]:
     """What a dated window does to our grid: for each trading week it touches, the days of the window in it, the period it
     falls in, and the cases each effect puts there — the uplift, the dip after, any neighbour line."""
     return q("""select l.week_id, w.week_start, w.week_end, w.period, round(coalesce(max(case when l.effect_type = 'primary' then l.in_window end), 0) * 7) as window_days,
@@ -242,7 +247,7 @@ def event_split(event_id: str) -> list[dict]:
                        sum(case when l.effect_type = 'primary' then l.cases else 0 end) as uplift_cases,
                        sum(case when l.effect_type = 'timing_shift' then l.cases else 0 end) as dip_cases,
                        sum(case when l.effect_type in ('cannibalisation', 'halo') then l.cases else 0 end) as neighbour_cases
-                from plan.promo_line l join dims.dim_week w on w.week_id = l.week_id where l.event_id = ? group by all order by w.week_start""", event_id)
+                from plan.promo_line l join dims.dim_week w on w.week_id = l.week_id where l.version_id = ? and l.event_id = ? group by all order by w.week_start""", version_id, event_id)
 
 
 def weeks_between(start, end) -> list[dict]:
@@ -287,16 +292,16 @@ def mapping_structure() -> dict[str, list[dict]]:
     return out
 
 
-def events_held() -> list[dict]:
-    return q("select * from plan.worklist_promo_held order by window_start")
+def events_held(version_id: str | None) -> list[dict]:
+    return q("select * from plan.worklist_promo_held where version_id = ? order by window_start", version_id)
 
 
-def events_refused() -> list[dict]:
-    return q("select * from plan.worklist_promo_refused order by event_id")
+def events_refused(version_id: str | None) -> list[dict]:
+    return q("select * from plan.worklist_promo_refused where version_id = ? order by event_id", version_id)
 
 
-def events_cancelled() -> list[dict]:
-    return q("select event_id, local_account, local_product_group, window_start, window_end, sender_file from plan.promo_sender_event where state = 'cancelled' order by event_id")
+def events_cancelled(version_id: str | None) -> list[dict]:
+    return q("select event_id, local_account, local_product_group, window_start, window_end, sender_file from plan.promo_sender_event where state = 'cancelled' and version_id = ? order by event_id", version_id)
 
 
 def accounts_master() -> list[dict]:
@@ -648,7 +653,7 @@ def like_for_like(series: dict) -> dict:
 
 def forecast_runs(version_id: str) -> list[dict]:
     """The run in force for each account that has taken one in — a run can be in force for one account and waiting for another."""
-    return q("select * from plan.forecast_run where version_id = ? and in_force order by account_code", version_id)
+    return q("select * from plan.version_run where version_id = ? order by account_code", version_id)
 
 
 def reference_cases(version_id: str, account: str, first, last, materials: list[str]) -> float:
@@ -661,7 +666,7 @@ def reference_cases(version_id: str, account: str, first, last, materials: list[
 def forecast_sources(version_id: str) -> list[dict]:
     """One row per account: where its baseline is made, and — for the accounts the forecasting system sends — the run's
     cases beside our own calculation for the same series and weeks, and what stands on our calculation meanwhile."""
-    return q("""with r as (select * from plan.forecast_run where version_id = ? and in_force),
+    return q("""with r as (select * from plan.version_run where version_id = ?),
                  b as (select account_code, sum(case when source = 'forecast_run' then cases end) landed,
                               sum(case when source in ('our_calculation_gap', 'our_calculation_kept') then cases end) gap,
                               sum(case when source = 'our_calculation_beyond_run' then cases end) beyond,
@@ -692,7 +697,7 @@ def forecast_resolutions(version_id: str) -> list[dict]:
     """Every resolution in force, with the cases it covers in the run in force (theirs) or on our calculation (ours)."""
     return q("""select r.*, case r.kind when 'theirs_not_ours'
                          then (select sum(s.cases) from plan.forecast_series s where s.version_id = ? and s.sent_code = r.item_code)
-                         else (select sum(b.cases) from plan.baseline_reference b join plan.forecast_run fr on fr.version_id = b.version_id and fr.account_code = b.account_code and fr.in_force
+                         else (select sum(b.cases) from plan.baseline_reference b join plan.version_run fr on fr.version_id = b.version_id and fr.account_code = b.account_code
                                where b.version_id = ? and b.material_code = r.item_code and b.account_code = r.account_code
                                  and b.week_start between fr.first_week and fr.last_day) end as cases,
                        coalesce((select any_value(s.sent_description) from plan.forecast_series s where s.sent_code = r.item_code),
@@ -702,7 +707,7 @@ def forecast_resolutions(version_id: str) -> list[dict]:
 
 def forecast_departures(version_id: str, accounts: list[str], limit: int = 12) -> list[dict]:
     """Where the run departs most from our own calculation, by material × account over the run's weeks."""
-    return q("""with r as (select * from plan.forecast_run where version_id = ? and in_force),
+    return q("""with r as (select * from plan.version_run where version_id = ?),
                  l as (select material_code, account_code, sum(cases) landed from plan.baseline_in_force where version_id = ? and source = 'forecast_run' group by all),
                  o as (select b.material_code, b.account_code, sum(b.cases) ours from plan.baseline_reference b join r on r.account_code = b.account_code and b.week_start between r.first_week and r.last_day
                        where b.version_id = ? group by all)
@@ -714,7 +719,7 @@ def forecast_departures(version_id: str, accounts: list[str], limit: int = 12) -
 
 def forecast_series(version_id: str, material: str, account: str) -> list[dict]:
     """One series by period over the run's weeks: what the run says, our own calculation, and the same period last year as shipped."""
-    return q("""with r as (select * from plan.forecast_run where version_id = ? and in_force and account_code = ?),
+    return q("""with r as (select * from plan.version_run where version_id = ? and account_code = ?),
                  wk as (select w.week_id, w.period, w.fiscal_year, w.fiscal_period from dims.dim_week w join r on w.week_start between r.first_week and r.last_day),
                  l as (select w.period, sum(b.cases) landed from plan.baseline_in_force b join wk w using (week_id)
                        where b.version_id = ? and b.material_code = ? and b.account_code = ? and b.source = 'forecast_run' group by 1),
@@ -908,7 +913,7 @@ def provisional() -> list[dict]:
     """Members held in the plan ahead of the client's master: codes the forecasting system sent that a planner placed under one of our products."""
     return q("""select r.item_code, r.target_code, r.target_name, r.acted_by, r.acted_at, r.reason,
                        (select any_value(sent_description) from plan.forecast_series s where s.sent_code = r.item_code) description,
-                       (select sum(cases) from plan.forecast_series s where s.sent_code = r.item_code) cases
+                       (select sum(cases) from (select distinct run_id, sent_code, account_code, week_start, cases from plan.forecast_series) s where s.sent_code = r.item_code) cases
                 from plan.forecast_resolution r where r.resolution = 'place_under' order by r.acted_at desc""")
 
 

@@ -19,5 +19,6 @@ JOIN dims.dim_ship_to st ON st.ship_to_code = c.ship_to_code
 JOIN dims.dim_week w ON w.period BETWEEN e.period_from AND e.period_to
 LEFT JOIN plan.history_shape hs ON hs.material_code = m.material_code AND hs.ship_to_code = c.ship_to_code AND hs.fiscal_week = LEAST(w.fiscal_week, 52)
 WHERE e.version_known AND e.material_scope_resolves AND e.customer_scope_resolves AND e.entered_by_owner AND e.window_ordered
+  AND e.window_in_horizon                                -- outside what the version calculates (an entry copied into what is now actual): kept, read by nothing
   AND NOT (e.withdrawn AND e.withdrawn_by_owner)        -- a withdrawal by someone without the verb does not take the entry out
   AND NOT e.after_submission                             -- a layer submitted at this scope is closed; the entry waits on a reopen

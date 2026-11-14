@@ -24,6 +24,7 @@ from . import costs
 
 FIRST_FY, LAST_FY, PLAN_FY = 2024, 2030, 2027   # the latest view rolls 36 periods from the cycle
 LATEST_CLOSED = "2027P04"          # the last closed period: October 2026
+COPIED = ("layer_entry", "reg_promo_event", "reg_promo_neighbour", "reg_finance_overlay", "reg_assumption_amend")
 
 
 def main() -> None:
@@ -99,6 +100,8 @@ def main() -> None:
         "reg_role": composed_roles(),                                         # the client's own roles, composed from the rights
         "reg_report": reports(PLAN_FY, LATEST_CLOSED),                        # the reports people made: saved questions over the measure register
     }
+    for name in COPIED:                     # a row copied onto a version named from a base names the act it came from
+        plan[name] = [{**r, "copied_from": ""} for r in plan[name]]
     fcst, fcst_waiting = forecaster.run(shipments, materials, weeks, LATEST_CLOSED, {a[0]: BASELINE_SOURCE.get(a[0], "PLAN") for a in ACCOUNTS},
                                         f"LV-{LATEST_CLOSED}")       # after the last draw on rng above: it draws nothing
     plan.update({**fcst, "reg_door_act": plan["reg_door_act"] + fcst["reg_door_act"]})     # one act register for every door
@@ -111,6 +114,7 @@ def main() -> None:
     history["cost_actual"] = costs.cost_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, args.seed)   # a stream of its own
     plan["reg_schedule_edit"] = costs.schedule_edits(f"LV-{LATEST_CLOSED}", history["cost_actual"],
                                                      [p["period"] for p in periods if p["period"] <= LATEST_CLOSED][-12:])   # the opex schedule's acts; draws nothing
+    plan["reg_schedule_edit"] = [{**r, "copied_from": ""} for r in plan["reg_schedule_edit"]]
     tables.update(loads.structure_loads(tables))        # the load before, and one member the client has not finished; draws nothing
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
     c = manifest["counts"]

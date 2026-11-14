@@ -273,8 +273,17 @@ VERSION_ACT_COLUMNS = ["act_id", "version_id", "act", "reason", "entered_by", "e
 
 def version_acts(plan_fy: int) -> list[dict]:
     """The acts the business took before the build: the business plan closed when the board agreed it."""
-    return [{"act_id": "VA-00001", "version_id": f"BP-FY{plan_fy}", "act": "close", "reason": "agreed by the board — the year's reference",
-             "entered_by": "finance.manager@caldera", "entered_on": "2026-06-30T17:00:00", "horizon_periods": ""}]
+    row = {"act_id": "VA-00001", "version_id": f"BP-FY{plan_fy}", "act": "close", "reason": "agreed by the board — the year's reference",
+           "entered_by": "finance.manager@caldera", "entered_on": "2026-06-30T17:00:00", "horizon_periods": ""}
+    return [{**{c: "" for c in VERSION_ACT_COLUMNS}, **row}]
+
+
+# a version act's columns: closing, reopening and a horizon use the first seven; naming a version from a base carries the
+# version as named (copied from the base at naming), and a take names an arrival the version reads
+VERSION_ACT_COLUMNS = ["act_id", "version_id", "act", "reason", "entered_by", "entered_on", "horizon_periods",
+                       "base_version", "version_kind", "cycle", "fiscal_year", "from_period", "horizon_start", "horizon_end", "horizon_quarters",
+                       "calendar_variant", "standard_version", "reference_version", "owner",
+                       "arrival", "arrival_id", "account_code", "arrival_taken_in_at", "source_version"]
 
 
 # the strategic plan: one plan over five years, reading the latest view inside its reach and growing by category beyond

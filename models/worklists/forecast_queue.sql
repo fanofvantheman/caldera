@@ -6,15 +6,17 @@
    each of their planners, decided once — and to whoever holds the baseline above them; an item leaves when a person resolves it, and the resolution stands for later runs. The first columns are
    the doors' queue contract (door FCS). */
 MODEL (name plan.worklist_forecast_queue, kind FULL, grain (kind, item_code, account_code));
-WITH run AS (SELECT * FROM plan.forecast_run WHERE in_force),
+WITH run AS (SELECT * FROM plan.version_run),
 theirs AS (
   SELECT s.version_id, STRING_AGG(DISTINCT s.run_id, ', ' ORDER BY s.run_id) AS run_id, 'theirs_not_ours' AS kind, s.sent_code AS item_code, 'ALL' AS account_code,
          STRING_AGG(DISTINCT s.account_code, ', ' ORDER BY s.account_code) AS accounts, ANY_VALUE(s.sent_description) AS description,
          ANY_VALUE(s.sender_hierarchy) AS sender_hierarchy, SUM(s.cases) AS cases, COUNT(DISTINCT s.week_start) AS weeks, MIN(s.week_start) AS first_week,
          NULL::INT AS weeks_of_history, 'held out of the plan' AS meanwhile
-  FROM plan.forecast_series s WHERE s.state = 'held' GROUP BY ALL
+  FROM (SELECT * FROM plan.forecast_series WHERE state = 'held'          -- a run read by several versions is one arrival: its rows once
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY run_id, sent_code, account_code, week_start ORDER BY version_id) = 1) s
+  GROUP BY ALL
 ),
-ours AS (
+ours_by_version AS (
   SELECT b.version_id, r.run_id, 'ours_not_theirs' AS kind, b.material_code AS item_code, b.account_code,
          b.account_code AS accounts, ANY_VALUE(m.material_name) AS description, NULL AS sender_hierarchy, SUM(b.cases) AS cases,
          COUNT(DISTINCT b.week_id) AS weeks, NULL::DATE AS first_week, MAX(h.weeks_fitted)::INT AS weeks_of_history, 'on our calculation' AS meanwhile
@@ -26,6 +28,9 @@ ours AS (
              FROM (SELECT material_code, ship_to_code, account_code, SUM(weeks_fitted) AS n FROM plan.history_shape GROUP BY ALL) GROUP BY ALL) h
          ON h.material_code = b.material_code AND h.account_code = b.account_code
   WHERE b.source = 'our_calculation_gap' GROUP BY ALL
+),
+ours AS (                        -- one item, decided once, whatever version reads it
+  SELECT * FROM ours_by_version QUALIFY ROW_NUMBER() OVER (PARTITION BY item_code, account_code ORDER BY version_id) = 1
 ),
 q AS (SELECT * FROM theirs UNION ALL SELECT * FROM ours)
 SELECT 'FCS' AS door, q.kind, q.item_code, q.account_code AS scope_code, q.accounts AS reaches, q.description,

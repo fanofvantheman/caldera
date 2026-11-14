@@ -15,7 +15,7 @@ SELECT e.edit_id::TEXT AS edit_id, e.save_id::TEXT AS save_id, e.version_id::TEX
        e.scope_customer::TEXT AS scope_customer, c.lvl AS customer_level, e.scope_material::TEXT AS scope_material, m.lvl AS material_level,
        e.period::TEXT AS period, p.fiscal_year, e.measure::TEXT AS measure, e.value::DOUBLE AS value, e.source_at_entry::DOUBLE AS source_at_entry,
        e.reason_code::TEXT AS reason_code, r.description AS reason, e.entered_by::TEXT AS entered_by, e.entered_on::TEXT AS entered_on,
-       NULLIF(e.note::TEXT, '') AS note, c.lvl = 'account' AND m.lvl = 'material' AS at_grain,
+       NULLIF(e.note::TEXT, '') AS note, NULLIF(e.copied_from::TEXT, '') AS copied_from, c.lvl = 'account' AND m.lvl = 'material' AS at_grain,
        COALESCE(w.released_by, wf.released_by) AS released_by, COALESCE(w.released_on, wf.released_on) AS released_on,
        CASE WHEN w.named IS NOT NULL THEN 'released'
             WHEN wf.named IS NOT NULL THEN 'withdrawn'

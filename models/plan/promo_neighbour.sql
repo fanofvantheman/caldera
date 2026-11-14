@@ -14,7 +14,8 @@ WITH acts AS (
 ),
 lines AS (
   SELECT neighbour_id::TEXT AS neighbour_id, version_id::TEXT AS version_id, event_id::TEXT AS event_id, scope_material::TEXT AS scope_material,
-         effect_type::TEXT AS effect_type, rate::DOUBLE AS rate, entered_by::TEXT AS entered_by, entered_at::TEXT AS entered_at, NULLIF(note::TEXT, '') AS note
+         effect_type::TEXT AS effect_type, rate::DOUBLE AS rate, entered_by::TEXT AS entered_by, entered_at::TEXT AS entered_at, NULLIF(note::TEXT, '') AS note,
+         NULLIF(copied_from::TEXT, '') AS copied_from
   FROM acts WHERE recency = 1 AND rate::DOUBLE <> 0
 ),
 scope AS (   -- a neighbour scope resolves to materials: a promo group's members, or a material (its standard material)

@@ -7,8 +7,11 @@
    funding the financialisation does not yet price, carried and shown.
    The account's promotional week rides on the event: an event whose window does not start on the account's week day,
    or does not run whole promotional weeks, is flagged — never refused or snapped; the dates are the sender's or the
-   author's to state, and the grid cuts the window by days either way. */
-MODEL (name plan.promo_event, kind FULL, grain (event_id), audits (promo_event_valid, promo_event_one_door));
+   author's to state, and the grid cuts the window by days either way.
+   An event has one identity and a state per version: its id is the same on every version that carries it, so a version
+   started from another is read against it event by event; its dates, mechanic, funding and whether it runs are the
+   version's. Everything downstream of the calendar is keyed by version × event. */
+MODEL (name plan.promo_event, kind FULL, grain (version_id, event_id), audits (promo_event_valid, promo_event_one_door));
 WITH both AS (
   SELECT event_id, version_id, 'sender' AS source, sender, account_code, promo_group_code, window_start, window_end, mechanic,
          uplift_pct, dip_pct, 'sender' AS response_source, tpr_per_case, scan_funding_per_case, fixed_fee, media_fee, envelope_drawdown, status,

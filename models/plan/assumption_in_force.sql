@@ -11,6 +11,7 @@ WITH acts AS (
          ROW_NUMBER() OVER (PARTITION BY a.version_id, a.assumption_code, a.valid_from
                             ORDER BY CASE WHEN a.source_file LIKE '20%' THEN a.source_file ELSE '0' END DESC, a.file_row_number DESC) AS recency
   FROM bronze.reg_assumption_amend a
+  WHERE a.valid_from <> 'ALL'                -- a version's own value, copied at naming, is read in dims.reg_assumption
 ),
 base AS (SELECT * FROM dims.reg_assumption WHERE period = 'ALL'),
 horizon AS (

@@ -28,7 +28,9 @@ that every grid takes its actual and plan periods from the version, and that an 
 the horizon are refused (nothing saved). `uv run python -m tests.undo_before_save` types, undoes and redoes on Finance's grid and the opex
 schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.horizon_act` changes the latest view's horizon on the Versions page and checks every grid takes it (it removes what it wrote); `uv run python -m tests.report_declaration` makes, refuses and draws reports and checks them against the warehouse (it removes what it wrote); `uv run python -m tests.entitlement_kinds` checks the kinds of entitlement, that the labour model's rates are made from the agreements' entitlements, and the page (read only); `uv run python -m tests.role_compose` reads the rights, composes a role of the client's own and checks the kind of plan on an assignment (it removes what it wrote); `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
 and a layer entry through the confirmation page and checks the plan after the run is what the page said (it removes
-what it wrote).
+what it wrote); `uv run python -m tests.version_fork` names a what-if from the latest view and checks it is a copy cell for
+cell with every copy naming its original and the arrivals read, not copied, promotes it and back, and names a version from
+the business plan at the last close (it removes what it wrote).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -155,7 +157,12 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   (`plan.change_record`); the **versions** — each open or closed, read from a register of acts: the holder of the freeze verb closes one and reopens
   it with a reason, each with a receipt and in force at once; a closed version takes no entry or change and stays readable;
   a version another is read against is not reopened. The holder of the naming verb changes an open version's horizon there too — an act with a reason, inside
-  what the models calculate, the saved figures it would leave past it counted on the receipt first. The **strategic plan** is its own process: a *five-year plan*
+  what the models calculate, the saved figures it would leave past it counted on the receipt first. The holder of the naming verb
+also names a version from another: a copy of everything still standing on it — entries, Finance's figures, the schedule,
+the assumptions, the promotions typed here — each under the name and time of whoever made it and marked with what it was
+copied from, while the forecasting runs and the promotions system's files it reads are the same ones, read, not copied;
+a what-if keeps its base's actual months, the next cycle takes a later one. The holder of the promotion verb makes a
+version the latest view — the version every page opens on — whole, nothing merged; naming never moves it. The **strategic plan** is its own process: a *five-year plan*
   (FY2027–FY2031) by category × channel — the latest view rolled up where it covers a whole year, grown by Finance's rates by
   category beyond — and the five capacities it declares by year with their tiers: production computed (line hours by plant,
   from the machine register and the routes; first break, or none), working capital as receivables at terms with no limit

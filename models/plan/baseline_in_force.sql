@@ -7,7 +7,7 @@
    our_calculation_kept — the same, after someone has said to keep ours; our_calculation_beyond_run — past the run's last
    week. A series someone has set to zero on purpose has no rows here. */
 MODEL (name plan.baseline_in_force, kind FULL, grain (version_id, material_code, ship_to_code, week_id));
-WITH run AS (SELECT * FROM plan.forecast_run WHERE in_force),
+WITH run AS (SELECT * FROM plan.version_run),                 -- the run each version reads, per account
 series AS (
   SELECT version_id, material_code, account_code, week_id, SUM(cases) AS cases
   FROM plan.forecast_series WHERE state = 'in' GROUP BY ALL

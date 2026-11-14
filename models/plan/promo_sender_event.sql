@@ -1,4 +1,4 @@
-/* Every event the promotions sender has on file, resolved through the mapping: the latest send of each event id within
+/* Every event the promotions sender has on file for a version (the files it reads, plan.version_sender_file), resolved through the mapping: the latest send of each event id within
    the version replaces the earlier ones, its codes beside what they map to, its funding package folded onto the
    event's three priced columns, and its state —
      in         every code mapped and in force, status agreed or later, the account mastered by the sender: in the calendar
@@ -8,10 +8,15 @@
                 horizon: returned to the sender with the reason
      cancelled  the sender cancelled it: removed */
 MODEL (name plan.promo_sender_event, kind FULL, grain (version_id, event_id));
-WITH latest AS (
+WITH taken AS (               -- the sender's rows of every file the version reads, taken in for it or taken at naming
+  SELECT e.* REPLACE (t.version_id AS version_id)
+  FROM bronze.tpm_event e
+  JOIN plan.version_sender_file t ON t.source_version = e.version_id AND t.sender_file = e.sender_file AND t.taken_in_at = e.taken_in_at::TEXT
+),
+latest AS (
   SELECT * FROM (SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.version_id, e.event_id ORDER BY e.taken_in_at DESC, e.source_file DESC, e.file_row_number DESC) AS r,
                         COUNT(*) OVER (PARTITION BY e.version_id, e.event_id) AS sends
-                 FROM bronze.tpm_event e) WHERE r = 1
+                 FROM taken e) WHERE r = 1
 ),
 fund AS (
   SELECT version_id, event_id,

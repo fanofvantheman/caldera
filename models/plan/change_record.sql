@@ -20,9 +20,10 @@ fin_release AS (SELECT * FROM bronze.reg_finance_overlay WHERE action = 'release
 SELECT 'demand plan' AS record, e.entry_id AS act_id, e.version_id, 'entry' AS act, e.entered_on::TIMESTAMP AS acted_at, e.entered_by AS by_whom,
        e.reason_code || COALESCE(' · ' || e.note, '') AS why,
        'layer ' || e.layer_no || ' · ' || e.scope_customer || ' × ' || e.scope_material || ' · ' || e.period_from ||
-         CASE WHEN e.period_to <> e.period_from THEN '–' || e.period_to ELSE '' END || ' · ' || ROUND(e.value, 4) || ' ' || e.value_kind AS what,
+         CASE WHEN e.period_to <> e.period_from THEN '–' || e.period_to ELSE '' END || ' · ' || ROUND(e.value, 4) || ' ' || e.value_kind
+         || COALESCE(' · copied from ' || e.copied_from, '') AS what,
        CASE WHEN e.withdrawn AND e.withdrawn_by_owner THEN 'withdrawn'
-            WHEN NOT (e.version_known AND e.material_scope_resolves AND e.customer_scope_resolves AND e.entered_by_owner AND e.window_ordered) THEN 'refused'
+            WHEN NOT (e.version_known AND e.material_scope_resolves AND e.customer_scope_resolves AND e.entered_by_owner AND e.window_ordered AND e.window_in_horizon) THEN 'refused'
             ELSE 'stands' END AS standing,
        NULL AS names, 'demand' AS grid, e.entry_id AS withdraw_id, e.entry_id AS save_id
 FROM plan.layer_entry e
@@ -33,7 +34,7 @@ FROM plan.layer_entry e WHERE e.withdrawn
 UNION ALL
 -- Finance's figures, each in its save, and a release (a whole save) or a withdrawal (one figure)
 SELECT 'Finance''s plan', f.edit_id, f.version_id, 'figure', f.entered_on::TIMESTAMP, f.entered_by, COALESCE(f.reason, f.reason_code) || COALESCE(' · ' || f.note, ''),
-       f.measure || ' ' || ROUND(f.value, 2) || ' at ' || f.scope_customer || ' × ' || f.scope_material || ' in ' || f.period,
+       f.measure || ' ' || ROUND(f.value, 2) || ' at ' || f.scope_customer || ' × ' || f.scope_material || ' in ' || f.period || COALESCE(' · copied from ' || f.copied_from, ''),
        CASE WHEN f.state IN ('released', 'withdrawn') THEN 'withdrawn' WHEN f.state LIKE 'refused%' THEN 'refused'
             WHEN f.standing = 'overwritten' THEN 'overwritten' ELSE 'stands' END,
        NULL, 'finance', f.edit_id, f.save_id
@@ -51,7 +52,8 @@ SELECT 'opex schedule', s.edit_id, s.version_id, s.action, s.entered_on, s.enter
                           CASE s.action WHEN 'month' THEN ' · ' || s.period || ' ' || ROUND(s.value, 0)
                                         WHEN 'rate' THEN ' · rate ' || COALESCE(ROUND(s.value, 4)::TEXT, 'back to calculated')
                                         WHEN 'driver' THEN ' · driver ' || s.driver
-                                        ELSE ' · ' || COALESCE(s.period, 'every typed month') || ' back to calculated' END END,
+                                        ELSE ' · ' || COALESCE(s.period, 'every typed month') || ' back to calculated' END END
+         || COALESCE(' · copied from ' || s.copied_from, ''),
        CASE WHEN s.action = 'withdraw' OR s.action = 'reset' THEN CASE WHEN s.withdrawn_by_act IS NOT NULL THEN 'withdrawn' ELSE 'stands' END
             WHEN s.withdrawn_by_act IS NOT NULL THEN 'withdrawn'
             WHEN s.action IN ('month', 'rate') AND ss.edit_id IS NULL THEN 'overwritten'
@@ -63,16 +65,19 @@ LEFT JOIN sched_standing ss ON ss.version_id = s.version_id AND ss.edit_id = s.e
 LEFT JOIN sched_driver sd ON sd.edit_id = s.edit_id
 UNION ALL
 -- the assumptions: a value from a period; a later act on the same assumption and period takes its place
-SELECT 'assumptions', a.amend_id::TEXT, a.version_id::TEXT, 'amendment', a.entered_on::TIMESTAMP, a.entered_by::TEXT, NULLIF(a.note::TEXT, ''),
-       a.assumption_code || ' ' || a.value || ' from ' || a.valid_from,
+SELECT 'assumptions', a.amend_id::TEXT, a.version_id::TEXT, CASE WHEN a.valid_from = 'ALL' THEN 'value as named' ELSE 'amendment' END,
+       a.entered_on::TIMESTAMP, a.entered_by::TEXT, NULLIF(a.note::TEXT, ''),
+       a.assumption_code || ' ' || a.value || CASE WHEN a.valid_from = 'ALL' THEN ' for the version' ELSE ' from ' || a.valid_from END
+       || COALESCE(' · copied from ' || NULLIF(a.copied_from::TEXT, ''), ''),
        CASE WHEN ROW_NUMBER() OVER (PARTITION BY a.version_id, a.assumption_code, a.valid_from ORDER BY a.entered_on DESC, a.amend_id DESC) = 1 THEN 'stands' ELSE 'overwritten' END,
        NULL, NULL, NULL, NULL
 FROM bronze.reg_assumption_amend a
 UNION ALL
 -- promotions typed here
 SELECT 'promotions', p.event_id::TEXT, p.version_id::TEXT, 'event', p.entered_on::TIMESTAMP, p.owner::TEXT, NULLIF(p.note::TEXT, ''),
-       p.account_code || ' × ' || p.promo_group_code || ' · ' || p.window_start || ' to ' || p.window_end || ' · ' || p.mechanic || ' · ' || p.status,
-       CASE WHEN ROW_NUMBER() OVER (PARTITION BY p.event_id ORDER BY p.source_file DESC, p.file_row_number DESC) = 1 THEN 'stands' ELSE 'overwritten' END,
+       p.account_code || ' × ' || p.promo_group_code || ' · ' || p.window_start || ' to ' || p.window_end || ' · ' || p.mechanic || ' · ' || p.status
+       || COALESCE(' · copied from ' || NULLIF(p.copied_from::TEXT, ''), ''),
+       CASE WHEN ROW_NUMBER() OVER (PARTITION BY p.version_id, p.event_id ORDER BY p.source_file DESC, p.file_row_number DESC) = 1 THEN 'stands' ELSE 'overwritten' END,
        NULL, NULL, NULL, NULL
 FROM bronze.reg_promo_event p
 UNION ALL
@@ -83,10 +88,17 @@ SELECT 'submissions', s.submission_id::TEXT, s.version_id::TEXT, s.action::TEXT,
        NULL, NULL, NULL, NULL
 FROM bronze.reg_submission s
 UNION ALL
--- the version's own acts: closed, reopened
+-- the version's own acts: closed, reopened, a horizon, named from a base, an arrival taken at naming, promoted
 SELECT 'versions', a.act_id, a.version_id, a.act, a.entered_on::TIMESTAMP, a.entered_by, a.reason,
-       a.version_id || ' ' || CASE WHEN a.act = 'horizon' THEN 'horizon to ' || a.horizon_periods || ' periods' ELSE a.act END,
-       CASE WHEN ROW_NUMBER() OVER (PARTITION BY a.version_id, a.act = 'horizon' ORDER BY a.entered_on DESC, a.act_id DESC) = 1 THEN 'stands' ELSE 'overwritten' END,
+       a.version_id || ' ' || CASE a.act WHEN 'horizon' THEN 'horizon to ' || a.horizon_periods || ' periods'
+                                         WHEN 'name' THEN 'named from ' || a.base_version || ', actual to ' || a.from_period
+                                         WHEN 'take' THEN 'takes ' || CASE a.arrival WHEN 'forecast_run' THEN 'run ' || a.arrival_id || ' for ' || a.account_code
+                                                                                     ELSE 'the promotions file ' || a.arrival_id END || ' from ' || a.base_version
+                                         WHEN 'promote' THEN 'promoted to the latest view' ELSE a.act END,
+       CASE WHEN ROW_NUMBER() OVER (PARTITION BY CASE WHEN a.act = 'promote' THEN 'every version' ELSE a.version_id END,
+                                                 CASE a.act WHEN 'horizon' THEN 'horizon' WHEN 'close' THEN 'state' WHEN 'reopen' THEN 'state'
+                                                            WHEN 'promote' THEN 'promote' ELSE a.act_id END
+                                    ORDER BY a.entered_on DESC, a.act_id DESC) = 1 THEN 'stands' ELSE 'overwritten' END,
        NULL, NULL, NULL, NULL
 FROM plan.version_act a
 UNION ALL

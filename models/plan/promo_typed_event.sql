@@ -4,7 +4,7 @@
    person overrode them, with a note.
    An event typed at an account the sender masters is refused; the face refuses it before it is placed, and the run
    refuses any that arrives another way. */
-MODEL (name plan.promo_typed_event, kind FULL, grain (event_id));
+MODEL (name plan.promo_typed_event, kind FULL, grain (version_id, event_id));
 SELECT e.event_id::TEXT AS event_id, e.version_id::TEXT AS version_id, e.account_code::TEXT AS account_code, e.promo_group_code::TEXT AS promo_group_code,
        e.window_start::DATE AS window_start, e.window_end::DATE AS window_end, e.mechanic::TEXT AS mechanic,
        COALESCE(e.uplift_pct::DOUBLE, m.default_uplift_pct) AS uplift_pct, COALESCE(e.dip_pct::DOUBLE, m.default_dip_pct) AS dip_pct,
@@ -12,7 +12,7 @@ SELECT e.event_id::TEXT AS event_id, e.version_id::TEXT AS version_id, e.account
        COALESCE(e.tpr_per_case::DOUBLE, 0) AS tpr_per_case, COALESCE(e.scan_funding_per_case::DOUBLE, 0) AS scan_funding_per_case,
        COALESCE(e.fixed_fee::DOUBLE, 0) AS fixed_fee, COALESCE(e.media_fee::DOUBLE, 0) AS media_fee,
        COALESCE(e.envelope_drawdown::DOUBLE, 0) AS envelope_drawdown, e.status::TEXT AS status, e.owner::TEXT AS owner, e.baseline_version::TEXT AS baseline_version,
-       NULLIF(e.note::TEXT, '') AS note, e.entered_on::TEXT AS entered_on, a.promotions_master,
+       NULLIF(e.note::TEXT, '') AS note, e.entered_on::TEXT AS entered_on, NULLIF(e.copied_from::TEXT, '') AS copied_from, a.promotions_master,
        CASE WHEN a.promotions_master = 'TPM' THEN 'refused'
             WHEN NOT COALESCE(s.enters_calendar, FALSE) THEN 'held'
             ELSE 'in' END AS state,

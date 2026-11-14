@@ -4,7 +4,7 @@
    the window as a timing shift; and each neighbour line the event declares — cannibalisation or halo, a rate on the
    neighbour's baseline in the same window, day-weighted the same way. The rate and funding the event carries are read by
    the financialisation, not here; a neighbour's cases carry none of them. */
-MODEL (name plan.promo_line, kind FULL, grain (event_id, effect_type, material_code, ship_to_code, week_id));
+MODEL (name plan.promo_line, kind FULL, grain (version_id, event_id, effect_type, material_code, ship_to_code, week_id));
 WITH ev AS (
   SELECT e.event_id, e.version_id, e.account_code, e.promo_group_code, e.window_start, e.window_end, e.uplift_pct, e.dip_pct, e.status
   FROM plan.promo_event e WHERE e.event_known

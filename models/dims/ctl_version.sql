@@ -6,15 +6,25 @@
    horizon after it: periods by month (horizon_periods), then quarters (horizon_quarters, none yet), ending at
    plan_through — never past what the models calculate. The horizon is the version's own, set from its kind when named,
    and changed only by an act (a `horizon` row in the version acts, with a reason and a receipt): the latest stands, and
-   the horizon it was named with is kept beside it. */
+   the horizon it was named with is kept beside it.
+   A version is named from a base by an act (a `name` row in the version acts) that carries the version as named — the
+   base's kind, year, reach, calendar, standard, reference and owner copied onto it at naming, with its own from point and
+   horizon; it is read here beside the versions the business had before the build, and carries its base and that act. */
 MODEL (name dims.ctl_version, kind FULL, grain (version_id), audits (version_vocabulary, version_from_point));
 WITH v AS (
   SELECT version_id::TEXT AS version_id, version_kind::TEXT AS version_kind, cycle::TEXT AS cycle, fiscal_year::TEXT AS fiscal_year,
          horizon_start::TEXT AS horizon_start, horizon_end::TEXT AS horizon_end, calendar_variant::TEXT AS calendar_variant,
          standard_version::TEXT AS standard_version, NULLIF(reference_version::TEXT, '') AS reference_version,
          status::TEXT AS status, owner::TEXT AS owner, named_on::DATE AS named_on, NULLIF(from_period::TEXT, '') AS from_period,
-         horizon_periods::INT AS horizon_periods, horizon_quarters::INT AS horizon_quarters
+         horizon_periods::INT AS horizon_periods, horizon_quarters::INT AS horizon_quarters, NULL::TEXT AS base_version, NULL::TEXT AS named_by_act
   FROM bronze.ctl_version
+  UNION ALL
+  SELECT * FROM (SELECT version_id::TEXT, version_kind::TEXT, NULLIF(cycle::TEXT, ''), NULLIF(fiscal_year::TEXT, ''), horizon_start::TEXT, horizon_end::TEXT,
+         calendar_variant::TEXT, standard_version::TEXT, NULLIF(reference_version::TEXT, ''), 'open', owner::TEXT, entered_on::DATE,
+         NULLIF(from_period::TEXT, ''), NULLIF(horizon_periods::TEXT, '')::INT, COALESCE(NULLIF(horizon_quarters::TEXT, '')::INT, 0),
+         base_version::TEXT, act_id::TEXT
+  FROM bronze.reg_version_act WHERE "act" = 'name'
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY version_id ORDER BY entered_on::TEXT, source_file, file_row_number) = 1)
 ),
 h AS (SELECT version_id::TEXT AS version_id, NULLIF(horizon_periods::TEXT, '')::INT AS horizon_periods FROM bronze.reg_version_act
        WHERE "act" = 'horizon' AND NULLIF(horizon_periods::TEXT, '') IS NOT NULL

@@ -2,7 +2,8 @@
    own calculation for the accounts the plan calculates, the forecasting system's run for the accounts that take it
    (line source FORECAST), and our calculation again wherever the run does not reach (plan.baseline_in_force). For a frozen version it is what
    was entered — period contributions spread to weeks by the history shape (or by catchment where the material had no
-   history). Either way nobody typed a week. */
+   history). Either way nobody typed a week. A version with an entered baseline reads it and is not calculated as well —
+   a version named from the business plan carries the business plan's entered baseline, copied. */
 MODEL (name plan.layer1_lines, kind FULL, grain (version_id, line_source, material_code, ship_to_code, week_id));
 WITH computed AS (
   SELECT version_id, CASE source WHEN 'forecast_run' THEN 'FORECAST' ELSE 'BASELINE' END AS line_source, material_code, ship_to_code, account_code, week_id, cases
@@ -16,5 +17,6 @@ entered AS (
   WHERE ec.layer_no = 1 AND ec.value_kind = 'cases'
 )
 SELECT * FROM computed WHERE cases > 0
+  AND version_id NOT IN (SELECT DISTINCT version_id FROM entered)      -- a version whose baseline was entered keeps it
 UNION ALL
 SELECT * FROM entered WHERE cases IS NOT NULL AND cases <> 0

@@ -1,6 +1,7 @@
 /* What the people typed: one row per contribution to a layer on a version — the slice chosen on each dimension, a time
    window in periods, a value in cases or as a rate on the baseline, the rule that spreads it, who entered it and why.
-   A later row may withdraw it; the entry stays on file, marked. Flags say whether the row can be used; nothing is
+   A later row may withdraw it; the entry stays on file, marked. An entry copied onto a version named from a base keeps
+   its author and time and names the entry it came from (copied_from). Flags say whether the row can be used; nothing is
    corrected here. */
 MODEL (name plan.layer_entry, kind FULL, grain (entry_id),
        audits (layer_entry_version_known, layer_entry_scope_resolves, layer_entry_by_owner, layer_entry_withdraw_by_owner,
@@ -15,7 +16,7 @@ SELECT e.entry_id::TEXT AS entry_id, e.version_id::TEXT AS version_id, e.layer_n
        e.entered_by::TEXT AS entered_by, e.entered_on::DATE AS entered_on, e.reason_code::TEXT AS reason_code, e.effect_type::TEXT AS effect_type,
        e.scope_material::TEXT AS scope_material, e.scope_customer::TEXT AS scope_customer,
        e.period_from::TEXT AS period_from, e.period_to::TEXT AS period_to, e.value_kind::TEXT AS value_kind, e.value::DOUBLE AS value,
-       e.spread_rule::TEXT AS spread_rule, NULLIF(e.note::TEXT, '') AS note, e.source_file, e.file_row_number,
+       e.spread_rule::TEXT AS spread_rule, NULLIF(e.note::TEXT, '') AS note, NULLIF(e.copied_from::TEXT, '') AS copied_from, e.source_file, e.file_row_number,
        wd.entry_id IS NOT NULL AS withdrawn, wd.withdrawn_by, wd.withdrawn_on, wd.withdrawal_note,
        wd.entry_id IS NULL OR EXISTS (SELECT 1 FROM dims.effective_entitlements x WHERE x.principal = wd.withdrawn_by AND x.action = 'layer.' || e.layer_no::TEXT || '.withdraw') AS withdrawn_by_owner,
        r.reason_code IS NOT NULL AS reason_known,
