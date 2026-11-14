@@ -97,6 +97,7 @@ PLAN = {
     "reg_role": (),
     "reg_entitlement": ("value",),
     "reg_report": (),
+    "reg_entitlement_proposal": ("value",),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})
@@ -126,9 +127,23 @@ def main() -> None:
             p = root / sub / f"{name}.csv"
             placed = sorted((landing / sub / name).glob("*.csv")) if (landing / sub / name).is_dir() else []   # file order is time order
             if p.exists() and p.stat().st_size > 0:
-                resources.append(log_resource(p, placed, name, numeric, INTEGER))
+                with p.open(encoding="utf-8") as fh:
+                    header_only = bool(fh.readline()) and not fh.readline().strip()
+                resources.append(_empty(p, name, numeric) if header_only and not placed else log_resource(p, placed, name, numeric, INTEGER))
     info = pipeline.run(resources)
     print(info)
+
+
+def _empty(master: Path, name: str, numeric: tuple[str, ...]):
+    """A register with a header and no row yet (nothing taken in) is an empty table, not a missing one: the header is the
+    contract. dlt makes no table for a resource that yields nothing, so this one yields the table's schema alone — and,
+    replaced like every other, a register emptied since the last load reads empty."""
+    from chassis.ingest import columns
+
+    @dlt.resource(name=name, write_disposition="replace", columns=columns(master, numeric, INTEGER))
+    def resource():
+        yield dlt.mark.materialize_table_schema()
+    return resource
 
 
 if __name__ == "__main__":

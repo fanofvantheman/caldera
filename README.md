@@ -30,7 +30,9 @@ schedule and checks each step against the plan as saved (nothing saved). `uv run
 and a layer entry through the confirmation page and checks the plan after the run is what the page said (it removes
 what it wrote); `uv run python -m tests.version_fork` names a what-if from the latest view and checks it is a copy cell for
 cell with every copy naming its original and the arrivals read, not copied, promotes it and back, and names a version from
-the business plan at the last close (it removes what it wrote).
+the business plan at the last close (it removes what it wrote); `uv run python -m tests.agreement_door` takes the renegotiated
+agreement in through the door with the model replaced by a stub, and checks the quotation check, the refusals, the no-key
+path and that only accepted rows reach the labour model (it removes what it wrote).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -224,7 +226,12 @@ version the latest view — the version every page opens on — whole, nothing m
   allowance, leave accrual, on-cost, dated increase, one-off payment; which it prices today) and each agreement's
   entitlements beneath them with the clause each came from — the rates the labour model reads are made from these; then the layers in force by entity — the agreement where it speaks, the statutory floor of the
   Commonwealth and the entity's state where it does not, the floor a specimen awaiting its sources (no figure recalled),
-  the on-cost the plan uses today beside it;
+  the on-cost the plan uses today beside it; and **agreements in** — a copy of an agreement (the renegotiated one waits in
+`data/generated/documents/`) taken in by the holder of the agreement register's right, read by the shared tool's first pass
+into proposed rows under the kinds, each with its clause quoted and found in the document word for word by the tool's code
+(a row whose quotation is not there is refused, a clause that fits no kind is an item to resolve); each is accepted, placed
+under another kind or left out, and only accepted rows are read by the labour model — collective instruments only, and
+without an API key the document waits for a person;
   the by-name tab is individual pay,
   read only by the holders of `read.pay` (Commercial finance, People and culture): without it the tab is not offered and
   the name-based labour is left out of the schedule's and the cost centre pages' figures and totals, with a line saying

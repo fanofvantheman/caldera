@@ -82,7 +82,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "chassis", path = "99_core_clones/chassis-0.13.0-py3-none-any.whl" },
-    { name = "coa-map", path = "99_core_clones/coa_map-0.4.0-py3-none-any.whl" },
+    { name = "coa-map", path = "99_core_clones/coa_map-0.5.0-py3-none-any.whl" },
     { name = "dlt", extras = ["duckdb"] },
     { name = "duckdb" },
     { name = "flask", specifier = ">=3.1.3" },
@@ -260,14 +260,14 @@ wheels = [
 
 [[package]]
 name = "coa-map"
-version = "0.4.0"
-source = { path = "99_core_clones/coa_map-0.4.0-py3-none-any.whl" }
+version = "0.5.0"
+source = { path = "99_core_clones/coa_map-0.5.0-py3-none-any.whl" }
 dependencies = [
     { name = "anthropic" },
     { name = "pandas" },
 ]
 wheels = [
-    { filename = "coa_map-0.4.0-py3-none-any.whl", hash = "sha256:101a101bad4dbe33c53eec614224e0f1ae0eb28c652444676fe2c022833a4773" },
+    { filename = "coa_map-0.5.0-py3-none-any.whl", hash = "sha256:fbd13d08a090a39d91797b524df04a3ff9c6a9912fe835eca57beda2df61b8c0" },
 ]
 
 [package.metadata]

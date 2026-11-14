@@ -21,6 +21,7 @@ from . import sender
 from . import forecaster
 from . import loads
 from . import costs
+from . import documents
 
 FIRST_FY, LAST_FY, PLAN_FY = 2024, 2030, 2027   # the latest view rolls 36 periods from the cycle
 LATEST_CLOSED = "2027P04"          # the last closed period: October 2026
@@ -117,6 +118,7 @@ def main() -> None:
     plan["reg_schedule_edit"] = [{**r, "copied_from": ""} for r in plan["reg_schedule_edit"]]
     tables.update(loads.structure_loads(tables))        # the load before, and one member the client has not finished; draws nothing
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
+    documents.write(Path(args.out))                     # the renegotiated agreement, waiting as text to be taken in; draws nothing
     c = manifest["counts"]
     print(f"generated: {c['dim_material']} materials, {c['dim_ship_to']} ship-tos, {c['dim_week']} weeks, "
           f"{c['shipments']} shipment rows, {c['forecast_snapshot']} forecast snapshot rows, {c['price_list']} price rows, {c['ref_bom']} bom lines, {c['reg_capacity_machine']} capacity rows, "

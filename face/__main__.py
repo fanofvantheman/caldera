@@ -35,6 +35,7 @@ from . import strategic
 from . import withdrawals
 from . import rights
 from . import entitlements
+from . import agreements
 from . import reports
 from .words import said
 
@@ -2490,6 +2491,7 @@ versions_page.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOP
 withdrawals.register(plan, _page, _who, _busy, session, roles, _run_plan, ENTRIES, FINANCE)
 rights.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
 entitlements.register(plan, _page, _who, _busy, roles)
+agreements.register(plan, _who, session, roles, _run_plan, SCOPED)
 reports.register(plan, _page, _who, _busy, session, roles)
 strategic.register(plan, _page, _busy)
 

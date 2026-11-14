@@ -4,7 +4,8 @@ for the jurisdiction, then the entity's agreement; the one in force for a classi
 speaks and the floor where it does not, and the page says which.
 
 What it is for: pricing a roster for a plan. It is not an interpretation of an agreement for payroll, and the page says
-so. The register is kept by the holder of `register.agreement.maintain`. Registered on the plan's blueprint by
+so. The register is kept by the holder of `register.agreement.maintain`, who also takes an agreement in at the door
+beneath (`face/agreements.py`): its entitlements proposed as rows, each accepted or altered before anything reads it. Registered on the plan's blueprint by
 `register(...)`, called from `face/__main__.py`."""
 from __future__ import annotations
 
@@ -30,6 +31,12 @@ PAGE = """<h1>Entitlements<small>what the labour model prices: a closed list of 
 <td class="n small muted">{% if r.floor_speaks %}{{ r.floor_shown or 'awaiting source' }}{% else %}—{% endif %}</td><td class="n small">{{ r.used_shown }}</td></tr>{% endfor %}</tbody></table>
 <p class="hint">The plan uses today: the on-cost register the labour model reads, as generated — not drafted from a source. It moves onto the floor's rows when the statutory set is drafted from its sources and accepted.</p>{% endif %}
 <p class="hint">Entitlements are kept by {{ holders|join(', ') or 'nobody yet' }}.</p>"""
+
+
+def _page_text() -> str:
+    from chassis import door
+    from .agreements import SECTION
+    return PAGE + SECTION.replace("{door_queue}", door.QUEUE).replace("{door_decided}", door.DECIDED)
 
 LAYER_SAID = {"statute": "the statutory floor", "award": "the award", "agreement": "the entity's agreement"}
 
@@ -64,7 +71,7 @@ def view(layers: list[dict] | None = None) -> dict:
 
 
 def register(bp, page, who_fn, busy, roles) -> None:
-    from . import reads
+    from . import agreements, reads
 
     @bp.get("/labour/entitlements")
     def entitlements():
@@ -74,6 +81,7 @@ def register(bp, page, who_fn, busy, roles) -> None:
                        "shown": shown(r), "floor_shown": shown({**r, "value": r["floor_value"]}),
                        "used_shown": shown({**r, "value": r["used_today"]}) if r["used_today"] is not None else ""}
                       for r in q("select * from plan.entitlement_in_force order by entity_code, kind, classification, applies_to")]
-            return page(PAGE, title="Entitlements", active="hc_entitlements", **view(layers), holders=reads.holders("register.agreement.maintain"))
+            ctx = agreements.context(who_fn(), roles)
+            return page(_page_text(), title="Entitlements", active="hc_entitlements", **view(layers), **ctx)
         except Busy as e:
             return busy("Entitlements", e)

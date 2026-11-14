@@ -28,4 +28,6 @@ FROM (
          'decide each on the statistical forecast page: the same as one of ours, placed, left out; keep our calculation, or zero' FROM plan.worklist_forecast_queue
   UNION ALL SELECT 'ledger cost centres unmapped', 'plan.worklist_cost_centre_unmapped', 'ACTION', COUNT(*),
          'decide each on the cost centres page: map it to one of ours, open a planning cost centre for it, or leave it out with a reason' FROM plan.worklist_cost_centre_unmapped
+  UNION ALL SELECT 'agreement clauses to decide', 'plan.worklist_entitlement_queue', 'ACTION', COUNT(*),
+         'decide each on the entitlements page: accept it, place it under another kind or leave it out; a clause under no kind: not material, or approximate it under a kind' FROM plan.worklist_entitlement_queue
 ) w CROSS JOIN readers r
