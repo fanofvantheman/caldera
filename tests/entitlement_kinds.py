@@ -9,6 +9,10 @@
 3. The casual loading the labour model applies is the agreement's own row.
 4. The page lists the kinds (which are priced, which are not yet), each agreement's entitlements with their clauses, and
    says what it is for.
+5. The layers: the statutory floor is a specimen awaiting sources — every row says the source it is to be drafted from and
+   carries no value; each entity reads the Commonwealth's floor and its own state's, never the other state's; the
+   agreement stands where it speaks; a floor with no value is never read as zero — the labour model's on-costs are still
+   the on-cost register's; the page says which layer speaks and that the floor is a specimen.
 """
 from __future__ import annotations
 
@@ -68,6 +72,23 @@ def main() -> None:
     assert all(k["kind_label"] in page for k in kinds.values()) and "not yet priced" in page and "not an interpretation" in page
     assert "Caldera Food Processing Agreement 2025" in page and "cl. 12.2" in page and "casual loading of 25%" in page
     print("page            the kinds with what is priced and what is not yet, both agreements' entitlements with their clauses, and what it is for")
+
+    st = [r for r in rows if r["layer"] == "statute"]
+    assert st and all(r["specimen"] and r["value"] is None and r["clause_ref"].startswith("to be drafted from") for r in st)
+    state = {r["entity_code"]: r["state"] for r in q("select entity_code, state from dims.dim_entity")}
+    inf = q("select f.*, e.jurisdiction from plan.entitlement_in_force f left join dims.reg_entitlement e using (entitlement_id)")
+    for r in inf:
+        assert r["layer"] == "agreement" or r["jurisdiction"] in ("AU", state[r["entity_code"]]), r
+        assert not (r["layer"] == "statute" and r["value"] is not None and r["floor_specimen"]), r
+    ag_keys = {(r["entity_code"], r["kind"], r["classification"] or "", r["applies_to"] or "") for r in rows if r["layer"] == "agreement"}
+    assert all(r["layer"] == "agreement" for r in inf if (r["entity_code"], r["kind"], r["classification"], r["applies_to"]) in ag_keys)
+    oc = {r["entity_code"]: r["s"] for r in q("select entity_code, sum(rate) s from dims.ref_on_cost group by 1")}
+    for x in q("select entity_code, wages, on_costs from plan.labour_line where wages > 0 limit 50"):
+        assert abs(x["on_costs"] - x["wages"] * oc[x["entity_code"]]) < 1e-6
+    waiting = sum(1 for r in inf if r["awaiting_source"])
+    assert "specimen — awaiting sources" in page and "awaiting source" in page and "Which layer speaks" in page and "the statutory floor" in page
+    print(f"layers          {len(st)} statutory rows, all specimen awaiting sources (AU, VIC, SA); {len(inf)} entitlements in force by entity, "
+          f"the agreement where it speaks, {waiting} awaiting a source on the floor — none read as zero: on-costs are still the register's")
 
 
 if __name__ == "__main__":

@@ -212,7 +212,9 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   from January 2027, a campaign casual pool at a loading; a name beside a position carries nothing) and *By name* in the
   overhead ones (each person's salary, incentive and dates; a named vacancy at a typed figure) — and *Entitlements*: the closed list of kinds the labour model can price (base rate, loading,
   allowance, leave accrual, on-cost, dated increase, one-off payment; which it prices today) and each agreement's
-  entitlements beneath them with the clause each came from — the rates the labour model reads are made from these;
+  entitlements beneath them with the clause each came from — the rates the labour model reads are made from these; then the layers in force by entity — the agreement where it speaks, the statutory floor of the
+  Commonwealth and the entity's state where it does not, the floor a specimen awaiting its sources (no figure recalled),
+  the on-cost the plan uses today beside it;
   the by-name tab is individual pay,
   read only by the holders of `read.pay` (Commercial finance, People and culture): without it the tab is not offered and
   the name-based labour is left out of the schedule's and the cost centre pages' figures and totals, with a line saying

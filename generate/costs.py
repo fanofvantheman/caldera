@@ -252,6 +252,30 @@ def entitlement_kinds() -> list[dict]:
             for i, (k, l, w, c, p) in enumerate(ENTITLEMENT_KINDS, start=1)]
 
 
+# The statutory floor for the jurisdictions Caldera's plants are in — a SPECIMEN awaiting sources: no statute or official
+# rate table is inside the boundary, so no figure is drafted. Each row says what it is and the source it is to be drafted
+# from; its value is empty until the set is drafted from that source, dated and accepted (DEC-20261114-03 point 5).
+STATUTORY = [
+    # jurisdiction, kind, applies to, what, the source it is to be drafted from
+    ("AU", "on_cost", "super", "Superannuation guarantee, a share of ordinary time earnings", "Superannuation Guarantee (Administration) Act 1992 and the rate in force for the year"),
+    ("AU", "base_rate", "minimum", "The national minimum wage, per hour", "the national minimum wage order of the annual wage review"),
+    ("AU", "leave_accrual", "annual", "Annual leave accrued per ordinary hour worked, and any loading", "Fair Work Act 2009, National Employment Standards (annual leave)"),
+    ("AU", "leave_accrual", "personal", "Personal / carer's leave accrued per ordinary hour worked", "Fair Work Act 2009, National Employment Standards (personal / carer's leave)"),
+    ("VIC", "on_cost", "payroll_tax", "Payroll tax, a share of wages above the threshold", "Payroll Tax Act 2007 (Vic) and the rate and threshold in force"),
+    ("VIC", "on_cost", "workers_comp", "Workers' compensation premium, a share of wages", "the Victorian scheme's premium order for the year and the employer's industry rate"),
+    ("SA", "on_cost", "payroll_tax", "Payroll tax, a share of wages above the threshold", "Payroll Tax Act 2009 (SA) and the rate and threshold in force"),
+    ("SA", "on_cost", "workers_comp", "Workers' compensation premium, a share of wages", "the South Australian scheme's premium determination and the employer's industry rate"),
+]
+JURISDICTION_NAME = {"AU": "Commonwealth", "VIC": "Victoria", "SA": "South Australia"}
+
+
+def statutory_specimen() -> list[dict]:
+    return [{"entitlement_id": f"ST-{j}-{i:03d}", "layer": "statute", "instrument": f"STATUTE-{j}", "instrument_name": f"Statutory floor · {JURISDICTION_NAME[j]}",
+             "entity_code": "", "jurisdiction": j, "kind": k, "classification": "", "classification_name": "", "applies_to": a, "value": "",
+             "valid_from_period": "2025P01", "clause_ref": f"to be drafted from {src}", "clause": f"Specimen — {what}; no source given, nothing drafted.",
+             "specimen": "Y", "entered_by": "", "entered_on": ""} for i, (j, k, a, what, src) in enumerate(STATUTORY, start=1)]
+
+
 def entitlements() -> list[dict]:
     """Each entity's agreement as rows under the kinds, each with the clause it came from: a base rate per classification
     (the rates schedule), the increase from January 2027, and the casual loading. Riverbend's rates sit about 3% under
@@ -293,7 +317,7 @@ def labour_registers(periods: list[dict]) -> dict[str, list[dict]]:
     start = {p["period"]: p["period_start"] for p in periods}
     to = {(e, cc): p for e, cc, _, p in LEDGER_COST_CENTRES if p}
     entity_of = {cc: e for e, cc, _, _ in LEDGER_COST_CENTRES}
-    agreement = entitlements()
+    agreement = entitlements() + statutory_specimen()
     on_cost = [{"entity_code": e, "component": k, "rate": v} for e, comps in ON_COSTS.items() for k, v in comps.items()]
     positions, people = [], []
     n = 0

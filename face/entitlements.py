@@ -24,9 +24,11 @@ PAGE = """<h1>Entitlements<small>what the labour model prices: a closed list of 
 {% for e in inst.rows %}<tr class="{{ 'off' if not e.priced }}"><td class="small">{{ e.kind_label }}</td><td class="small">{{ e.classification_name or 'every classification' }}</td><td class="small">{{ e.applies_to or '' }}</td>
 <td class="n">{{ e.shown }}</td><td class="small">{{ e.valid_from_period }}</td><td class="small"><b>{{ e.clause_ref }}</b> “{{ e.clause }}”</td></tr>{% endfor %}</tbody></table>{% endfor %}
 {% if layers %}<h2>In force, by layer<span class="count">the upper layer where it speaks, the floor where it does not</span></h2>
-<table><thead><tr><th>Entity</th><th>Kind</th><th>Classification</th><th>Applies to</th><th class="n">In force</th><th>From</th><th class="n">The floor</th></tr></thead><tbody>
-{% for r in layers %}<tr><td class="small">{{ r.entity_code }}</td><td class="small">{{ r.kind_label }}</td><td class="small">{{ r.classification_name or 'every classification' }}</td><td class="small">{{ r.applies_to or '' }}</td>
-<td class="n">{{ r.shown }}</td><td class="small">{{ r.layer_said }}{% if r.specimen %} <span class="state">specimen</span>{% endif %}</td><td class="n small muted">{{ r.floor_shown }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+<table><thead><tr><th>Entity</th><th>Kind</th><th>Classification</th><th>Applies to</th><th class="n">In force</th><th>Which layer speaks</th><th class="n">The floor</th><th class="n">The plan uses today</th></tr></thead><tbody>
+{% for r in layers %}<tr class="{{ 'off' if r.awaiting_source }}"><td class="small">{{ r.entity_code }}</td><td class="small">{{ r.kind_label }}</td><td class="small">{{ r.classification_name or 'every classification' }}</td><td class="small">{{ r.applies_to or '' }}</td>
+<td class="n">{% if r.awaiting_source %}<span class="state">awaiting source</span>{% else %}{{ r.shown }}{% endif %}</td><td class="small">{{ r.layer_said }}{% if r.layer == 'agreement' and r.floor_speaks %} — over the floor{% endif %}{% if r.specimen %} <span class="state">specimen</span>{% endif %}</td>
+<td class="n small muted">{% if r.floor_speaks %}{{ r.floor_shown or 'awaiting source' }}{% else %}—{% endif %}</td><td class="n small">{{ r.used_shown }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">The plan uses today: the on-cost register the labour model reads, as generated — not drafted from a source. It moves onto the floor's rows when the statutory set is drafted from its sources and accepted.</p>{% endif %}
 <p class="hint">Entitlements are kept by {{ holders|join(', ') or 'nobody yet' }}.</p>"""
 
 LAYER_SAID = {"statute": "the statutory floor", "award": "the award", "agreement": "the entity's agreement"}
@@ -67,6 +69,11 @@ def register(bp, page, who_fn, busy, roles) -> None:
     @bp.get("/labour/entitlements")
     def entitlements():
         try:
-            return page(PAGE, title="Entitlements", active="hc_entitlements", **view(), holders=reads.holders("register.agreement.maintain"))
+            label = {k["kind"]: k["kind_label"] for k in q("select kind, kind_label from dims.ref_entitlement_kind")}
+            layers = [{**r, "kind_label": label.get(r["kind"], r["kind"]), "layer_said": LAYER_SAID.get(r["layer"], r["layer"]),
+                       "shown": shown(r), "floor_shown": shown({**r, "value": r["floor_value"]}),
+                       "used_shown": shown({**r, "value": r["used_today"]}) if r["used_today"] is not None else ""}
+                      for r in q("select * from plan.entitlement_in_force order by entity_code, kind, classification, applies_to")]
+            return page(PAGE, title="Entitlements", active="hc_entitlements", **view(layers), holders=reads.holders("register.agreement.maintain"))
         except Busy as e:
             return busy("Entitlements", e)
