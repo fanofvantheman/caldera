@@ -26,7 +26,7 @@ checks that individual pay shows only to the holders of its verb (read only); `u
 and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote); `uv run python -m tests.version_horizon` checks
 that every grid takes its actual and plan periods from the version, and that an actual period, a year and a period past
 the horizon are refused (nothing saved). `uv run python -m tests.undo_before_save` types, undoes and redoes on Finance's grid and the opex
-schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
+schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.horizon_act` changes the latest view's horizon on the Versions page and checks every grid takes it (it removes what it wrote); `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
 and a layer entry through the confirmation page and checks the plan after the run is what the page said (it removes
 what it wrote).
 
@@ -151,7 +151,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   version in order, who, when, why, and whether it stands, was withdrawn, was overwritten or was refused
   (`plan.change_record`); the **versions** — each open or closed, read from a register of acts: the holder of the freeze verb closes one and reopens
   it with a reason, each with a receipt and in force at once; a closed version takes no entry or change and stays readable;
-  a version another is read against is not reopened. The **strategic plan** is its own process: a *five-year plan*
+  a version another is read against is not reopened. The holder of the naming verb changes an open version's horizon there too — an act with a reason, inside
+  what the models calculate, the saved figures it would leave past it counted on the receipt first. The **strategic plan** is its own process: a *five-year plan*
   (FY2027–FY2031) by category × channel — the latest view rolled up where it covers a whole year, grown by Finance's rates by
   category beyond — and the five capacities it declares by year with their tiers: production computed (line hours by plant,
   from the machine register and the routes; first break, or none), working capital as receivables at terms with no limit

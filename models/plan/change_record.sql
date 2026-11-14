@@ -84,8 +84,9 @@ SELECT 'submissions', s.submission_id::TEXT, s.version_id::TEXT, s.action::TEXT,
 FROM bronze.reg_submission s
 UNION ALL
 -- the version's own acts: closed, reopened
-SELECT 'versions', a.act_id, a.version_id, a.act, a.entered_on::TIMESTAMP, a.entered_by, a.reason, a.version_id || ' ' || a.act,
-       CASE WHEN ROW_NUMBER() OVER (PARTITION BY a.version_id ORDER BY a.entered_on DESC, a.act_id DESC) = 1 THEN 'stands' ELSE 'overwritten' END,
+SELECT 'versions', a.act_id, a.version_id, a.act, a.entered_on::TIMESTAMP, a.entered_by, a.reason,
+       a.version_id || ' ' || CASE WHEN a.act = 'horizon' THEN 'horizon to ' || a.horizon_periods || ' periods' ELSE a.act END,
+       CASE WHEN ROW_NUMBER() OVER (PARTITION BY a.version_id, a.act = 'horizon' ORDER BY a.entered_on DESC, a.act_id DESC) = 1 THEN 'stands' ELSE 'overwritten' END,
        NULL, NULL, NULL, NULL
 FROM plan.version_act a
 UNION ALL

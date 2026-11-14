@@ -213,13 +213,13 @@ def assumption_amendments(latest_closed: str) -> list[dict]:
 
 
 # closing and reopening a version: one row per act; a version's state is read from these (plan.version_state)
-VERSION_ACT_COLUMNS = ["act_id", "version_id", "act", "reason", "entered_by", "entered_on"]
+VERSION_ACT_COLUMNS = ["act_id", "version_id", "act", "reason", "entered_by", "entered_on", "horizon_periods"]
 
 
 def version_acts(plan_fy: int) -> list[dict]:
     """The acts the business took before the build: the business plan closed when the board agreed it."""
     return [{"act_id": "VA-00001", "version_id": f"BP-FY{plan_fy}", "act": "close", "reason": "agreed by the board — the year's reference",
-             "entered_by": "finance.manager@caldera", "entered_on": "2026-06-30T17:00:00"}]
+             "entered_by": "finance.manager@caldera", "entered_on": "2026-06-30T17:00:00", "horizon_periods": ""}]
 
 
 # the strategic plan: one plan over five years, reading the latest view inside its reach and growing by category beyond
