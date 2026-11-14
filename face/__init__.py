@@ -39,6 +39,7 @@ ENTER = [f"layer.{n}.enter" for n in (1, 2, 4, 6, 7, 8, 9)]
 HEALTH = "plan.run_health"      # one row per worklist; every worklist row carries `whose`
 RUNG = "plan.rung"
 FIN_READ = ["register.assumptions.maintain", "overlay.finance.enter", "read.proof"]
+VERSION_VERBS = ["version.name", "version.freeze", "version.declare_reference", "decision.accept", "decision.record", "read.proof"]
 COST_READ = ["register.cost_centre_map.maintain", "register.cost_input.maintain", "schedule.line.enter", "headcount.enter", "read.proof"]
 CONTEXT_ALL = ("version", "fy", "customer", "material")          # the context keys a page applies (DEC-20261113-07)
 
@@ -80,7 +81,10 @@ PROCESSES = [
             Section("scenarios", "Scenarios", RUNG, {"slug": "scenarios"}, verbs=["scenario.create", "scenario.promote", "decision.accept"]),
         ]),
         Area("management", "Management", [
-            Section("versions", "Versions", "plan.versions", verbs=["version.name", "version.freeze", "version.declare_reference", "decision.accept", "decision.record", "read.proof"]),
+            Section("versions", "Versions", "plan.versions", verbs=VERSION_VERBS + ["read.plan"], tabs=[
+                Tab("versions", "Versions", "plan.versions", verbs=VERSION_VERBS),
+                # the record of acts read as a page: every act on the version, who, when, why, whether it stands (DEC-20261114-01 c)
+                Tab("version_history", "Change history", "plan.change_history", verbs=VERSION_VERBS + ["read.plan"], uses=("version",))]),
             Section("review", "Management review", RUNG, {"slug": "review"}, verbs=["review.mbr.close", "decision.accept", "decision.record", "read.proof"]),
         ]),
     ]),

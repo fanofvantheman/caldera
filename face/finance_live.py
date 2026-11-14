@@ -261,3 +261,32 @@ def rows_for_save(wc: WorkingCopy, save_id: str, stamp: dt.datetime, who: str, r
             rows.append({**common, "edit_id": f"{eid}-C{j:04d}", "action": "cell", "scope_customer": a, "scope_material": m, "period": t.period,
                          "measure": t.measure, "value": repr(x), "source_at_entry": None if s is None else repr(s), "note": "", "typed": eid})
     return rows
+
+
+def without(version: str, named: str) -> list[dict]:
+    """What withdrawing a save, or one figure, would change — before anyone confirms it. Finance's plan is made again as
+    the run makes it — the demand plan valued, then every figure in force replayed in the order typed — leaving out the
+    figures `named` covers (a save's every figure, or the one), and laid against the plan as the last run left it. A
+    figure the withdrawn one had written over comes back where it reached; nothing needs a rule of its own. Returns the
+    cells that change, each with its figures before and after."""
+    acc, mat, declared, fy_of = _structures()
+    def source_of(a: str, m: str) -> str:
+        return declared.get((a, m)) or declared.get((a, "ALL")) or "fed"
+    upto = {r["version_id"]: r["from_period"] for r in q("select version_id, from_period from dims.ctl_version where version_id = ? and from_period is not null", version)}
+    now = {(r["version_id"], r["account_code"], r["material_code"], r["period"]): r for r in q("select * from plan.finance_plan where version_id = ?", version)}
+    g = Grid(acc, mat, source_of, fy_of, rules(), upto).from_source(
+        (k[0], k[1], k[2], k[3], r["source_cases"], r["source_net_sales"]) for k, r in now.items() if r["source"] == "fed")
+    figures = [f for f in q("""select edit_id, save_id, version_id, scope_customer, scope_material, period, measure, value from plan.finance_edit
+                               where version_id = ? and state = 'in_force' order by entered_on, edit_id""", version)
+               if named not in (f["edit_id"], f["save_id"])]
+    on_record: dict[str, list] = defaultdict(list)
+    for r in q("select typed, account_code, material_code, value from plan.finance_edit_cell where version_id = ? order by edit_id", version):
+        on_record[r["typed"]].append((r["account_code"], r["material_code"], float(r["value"])))
+    g.replay(figures, on_record)
+    out = []
+    for k in sorted(set(now) | set(g.cells)):
+        a, b = now.get(k) or {}, g.cells.get(k) or {}
+        if any(not _same(a.get(f), b.get(f)) for f in ("cases", "price", "net_sales")):
+            out.append({"account_code": k[1], "material_code": k[2], "period": k[3], "cases_now": a.get("cases"), "cases_after": b.get("cases"),
+                        "price_now": a.get("price"), "price_after": b.get("price"), "net_sales_now": a.get("net_sales"), "net_sales_after": b.get("net_sales")})
+    return out

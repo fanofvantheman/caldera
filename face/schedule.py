@@ -24,13 +24,13 @@ from chassis.warehouse import Busy, q
 from chassis.working import Copies, History
 from flask import current_app, redirect, request, url_for
 
-from calc.schedule import compute, lines_of, read_inputs, rules_from, total
+from calc.schedule import compute, in_force, lines_of, read_inputs, rules_from, total
 
 from . import costs
 from .words import said
 
 COLUMNS = ["edit_id", "save_id", "version_id", "entity_code", "cost_centre_code", "account_code", "action", "period", "value", "driver",
-           "calc_at_entry", "reason_code", "note", "entered_by", "entered_on"]
+           "calc_at_entry", "reason_code", "note", "entered_by", "entered_on", "withdraws"]
 LANDING = LogLanding("plan", "reg_schedule_edit", COLUMNS)
 LABOUR_MODEL = True                  # the labour lines are filled by the labour model (plan.labour_cost)
 RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_schedule_edit"],
@@ -94,7 +94,9 @@ def base(version: str, fresh: bool = False) -> dict:
             with open(path, newline="") as fh:
                 acts += _acts_from([r for r in csv.DictReader(fh) if r.get("version_id") == version])
         acts.sort(key=lambda a: (a["entered_on"], a["edit_id"]))
-        _CACHE[version] = {"stamp": stamp, "inp": inp, "rules": rules(), "acts": acts, "cells": compute(inp, acts, rules())}
+        on_file = acts
+        acts = in_force(acts)                     # a withdrawn act, or every act of a withdrawn save, is out of force
+        _CACHE[version] = {"stamp": stamp, "inp": inp, "rules": rules(), "acts": acts, "on_file": on_file, "cells": compute(inp, acts, rules())}
         return _CACHE[version]
 
 
@@ -155,7 +157,7 @@ def rows_for_save(wc: WorkingCopy, save_id: str, stamp: dt.datetime, who: str, r
              "cost_centre_code": a["cost_centre_code"], "account_code": a["account_code"], "action": a["action"], "period": a["period"] or "",
              "value": "" if a["value"] is None else repr(a["value"]), "driver": a["driver"] or "",
              "calc_at_entry": "" if a["calc_at_entry"] is None else repr(a["calc_at_entry"]), "reason_code": reason, "note": note,
-             "entered_by": who, "entered_on": on} for i, a in enumerate(wc.acts, start=1)]
+             "entered_by": who, "entered_on": on, "withdraws": ""} for i, a in enumerate(wc.acts, start=1)]
 
 
 # ---- the page ----

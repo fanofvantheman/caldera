@@ -13,7 +13,7 @@ from datetime import datetime
 import pandas as pd
 from sqlmesh import ExecutionContext, model
 
-from calc.schedule import COLUMNS, compute, read_inputs, rules_from
+from calc.schedule import COLUMNS, compute, in_force, read_inputs, rules_from
 
 TYPES = {"version_id": "TEXT", "entity_code": "TEXT", "cost_centre_code": "TEXT", "account_code": "TEXT", "period": "TEXT", "fiscal_year": "INT",
          "driver": "TEXT", "driver_qty": "DOUBLE", "rate_calc": "DOUBLE", "rate": "DOUBLE", "rate_typed": "BOOLEAN", "amount_calc": "DOUBLE",
@@ -39,7 +39,7 @@ def execute(context: ExecutionContext, start: datetime, end: datetime, execution
     fetch = lambda sql: _records(context.fetchdf(sql))
     rules = rules_from(fetch(f"select * from {T('plan.ref_grid_measure')}"))
     versions = [r["version_id"] for r in fetch(f"select version_id from {T('dims.ctl_version')} where status = 'open'")]
-    acts = fetch(f"select * from {T('plan.schedule_edit')} order by entered_on, edit_id")
+    acts = in_force(fetch(f"select * from {T('plan.schedule_edit')} order by entered_on, edit_id"))      # withdrawn acts out
     rows: list[dict] = []
     for v in versions:
         inp = read_inputs(fetch, T, v, labour=True)

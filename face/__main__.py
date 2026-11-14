@@ -32,6 +32,7 @@ from . import headcount
 from . import assumptions
 from . import versions as versions_page
 from . import strategic
+from . import withdrawals
 from .words import said
 
 plan = Blueprint("plan", __name__)
@@ -417,8 +418,7 @@ ENTRIES_PAGE = TOOLBAR + """
 <td>{{ e.entered_by }}</td><td>{{ e.entered_on }}</td><td title="{{ e.reason_description or '' }}">{{ e.reason_code }}{% if not e.reason_known %} <span class="state">unknown</span>{% endif %}</td>
 <td>{{ e.scope_material }}</td><td>{{ e.scope_customer }}</td><td>{{ e.period_from }}{% if e.period_to != e.period_from %} – {{ e.period_to }}{% endif %}</td>
 <td class="n">{{ e.value|n(2) }} {{ 'cases' if e.value_kind == 'cases' else 'on baseline' }}{% if e.effect_type != 'primary' %} · {{ e.effect_type }}{% endif %}</td><td>{{ e.spread_rule }}</td><td class="small">{{ e.note or '' }}</td>
-<td class="acts">{% if not e.withdrawn and e.version_status == 'open' and e.layer_no in may_withdraw %}<form class="inline" method="post" action="{{ url_for('plan.withdraw') }}">
-<input type="hidden" name="entry_id" value="{{ e.entry_id }}"><input type="hidden" name="version" value="{{ version }}"><input type="hidden" name="layer_no" value="{{ e.layer_no }}"><button class="act">withdraw</button></form>{% endif %}</td></tr>{% endfor %}
+<td class="acts">{% if not e.withdrawn and e.version_status == 'open' and e.layer_no in may_withdraw %}<a class="small" href="{{ url_for('plan.withdrawal', grid='demand', id=e.entry_id, version=version) }}">withdraw…</a>{% endif %}</td></tr>{% endfor %}
 </tbody></table>"""
 
 
@@ -837,7 +837,7 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 {% macro fin_typed(fin) %}<div id="fin-typed">{% if fin.edits %}<h2>Typed here<span class="count">{{ fin.customer_label }} × the rows above · the plan periods shown</span></h2>
 <table><thead><tr><th>Node</th><th>Period</th><th>Figure</th><th class="n">Typed</th><th class="n">At the node now</th><th class="n">Demand plan then</th><th class="n">Demand plan now</th><th>Standing</th><th>Reason</th><th>By</th></tr></thead><tbody>
 {% for e in fin.edits %}<tr class="{{ 'off' if e.state != 'in_force' }}"><td>{{ e.scope_material }}</td><td>{{ e.period }}</td><td>{{ e.measure }}</td><td class="n">{{ e.typed }}</td><td class="n">{{ e.now }}</td><td class="n">{{ e.then }}</td><td class="n">{{ e.src_now }}{% if e.source_moved %} <span class="moved">◆</span>{% endif %}</td>
-<td>{% if e.standing == 'unsaved' %}<span class="state unsaved">unsaved</span>{% elif e.standing == 'held' %}held{% elif e.standing == 'overwritten' %}<span class="state">changed</span> <span class="small muted">by a later figure</span>{% else %}<span class="state">{{ e.standing }}</span>{% endif %}</td><td class="small">{{ e.reason }}</td><td class="small">{{ e.entered_by }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>{% endmacro %}"""
+<td>{% if e.standing == 'unsaved' %}<span class="state unsaved">unsaved</span>{% elif e.standing == 'held' %}held{% elif e.standing == 'overwritten' %}<span class="state">changed</span> <span class="small muted">by a later figure</span>{% else %}<span class="state">{{ e.standing }}</span>{% endif %}{% if e.state == 'in_force' and e.edit_id and fin.may and fin.open %} <a class="small" tabindex="-1" href="{{ url_for('plan.withdrawal', grid='finance', id=e.edit_id, version=fin.post_keep.version) }}">withdraw…</a>{% endif %}</td><td class="small">{{ e.reason }}</td><td class="small">{{ e.entered_by }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>{% endmacro %}"""
 
 FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ version }} · {{ fin.tab_label }} · {% if fin.entry == 'Revenue' %}Finance's volume × price = revenue{% else %}the volume typed under Revenue × the standard cost per case = cost of goods; margin = revenue − cost of goods{% endif %}, the demand plan beneath every figure</small></h1>
 {{ fin_tiles(fin) }}
@@ -866,11 +866,11 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 {% if last and last.act and last.act.startswith('finance') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 {{ fin_typed(fin) }}
-<h2>Saves<span class="count">{{ version }} · each save is one reason; releasing it returns its figures to the demand plan</span></h2>
+<h2>Saves<span class="count">{{ version }} · each save is one reason; withdrawing it returns its figures to the demand plan — or withdraw one figure from the list above · <a href="{{ url_for('plan.change_history', version=version, record="Finance's plan") }}">change history</a></span></h2>
 <table><thead><tr><th>Save</th><th>When</th><th>By</th><th>Reason</th><th>Customers</th><th>Periods</th><th class="n">Figures</th><th class="n">Held</th><th class="n">◆ moved</th><th>Note</th><th></th></tr></thead><tbody>
 {% for s in fin.saves %}<tr class="{{ 'off' if s.released }}"><td><code>{{ s.save_id }}</code></td><td class="small">{{ s.entered_on[:16].replace('T', ' ') }}</td><td class="small">{{ s.entered_by }}</td><td class="small">{{ s.reason or s.reason_code }}</td><td>{{ s.customers }}</td><td class="small">{{ s.period_from }}{% if s.period_to != s.period_from %} – {{ s.period_to }}{% endif %}</td>
 <td class="n">{{ s.figures }}</td><td class="n">{{ s.held }}</td><td class="n">{{ s.moved or '' }}</td><td class="small">{{ s.note or '' }}</td>
-<td class="acts">{% if s.released %}<span class="state">released</span>{% elif fin.may and fin.open %}<form class="inline" method="post" action="{{ url_for('plan.finance_release') }}">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}<input type="hidden" name="save_id" value="{{ s.save_id }}"><button class="act" onclick="this.textContent='Releasing…'">release</button></form>{% endif %}</td></tr>
+<td class="acts">{% if s.released %}<span class="state">released</span>{% elif fin.may and fin.open %}<a class="small" href="{{ url_for('plan.withdrawal', grid='finance', id=s.save_id, version=version) }}">withdraw…</a>{% endif %}</td></tr>
 {% else %}<tr><td colspan="11" class="muted">Nothing typed on {{ version }}: Finance's plan is the demand plan valued{% if fin.any_built %}, and the built accounts are empty{% endif %}.</td></tr>{% endfor %}</tbody></table>
 <style>.finwrap{overflow-x:auto;margin-bottom:.6rem}table.fin td.n{vertical-align:top;white-space:nowrap}table.fin td.node{vertical-align:top;min-width:11rem}
 table.fin tr.first td{border-top:1px solid var(--rule)}table.fin .src{display:block;font-size:.72rem;color:var(--muted)}table.fin td.typed{box-shadow:inset 0 0 0 1px var(--ink)}
@@ -2483,6 +2483,7 @@ schedule.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCO
 headcount.register(plan, _page, _who, _ctx, _busy, session, roles)
 assumptions.register(plan, _page, _who, _ctx, _busy, session, roles)
 versions_page.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
+withdrawals.register(plan, _page, _who, _busy, session, roles, _run_plan, ENTRIES, FINANCE)
 strategic.register(plan, _page, _busy)
 
 

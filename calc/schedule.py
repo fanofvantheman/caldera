@@ -160,6 +160,16 @@ def driver_quantity(inp: Inputs, line: Line, driver: str, period: str) -> float 
     return inp.driver_plan.get((driver, period), 0.0)
 
 
+def in_force(acts: Iterable[dict]) -> list[dict]:
+    """The acts that stand, in order: a `withdraw` row names an earlier act (its edit_id) or a whole save (its save_id) and
+    takes it out of force; the withdrawal itself is not an act on the schedule. Nothing is removed from the record — the
+    schedule is calculated again from what remains, so a month an earlier act had typed comes back where a later one is
+    withdrawn."""
+    acts = list(acts)
+    out_ = {a["withdraws"] for a in acts if a.get("action") == "withdraw" and a.get("withdraws")}
+    return [a for a in acts if a.get("action") != "withdraw" and a.get("edit_id") not in out_ and a.get("save_id") not in out_]
+
+
 def compute(inp: Inputs, acts: Iterable[dict], rules: Rules | None = None) -> dict[tuple, dict]:
     """Every cell of the schedule: (entity, cost centre, account, period) → its figures. Acts in the order typed."""
     driver: dict[Line, str] = {l: "last_year" for l in inp.lines}

@@ -26,7 +26,9 @@ checks that individual pay shows only to the holders of its verb (read only); `u
 and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote); `uv run python -m tests.version_horizon` checks
 that every grid takes its actual and plan periods from the version, and that an actual period, a year and a period past
 the horizon are refused (nothing saved). `uv run python -m tests.undo_before_save` types, undoes and redoes on Finance's grid and the opex
-schedule and checks each step against the plan as saved (nothing saved).
+schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
+and a layer entry through the confirmation page and checks the plan after the run is what the page said (it removes
+what it wrote).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -142,7 +144,12 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   read both ways. The **mapping review** lists the codes waiting for a person, lowest confidence
   first: accept, or alter to another of ours with a reason (or map a code nobody proposed); a held event enters on the
   first run after. Held, refused and to-review rows reach trade marketing through My attention. The terms register (terms grouped by account with every attribute, and each co-op envelope as committed, drawn by the events in the calendar, and remaining; **price lists** with the accounts on each, the price before and in force per material and the dated increase events) — read by every planner, amended only by whoever holds the register's maintain verb (Finance): an amendment or a price change is a new row from a date, never an edit of the row in force,
-  the **versions** — each open or closed, read from a register of acts: the holder of the freeze verb closes one and reopens
+  **withdrawal** — one act on every grid: a save or one figure of it (a layer entry, a Finance figure or save, a schedule
+  act or save) is named by a later act with a reason, by its author or a holder of the verb, after a page showing every
+  figure that will change, calculated by the run's own arithmetic over the acts that remain; nothing is deleted, and a
+  figure the withdrawn one had written over stands again; the **change history** (a tab of Versions) — every act on a
+  version in order, who, when, why, and whether it stands, was withdrawn, was overwritten or was refused
+  (`plan.change_record`); the **versions** — each open or closed, read from a register of acts: the holder of the freeze verb closes one and reopens
   it with a reason, each with a receipt and in force at once; a closed version takes no entry or change and stays readable;
   a version another is read against is not reopened. The **strategic plan** is its own process: a *five-year plan*
   (FY2027–FY2031) by category × channel — the latest view rolled up where it covers a whole year, grown by Finance's rates by

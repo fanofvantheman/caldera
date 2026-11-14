@@ -190,7 +190,7 @@ def reference(periods: list[dict]) -> dict[str, list[dict]]:
 
 # ---- the schedule as Finance left it at onboarding, and what has been typed since --------------------------------------
 SCHEDULE_COLUMNS = ["edit_id", "save_id", "version_id", "entity_code", "cost_centre_code", "account_code", "action", "period", "value", "driver",
-                    "calc_at_entry", "reason_code", "note", "entered_by", "entered_on"]
+                    "calc_at_entry", "reason_code", "note", "entered_by", "entered_on", "withdraws"]
 
 
 def schedule_edits(version: str, actuals: list[dict], window: list[str]) -> list[dict]:
@@ -208,7 +208,7 @@ def schedule_edits(version: str, actuals: list[dict], window: list[str]) -> list
     def row(i, save, ent, cc, acct, action, on, period="", value="", driver="", calc="", reason="METHOD", note="", by=fin):
         rows.append({"edit_id": f"SE-{save[3:]}-{i:03d}", "save_id": save, "version_id": version, "entity_code": ent, "cost_centre_code": cc,
                      "account_code": acct, "action": action, "period": period, "value": value, "driver": driver, "calc_at_entry": calc,
-                     "reason_code": reason, "note": note, "entered_by": by, "entered_on": on})
+                     "reason_code": reason, "note": note, "entered_by": by, "entered_on": on, "withdraws": ""})
     for i, ((ent, cc, acct), d) in enumerate(sorted(lines.items()), start=1):
         row(i, "SS-20261102-0900", ent, cc, acct, "driver", "2026-11-02T09:00:00", driver=d, note="the driver its history follows")
     row(1, "SS-20261102-1015", "CF", "CC_MKT", "6900", "month", "2026-11-02T10:15:00", period="2027P06", value=750000.0, calc=552000.0,
