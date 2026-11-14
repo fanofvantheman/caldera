@@ -76,7 +76,7 @@ def main() -> None:
         print(f"opex schedule   plans {sp[0]}–{sp[-1]} ({len(sp)} = min({step}, {n})); its rates over {win[0]}–{win[-1]}")
 
         # 4 · an actual period is refused by the server — on Finance's grid, the schedule and the demand plan
-        cat = q("select descendant_code c from dims.dim_material_hierarchy where ancestor_code = 'ALL' and depth = 1 limit 1")[0]["c"]
+        cat = q("select descendant_code c from dims.dim_material_hierarchy where ancestor_code = 'ALL' and depth = 1 order by 1 limit 1")[0]["c"]
         def fin_post(node, period, value=1000):
             r = c.post("/finance/cell", data=json.dumps({"page": page, "node": node, "period": period, "measure": "volume", "value": str(value)}), headers=LIVE)
             assert r.status_code == 200, r.status_code
