@@ -25,7 +25,8 @@ app, saves, and checks the plan after the run equals what the grid showed (it re
 checks that individual pay shows only to the holders of its verb (read only); `uv run python -m tests.version_acts` closes
 and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote); `uv run python -m tests.version_horizon` checks
 that every grid takes its actual and plan periods from the version, and that an actual period, a year and a period past
-the horizon are refused (nothing saved).
+the horizon are refused (nothing saved). `uv run python -m tests.undo_before_save` types, undoes and redoes on Finance's grid and the opex
+schedule and checks each step against the plan as saved (nothing saved).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -157,7 +158,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   and the variance. Finance types volume on its tab and price on its tab, at any node (all, a unit or an account × any
   material node) in open periods, and the grid recalculates on Enter or Tab with no run — totals above, children beneath,
   revenue, the variance and the year — in a working copy that is Finance's alone until saved (hatched as unsaved, the
-  same on every tab, kept while they move about, dropped by Discard, lost on a restart); a volume at a node is written
+  same on every tab, kept while they move about, dropped by Discard, lost on a restart; *Undo* takes the last figure out and
+  puts the rest again as typed — one a later figure had written over comes back — and *Redo* puts it back, until a save); a volume at a node is written
   down to its children by the demand plan's shape at the moment it is typed, a price moves every price beneath by one
   proportion so the node's calculated price is what was typed, and the last figure typed wins at every level. Save asks
   one reason, writes one file — each figure as typed and where, and the cells it wrote — and carries it into the plan
@@ -195,7 +197,7 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   calculated from the last twelve closed periods shown beneath the one in use; each month driver × rate until someone
   types it, a typed month held with the calculated amount beneath it and a mark when that has moved since; typed into a
   working copy that recalculates at once (the same function as the run, `calc/schedule.py`), Save with one reason
-  releasing it by a run scoped to the schedule, Discard, *Recalculate* (calculated months only — it says how many typed
+  releasing it by a run scoped to the schedule, Discard, Undo and Redo (a step each: a month, a rate, a driver, a confirmed reset), *Recalculate* (calculated months only — it says how many typed
   months it left alone) and *Reset to base* (a confirmation naming the typed months it removes); months typed by the cost
   centre's budget holder, drivers and rates by Commercial finance; its labour lines filled by the **headcount** — *By
   role* in the factory cost centres (positions by classification priced through each entity's agreement, the increase

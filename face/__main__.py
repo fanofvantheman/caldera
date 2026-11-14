@@ -856,7 +856,7 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 {% if fin.may and fin.open and version %}<form method="post" action="{{ url_for('plan.finance_save') }}" class="form-row" id="fin-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
 <label class="small">reason <select name="reason_code">{% for r in fin.reasons %}<option value="{{ r.reason_code }}" {{ 'selected' if r.reason_code == fin.default_reason }}>{{ r.description }}</option>{% endfor %}</select></label>
 <label class="small grow">note <input name="note" placeholder="what Finance knows that the demand plan does not"></label>
-<button class="primary" onclick="this.textContent='Saving…'">Save</button><button class="act" formaction="{{ url_for('plan.finance_discard') }}">Discard</button><span class="hint">one reason for every figure not yet saved · Save writes them to {{ version }} and carries them into the plan</span></form>
+<button class="primary" onclick="this.textContent='Saving…'">Save</button><button class="act" formaction="{{ url_for('plan.finance_discard') }}">Discard</button>{% if fin.undo %}<button class="act" formaction="{{ url_for('plan.finance_undo') }}" title="takes out {{ fin.undo }} — the rest stays as typed">Undo</button>{% endif %}{% if fin.redo %}<button class="act" formaction="{{ url_for('plan.finance_redo') }}" title="puts back {{ fin.redo }}">Redo</button>{% endif %}<span class="hint">one reason for every figure not yet saved · Save writes them to {{ version }} and carries them into the plan{% if fin.undo or fin.redo %} · Undo takes out the last figure typed and Redo puts it back, until you save{% endif %}</span></form>
 {% if fin.can_add %}<form method="post" action="{{ url_for('plan.finance_start') }}" class="form-row">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}<b class="small">Start a material at {{ fin.customer_label }}</b>
 <label class="small">material <select name="add_material"><option value="">—</option>{% for a in fin.add_materials %}<option value="{{ a.code }}">{{ a.code }} · {{ a.label }}</option>{% endfor %}</select></label>
 <label class="small">period <select name="add_period">{% for p in fin.open_in_fy %}<option>{{ p }}</option>{% endfor %}</select></label>
@@ -1128,6 +1128,8 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
             "any_built": any(r["built"] for r in rows) or any(s == "built" for s in decl.values()),
             "editable": editable, "may": may, "open": is_open, "status": v.get("status", "unknown"), "holders": _once(reads.holders)("overlay.finance.enter"),
             "post_keep": {**page, "version": version or "", "fy": fy}, "live_context": {"page": {**page, "version": version or "", "fy": fy}},
+            "undo": _step_says(wc.history.done[-1]) if wc and wc.history.can_undo() else None,
+            "redo": _step_says(wc.history.undone[-1]) if wc and wc.history.can_redo() else None,
             "unsaved_n": len(wc.typed) if wc else 0, "unsaved_here": sum(1 for t in (wc.typed if wc else []) if grid is not None and grid.accounts_under.get(t.customer, set()) <= grid.accounts_under.get(fc, set())), "say": say,
             "can_add": editable and _once(reads.is_account)(fc), "add_materials": _once(reads.account_materials)(fc) if editable and _once(reads.is_account)(fc) else [],
             "open_in_fy": [p["period"] for p in periods if p["period"] in opens],      # every plan period, past the year end too
@@ -1135,6 +1137,11 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
             "edits": unsaved_rows + [{**e, "typed": _show(e["measure"], e["value"]), "now": _show(e["measure"], e["now_at_node"]), "then": _show(e["measure"], e["source_at_entry"]),
                                       "src_now": _show(e["measure"], e["source_now"])} for e in edits[:80]],
             "saves": _once(reads.finance_saves)(version) if version else []}
+
+
+def _step_says(step: list) -> str:
+    """One step of the working copy in words: the figure (or figures) typed, where, and when."""
+    return "; ".join(f"{_show(t.measure, t.value)} {finance_live.rules()[t.measure]['label'].lower()} at {t.customer} × {t.material} in {t.period}" for t in step)
 
 
 def _fin_parts(version: str, fy: int, page: dict, who: str, say: str | None = None) -> dict[str, str]:
@@ -1213,7 +1220,7 @@ def finance_cell():
                 if finance_live.type_figure(wc, fc, node, period, measure, value) is not None:
                     applied += 1
                     continue
-                if not wc.typed:
+                if not wc.typed and not wc.history.can_undo() and not wc.history.can_redo():
                     finance_live.discard(who, version)
                 at_node = finance_live.node_value(wc.grid, version, fc, node, period, measure) if wc else None
                 why = None if at_node is not None else f"nothing at {node} for {fc} in {period} to spread to — start a material at an account first"
@@ -1247,7 +1254,7 @@ def finance_start():
         with finance_live.COPIES.lock(who):
             wc = finance_live.working_copy(who, version, FINANCE, create=True)
             finance_live.type_figure(wc, fc, mat, period, "volume", av)
-            finance_live.type_figure(wc, fc, mat, period, "price", ap)
+            finance_live.type_figure(wc, fc, mat, period, "price", ap, join=True)
         session.say(f"{mat} started at {fc} in {period} — not yet saved", True)
     else:
         session.say(why, False)
@@ -1263,6 +1270,29 @@ def finance_discard():
         n = len(wc.typed) if wc else 0
         finance_live.discard(who, version)
     session.say(f"{n} unsaved figure{'s' if n != 1 else ''} discarded — the grid is the plan as last saved" if n else "nothing unsaved to discard", True)
+    return redirect(_back(page))
+
+
+@plan.post("/finance/undo")
+def finance_undo():
+    """Undo before a save: the last step taken out of the working copy, every earlier one still standing as typed.
+    Nothing is recorded — nothing was released."""
+    who = _who(); page = _page_args(request.form); version = page.get("version") or reads.default_version()
+    with finance_live.COPIES.lock(who):
+        wc = finance_live.working_copy(who, version, FINANCE)
+        step = finance_live.undo(wc) if wc else None
+    session.say(f"undone: {_step_says(step)} — not saved; Redo puts it back" if step else "nothing typed to undo", bool(step))
+    return redirect(_back(page))
+
+
+@plan.post("/finance/redo")
+def finance_redo():
+    """Redo: the last step undone put back as it was typed."""
+    who = _who(); page = _page_args(request.form); version = page.get("version") or reads.default_version()
+    with finance_live.COPIES.lock(who):
+        wc = finance_live.working_copy(who, version, FINANCE)
+        step = finance_live.redo(wc) if wc else None
+    session.say(f"redone: {_step_says(step)} — not saved" if step else "nothing undone to redo", bool(step))
     return redirect(_back(page))
 
 

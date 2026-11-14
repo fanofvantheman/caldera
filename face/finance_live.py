@@ -5,6 +5,11 @@ in this process until it is saved (a file in the landing, then the scoped run) o
 The base every copy starts from is Finance's plan as the last run left it, with any saved figures the run has not yet
 taken in replayed over it — read once per run and shared; a copy holds only the cells its owner has changed. A copy
 made before a run is rebased onto the new plan by replaying its figures' cells, so the mix stays as it was typed.
+
+Undo and redo before a save: the copy keeps every step its owner took, in order (`chassis.working.History`). Undo drops
+the last step and puts the rest again on the plan as saved — the cells each figure wrote when it was typed, in order, so
+an earlier figure a later one had written over comes back; redo puts the step back. Nothing is recorded: nothing was
+released.
 """
 from __future__ import annotations
 
@@ -16,7 +21,7 @@ from dataclasses import dataclass, field
 
 from chassis import CONFIG
 from chassis.warehouse import q
-from chassis.working import Copies
+from chassis.working import Copies, History
 
 from calc.finance import NEGLIGIBLE, Grid, aggregate, rules_from
 
@@ -110,6 +115,7 @@ class WorkingCopy:
     touched: dict[str, set] = field(default_factory=lambda: defaultdict(set))
     n: int = 0
     base: Grid | None = None                     # the shared plan this copy was made from: what "unsaved" is read against
+    history: History = field(default_factory=History)      # every step taken, in order, and those undone
 
     def unsaved(self) -> bool:
         return bool(self.typed)
@@ -125,16 +131,47 @@ def working_copy(who: str, version: str, landing, create: bool = False) -> Worki
     if wc is None:
         return COPIES.open(who, key, lambda: WorkingCopy(version, stamp, g.copy(), base=g))
     if wc.stamp != stamp:                        # a run since: the same figures, their cells put again on the new plan
-        wc.grid, wc.stamp, wc.touched, wc.base = g.copy(), stamp, defaultdict(set), g
-        for t in wc.typed:
-            for a, m, x, _ in t.cells:
-                key_ = (version, a, m, t.period)
-                if key_ not in wc.grid.cells:
-                    src = wc.grid.source_of(a, m)
-                    wc.grid.start(key_, src, 0.0 if src == "fed" else None, 0.0 if src == "fed" else None)
-                wc.grid.put(key_, t.measure, x, t.edit_id)
-                _touch(wc, g, key_, t.measure)
+        wc.stamp, wc.base = stamp, g
+        _rebuild(wc)
     return wc
+
+
+def _put_again(wc: WorkingCopy, t: Typed) -> None:
+    """A figure's cells as they were written when it was typed, put again on the copy — not spread again, so the mix is
+    the one typed."""
+    written = []
+    for a, m, x, _ in t.cells:
+        key = (wc.version, a, m, t.period)
+        if key not in wc.grid.cells:
+            src = wc.grid.source_of(a, m)
+            wc.grid.start(key, src, 0.0 if src == "fed" else None, 0.0 if src == "fed" else None)
+        wc.grid.put(key, t.measure, x, t.edit_id)
+        written.append((key, x))
+    _settle(wc, t, written)
+
+
+def _rebuild(wc: WorkingCopy) -> None:
+    """The copy made again from the plan as saved and every step still done, in order."""
+    g = wc.base
+    wc.grid, wc.touched, wc.typed = g.copy(), defaultdict(set), []
+    for t in wc.history.flat():
+        _put_again(wc, t)
+
+
+def undo(wc: WorkingCopy) -> list[Typed] | None:
+    """The last step taken out of the copy: the plan as saved, with every earlier step put on it again."""
+    step = wc.history.undo()
+    if step is not None:
+        _rebuild(wc)
+    return step
+
+
+def redo(wc: WorkingCopy) -> list[Typed] | None:
+    """The last step undone, put back as it was typed."""
+    step = wc.history.redo()
+    for t in step or []:
+        _put_again(wc, t)
+    return step
 
 
 def discard(who: str, version: str) -> bool:
@@ -161,9 +198,10 @@ def node_value(grid: Grid, version: str, customer: str, material: str, period: s
     return aggregate(cells, measure, grid.rules, source)
 
 
-def type_figure(wc: WorkingCopy, customer: str, material: str, period: str, measure: str, value: float) -> Typed | None:
+def type_figure(wc: WorkingCopy, customer: str, material: str, period: str, measure: str, value: float, join: bool = False) -> Typed | None:
     """One figure into the working copy: spread beneath its node by the rules, kept as that spread. Nothing changes —
-    and nothing is recorded — when the node already reads the figure or has nothing beneath it in that period."""
+    and nothing is recorded — when the node already reads the figure or has nothing beneath it in that period. It is one
+    step for undo, or part of the step just taken (`join`: a material started is its volume and its price)."""
     g, v = wc.grid, wc.version
     now = node_value(g, v, customer, material, period, measure)
     if now is not None and abs(now - value) < NEGLIGIBLE[g.rules[measure]["shown_as"]]:
@@ -176,6 +214,14 @@ def type_figure(wc: WorkingCopy, customer: str, material: str, period: str, meas
     sf = g.rules[measure]["source_field"]
     written = g.type(v, customer, material, period, measure, value, t.edit_id)
     t.cells = [(k[1], k[2], x, g.cells[k][sf] if g.cells[k]["source"] == "fed" else None) for k, x in written]
+    wc.history.take([t], join=join)
+    _settle(wc, t, written)
+    return t
+
+
+def _settle(wc: WorkingCopy, t: Typed, written: list[tuple]) -> None:
+    """What a figure's cells, once written, do to the copy's marks and its list of figures to save."""
+    g, period, measure = wc.grid, t.period, t.measure
     base_grid = wc.base or g
     for k, _ in written:
         _touch(wc, base_grid, k, measure)
@@ -194,8 +240,6 @@ def type_figure(wc: WorkingCopy, customer: str, material: str, period: str, meas
     if all(base_grid.cells.get(k) is not None and _same(base_grid.cells[k].get(g.rules[measure]["field"]), g.cells[k].get(g.rules[measure]["field"]))
            for k, _ in written):
         wc.typed = [e for e in wc.typed if e is not t]
-        return t
-    return t
 
 
 def _same(a, b) -> bool:

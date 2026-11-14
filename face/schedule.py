@@ -2,7 +2,8 @@
 a rate, each month calculated as driver × rate until someone types it.
 
 A person's unsaved acts — a month, a rate, a driver, a reset — sit in a working copy in this process (chassis.working),
-never seen by anyone else, dropped by Discard, lost on a restart. Every view is the schedule computed by the run's own
+never seen by anyone else, dropped by Discard, lost on a restart. The copy keeps them as steps (chassis.working.History):
+Undo takes the last step out — a confirmed reset of several months is one step — and Redo puts it back, until a save. Every view is the schedule computed by the run's own
 function (`calc.schedule.compute`) over the inputs the run reads (`read_inputs`), the acts on file, the acts saved and
 waiting for the run, and the person's own: so the page before a save and `plan.opex_schedule` after it agree. Save writes
 one file and releases it by a run scoped to the schedule.
@@ -20,7 +21,7 @@ from dataclasses import dataclass, field
 from chassis import CONFIG, receipts, working
 from chassis.landing import LogLanding
 from chassis.warehouse import Busy, q
-from chassis.working import Copies
+from chassis.working import Copies, History
 from flask import current_app, redirect, request, url_for
 
 from calc.schedule import compute, lines_of, read_inputs, rules_from, total
@@ -100,8 +101,13 @@ def base(version: str, fresh: bool = False) -> dict:
 @dataclass
 class WorkingCopy:
     version: str
-    acts: list[dict] = field(default_factory=list)
+    history: History = field(default_factory=History)     # the person's steps in order, and those undone
     n: int = 0
+
+    @property
+    def acts(self) -> list[dict]:
+        """Every act still done, in the order typed — what the view computes from and a save writes."""
+        return self.history.flat()
 
 
 def working_copy(who: str, version: str, create: bool = False) -> WorkingCopy | None:
@@ -121,11 +127,26 @@ def cells_for(who: str, version: str) -> tuple[dict, dict, WorkingCopy | None]:
 
 
 def act(wc: WorkingCopy, who: str, line: tuple, action: str, period: str | None = None, value: float | None = None,
-        driver: str | None = None, calc: float | None = None) -> None:
+        driver: str | None = None, calc: float | None = None, join: bool = False) -> None:
+    """One act into the copy: a step of its own for undo, or part of the step just taken (`join`)."""
     wc.n += 1
-    wc.acts.append({"edit_id": f"W-{wc.n:04d}", "entity_code": line[0], "cost_centre_code": line[1], "account_code": line[2], "action": action,
+    wc.history.take([{"edit_id": f"W-{wc.n:04d}", "entity_code": line[0], "cost_centre_code": line[1], "account_code": line[2], "action": action,
                     "period": period, "value": value, "driver": driver, "calc_at_entry": calc, "entered_by": who,
-                    "entered_on": dt.datetime.now().isoformat(timespec="microseconds")})
+                    "entered_on": dt.datetime.now().isoformat(timespec="microseconds")}], join=join)
+
+
+def step_says(step: list[dict]) -> str:
+    """A step in words: what was typed, on which line."""
+    a = step[0]
+    line = f"{a['account_code']} at {a['cost_centre_code']} ({a['entity_code']})"
+    if a["action"] == "month":
+        return f"{a['value']:,.0f} in {a['period']} on {line}"
+    if a["action"] == "rate":
+        rate = "cleared" if a["value"] is None else f"{a['value']:,.4f}"
+        return f"the rate {rate} on {line}"
+    if a["action"] == "driver":
+        return f"the driver {a['driver']} on {line}"
+    return f"a reset of {len(step)} typed month{'s' if len(step) != 1 else ''} on {line}"
 
 
 def rows_for_save(wc: WorkingCopy, save_id: str, stamp: dt.datetime, who: str, reason: str, note: str) -> list[dict]:
@@ -178,7 +199,7 @@ PAGE = MACROS + """<h1>Opex schedule<small>FY{{ fy }} · {{ version }} · {{ s.w
 <label class="small">reason <select name="reason_code">{% for r in s.reasons %}<option value="{{ r.reason_code }}">{{ r.description }}</option>{% endfor %}</select></label>
 <label class="small grow">note <input name="note" placeholder="what the driver does not know"></label>
 <button class="primary" onclick="this.textContent='Saving…'">Save</button><button class="act" formaction="{{ url_for('plan.schedule_discard') }}">Discard</button>
-<button class="act" formaction="{{ url_for('plan.schedule_recalculate') }}">Recalculate</button>
+<button class="act" formaction="{{ url_for('plan.schedule_recalculate') }}">Recalculate</button>{% if s.undo %}<button class="act" formaction="{{ url_for('plan.schedule_undo') }}" title="takes out {{ s.undo }}">Undo</button>{% endif %}{% if s.redo %}<button class="act" formaction="{{ url_for('plan.schedule_redo') }}" title="puts back {{ s.redo }}">Redo</button>{% endif %}
 <span class="hint">one reason for everything not yet saved · Save writes it to {{ version }} and carries it into the plan · Recalculate sets every calculated month to driver × rate again and leaves typed months alone</span></form>
 {% elif s.open %}<p class="hint">Months are typed by the cost centre's budget holder ({{ s.month_holders|join(', ') }}); drivers and rates by {{ s.method_holders|join(', ') }}.</p>{% endif %}
 </div>
@@ -309,7 +330,9 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
             "open": open_, "status": v.get("status"), "closed": closed, "planned": planned, "cols": cols, "fy": fy, "from": vp["from"],
             "step_n": step.get("horizon_periods"), "horizon": vp["horizon"], "past_fy": len(planned) - len(in_fy),
             "window": inp.window, "groups": list(groups.values()), "tot": tot, "tot_fy": sum(g["fy"] for g in groups.values()),
-            "may_method": may_method, "editable": editable, "unsaved": unsaved, "say": say, "keep": keep, "live_context": {"page": keep},
+            "may_method": may_method, "editable": editable, "unsaved": unsaved, "say": say,
+            "undo": step_says(wc.history.done[-1]) if wc and wc.history.can_undo() else None,
+            "redo": step_says(wc.history.undone[-1]) if wc and wc.history.can_redo() else None, "keep": keep, "live_context": {"page": keep},
             "drivers": drivers, "driver_label": {d["driver"]: d["driver_label"] for d in drivers},
             "measures": [r for r in rules.values()], "reasons": q("select * from plan.ref_schedule_reason"),
             "withheld": withheld, "pay_holders": R.holders(costs.PAY_VERB), "pay_verb": costs.PAY_VERB,
@@ -467,6 +490,24 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         session.say(f"{n} unsaved change{'s' if n != 1 else ''} discarded" if n else "nothing unsaved to discard", True)
         return redirect(_back(pg))
 
+    @bp.post("/schedule/undo")
+    def schedule_undo():
+        """Undo before a save: the last step out of the person's working copy. Nothing is recorded."""
+        who = who_fn(); pg = _page_args(request.form)
+        with COPIES.lock(who):
+            wc = working_copy(who, pg["version"]); step = wc.history.undo() if wc else None
+        session.say(f"undone: {step_says(step)} — not saved; Redo puts it back" if step else "nothing typed to undo", bool(step))
+        return redirect(_back(pg))
+
+    @bp.post("/schedule/redo")
+    def schedule_redo():
+        """Redo: the last step undone put back."""
+        who = who_fn(); pg = _page_args(request.form)
+        with COPIES.lock(who):
+            wc = working_copy(who, pg["version"]); step = wc.history.redo() if wc else None
+        session.say(f"redone: {step_says(step)} — not saved" if step else "nothing undone to redo", bool(step))
+        return redirect(_back(pg))
+
     @bp.post("/schedule/recalculate")
     def schedule_recalculate():
         """Every calculated month set to driver × rate again, from the drivers as the last run left them; typed months are
@@ -507,8 +548,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             return redirect(_back(pg))
         with COPIES.lock(who):
             wc = working_copy(who, pg["version"], create=True)
-            for p in periods:
-                act(wc, who, line, "reset", p)
+            for i, p in enumerate(periods):
+                act(wc, who, line, "reset", p, join=i > 0)        # one confirmation, one step to undo
         session.say(f"{len(periods)} typed month{'s' if len(periods) != 1 else ''} returned to driver × rate — not yet saved", True)
         return redirect(_back(pg))
 
