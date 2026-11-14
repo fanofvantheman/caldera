@@ -50,7 +50,7 @@ REFERENCE = {
     "dim_gl_account": (),
     "ref_cost_driver": ("ord",),
     # labour: each entity's agreement, the on-costs, the positions (by role) and the people (by name)
-    "reg_agreement": ("hourly_rate",),
+    "ref_entitlement_kind": ("ord",),
     "ref_on_cost": ("rate",),
     "reg_position": ("fte", "hours_per_week"),
     "reg_person": ("annual_salary", "incentive_pct"),
@@ -95,6 +95,7 @@ PLAN = {
     "reg_strategic_plan": ("first_year", "last_year"),
     "reg_strategic_growth": ("fiscal_year", "growth_pct"),
     "reg_role": (),
+    "reg_entitlement": ("value",),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})

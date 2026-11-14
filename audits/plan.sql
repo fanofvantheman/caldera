@@ -163,3 +163,8 @@ SELECT version_id, cost_centre_code, period FROM @this_model GROUP BY ALL HAVING
 AUDIT (name one_value_per_period);
 /* blocking: an assumption has one value in a period on a version — two would value the same plan two ways */
 SELECT version_id, assumption_code, period FROM @this_model GROUP BY ALL HAVING COUNT(*) > 1;
+
+AUDIT (name entitlement_kind_known);
+/* blocking: an entitlement is a row under a kind the labour model has — a clause that fits none is an item to resolve,
+   never a row of a made-up kind */
+SELECT entitlement_id, kind FROM @this_model WHERE NOT kind_known;

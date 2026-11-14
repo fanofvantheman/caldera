@@ -34,6 +34,7 @@ from . import versions as versions_page
 from . import strategic
 from . import withdrawals
 from . import rights
+from . import entitlements
 from .words import said
 
 plan = Blueprint("plan", __name__)
@@ -2487,6 +2488,7 @@ assumptions.register(plan, _page, _who, _ctx, _busy, session, roles)
 versions_page.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
 withdrawals.register(plan, _page, _who, _busy, session, roles, _run_plan, ENTRIES, FINANCE)
 rights.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
+entitlements.register(plan, _page, _who, _busy, roles)
 strategic.register(plan, _page, _busy)
 
 

@@ -105,6 +105,8 @@ def main() -> None:
     periods = cal.periods(weeks)
     tables.update(costs.reference(periods))           # the entities, their ledgers' cost centres, the mapping, the chart
     tables.update(costs.labour_registers(periods))    # the agreements, positions by role, people by name, on-costs
+    tables["ref_entitlement_kind"] = costs.entitlement_kinds()
+    plan["reg_entitlement"] = tables.pop("reg_entitlement")      # the agreements' entitlements, each with its clause: a register People keeps
     history["cost_actual"] = costs.cost_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, args.seed)   # a stream of its own
     plan["reg_schedule_edit"] = costs.schedule_edits(f"LV-{LATEST_CLOSED}", history["cost_actual"],
                                                      [p["period"] for p in periods if p["period"] <= LATEST_CLOSED][-12:])   # the opex schedule's acts; draws nothing

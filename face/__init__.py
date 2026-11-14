@@ -114,7 +114,9 @@ PROCESSES = [
         Area("labour", "Labour", [
             Section("headcount", "Headcount", "plan.headcount_role", uses=("version", "fy"), tabs=[
                 Tab("hc_role", "By role", "plan.headcount_role", verbs=COST_READ),
-                Tab("hc_name", "By name", "plan.headcount_name", verbs=["read.pay"])]),
+                Tab("hc_name", "By name", "plan.headcount_name", verbs=["read.pay"]),
+                # what the labour model prices: the kinds, and each agreement's entitlements with their clauses (DEC-20261114-03)
+                Tab("hc_entitlements", "Entitlements", "plan.entitlements", verbs=COST_READ + ["register.agreement.maintain"])]),
         ]),
         Area("opex", "Opex", [
             Section("schedule", "Opex schedule", "plan.schedule", uses=("version", "fy"), tabs=[

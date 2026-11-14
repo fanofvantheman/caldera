@@ -26,7 +26,7 @@ checks that individual pay shows only to the holders of its verb (read only); `u
 and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote); `uv run python -m tests.version_horizon` checks
 that every grid takes its actual and plan periods from the version, and that an actual period, a year and a period past
 the horizon are refused (nothing saved). `uv run python -m tests.undo_before_save` types, undoes and redoes on Finance's grid and the opex
-schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.horizon_act` changes the latest view's horizon on the Versions page and checks every grid takes it (it removes what it wrote); `uv run python -m tests.role_compose` reads the rights, composes a role of the client's own and checks the kind of plan on an assignment (it removes what it wrote); `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
+schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.horizon_act` changes the latest view's horizon on the Versions page and checks every grid takes it (it removes what it wrote); `uv run python -m tests.entitlement_kinds` checks the kinds of entitlement, that the labour model's rates are made from the agreements' entitlements, and the page (read only); `uv run python -m tests.role_compose` reads the rights, composes a role of the client's own and checks the kind of plan on an assignment (it removes what it wrote); `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
 and a layer entry through the confirmation page and checks the plan after the run is what the page said (it removes
 what it wrote).
 
@@ -210,7 +210,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   centre's budget holder, drivers and rates by Commercial finance; its labour lines filled by the **headcount** — *By
   role* in the factory cost centres (positions by classification priced through each entity's agreement, the increase
   from January 2027, a campaign casual pool at a loading; a name beside a position carries nothing) and *By name* in the
-  overhead ones (each person's salary, incentive and dates; a named vacancy at a typed figure) — which is individual pay,
+  overhead ones (each person's salary, incentive and dates; a named vacancy at a typed figure) — and *Entitlements*: the closed list of kinds the labour model can price (base rate, loading,
+  allowance, leave accrual, on-cost, dated increase, one-off payment; which it prices today) and each agreement's
+  entitlements beneath them with the clause each came from — the rates the labour model reads are made from these;
+  the by-name tab is individual pay,
   read only by the holders of `read.pay` (Commercial finance, People and culture): without it the tab is not offered and
   the name-based labour is left out of the schedule's and the cost centre pages' figures and totals, with a line saying
   so; under Admin the **roles** — every right the plan has as a closed register, by group (layers, registers, versions,

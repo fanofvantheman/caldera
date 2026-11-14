@@ -230,6 +230,46 @@ CLASSIFICATIONS = [
     ("TT", "Trades technician", 47.50), ("ST", "Storeperson", 34.00), ("LT", "Laboratory technician", 42.50), ("LOG", "Logistics coordinator", 44.00),
 ]
 AGREEMENT_STEP, STEP_PERIOD, CASUAL_LOADING, HOURS = 0.035, "2027P07", 0.25, 38.0
+
+# The kinds of entitlement the labour model has a calculation for — closed: an entitlement is a row under one of these,
+# and a clause that fits none is an item to resolve, never forced into one (DEC-20261114-03). `priced`: the labour model
+# reads it today.
+ENTITLEMENT_KINDS = [
+    ("base_rate", "Base rate", "a rate per hour by classification", "paid hours × the rate", True),
+    ("loading", "Loading", "a share on the base rate, for hours of a pattern (casual, afternoon shift, night, weekend)", "the hours of the pattern × the base rate × the share", True),
+    ("allowance", "Allowance", "an amount per shift, week or occurrence", "the count × the amount", False),
+    ("leave_accrual", "Leave accrual and loading", "hours of leave accrued per hour or year worked, and the loading paid on leave", "the accrual × the rate in force, and the loading on leave taken", False),
+    ("on_cost", "On-cost", "a share paid on top of wages (superannuation, payroll tax, workers' compensation)", "wages × the share", True),
+    ("dated_increase", "Dated increase", "a share by which every base rate rises from a period", "each base rate × (1 + the share), to the cent, from the period", True),
+    ("one_off", "One-off payment", "an amount paid once, at a date", "the amount in the period it falls", False),
+]
+ENTITLEMENT_COLUMNS = ["entitlement_id", "layer", "instrument", "instrument_name", "entity_code", "jurisdiction", "kind", "classification",
+                       "classification_name", "applies_to", "value", "valid_from_period", "clause_ref", "clause", "specimen", "entered_by", "entered_on"]
+
+
+def entitlement_kinds() -> list[dict]:
+    return [{"kind": k, "kind_label": l, "what": w, "calculates": c, "priced": "Y" if p else "N", "ord": i}
+            for i, (k, l, w, c, p) in enumerate(ENTITLEMENT_KINDS, start=1)]
+
+
+def entitlements() -> list[dict]:
+    """Each entity's agreement as rows under the kinds, each with the clause it came from: a base rate per classification
+    (the rates schedule), the increase from January 2027, and the casual loading. Riverbend's rates sit about 3% under
+    Caldera's; the increase is on the schedule's rates, to the cent."""
+    rows, by = [], "people@caldera"
+    for e, (a, n, f) in AGREEMENTS.items():
+        def row(kind, value, clause_ref, clause, classification="", cname="", applies="", vp="2025P01"):
+            rows.append({"entitlement_id": f"EN-{a}-{len(rows) + 1:03d}", "layer": "agreement", "instrument": a, "instrument_name": n, "entity_code": e,
+                         "jurisdiction": "", "kind": kind, "classification": classification, "classification_name": cname, "applies_to": applies,
+                         "value": value, "valid_from_period": vp, "clause_ref": clause_ref, "clause": clause, "specimen": "N",
+                         "entered_by": by, "entered_on": "2026-07-01T09:00:00"})
+        for i, (c, cn, r) in enumerate(CLASSIFICATIONS, start=1):
+            row("base_rate", round(r * f, 2), f"Schedule A, item {i}", f"{cn}: ${round(r * f, 2):.2f} per ordinary hour.", c, cn)
+        row("dated_increase", AGREEMENT_STEP, "cl. 12.2", "Rates in Schedule A increase by 3.5% from the first full pay period commencing on or after 1 January 2027.",
+            vp=STEP_PERIOD)
+        row("loading", CASUAL_LOADING, "cl. 10.3", "A casual employee is paid the ordinary hourly rate for their classification plus a casual loading of 25%.",
+            applies="casual")
+    return rows
 ON_COSTS = {"CF": {"super": 0.12, "payroll_tax": 0.0485, "workers_comp": 0.025}, "RBF": {"super": 0.12, "payroll_tax": 0.0495, "workers_comp": 0.025}}
 # the mix of classifications by the kind of factory centre, from the ledger centre's headcount
 MIX = {"hall": [("PO1", 0.55), ("PO2", 0.27), ("PO3", 0.10), ("TT", 0.08)], "maint": [("TT", 0.8), ("PO2", 0.2)],
@@ -253,9 +293,7 @@ def labour_registers(periods: list[dict]) -> dict[str, list[dict]]:
     start = {p["period"]: p["period_start"] for p in periods}
     to = {(e, cc): p for e, cc, _, p in LEDGER_COST_CENTRES if p}
     entity_of = {cc: e for e, cc, _, _ in LEDGER_COST_CENTRES}
-    agreement = [{"agreement": a, "agreement_name": n, "entity_code": e, "classification": c, "classification_name": cn,
-                  "hourly_rate": round(r * f * (1 + AGREEMENT_STEP) ** k, 2), "valid_from_period": vp}
-                 for e, (a, n, f) in AGREEMENTS.items() for c, cn, r in CLASSIFICATIONS for k, vp in ((0, "2025P01"), (1, STEP_PERIOD))]
+    agreement = entitlements()
     on_cost = [{"entity_code": e, "component": k, "rate": v} for e, comps in ON_COSTS.items() for k, v in comps.items()]
     positions, people = [], []
     n = 0
@@ -295,4 +333,4 @@ def labour_registers(periods: list[dict]) -> dict[str, list[dict]]:
     i += 1
     people.append({"person_id": f"PER-{i:03d}", "entity_code": "CF", "cost_centre_code": "CC_MKT", "name": "Vacant — category manager", "title": "Category manager",
                    "annual_salary": 145_000.0, "incentive_pct": 0.05, "start_date": str(start["2027P08"]), "end_date": "", "vacancy": "Y"})
-    return {"reg_agreement": agreement, "ref_on_cost": on_cost, "reg_position": positions, "reg_person": people}
+    return {"reg_entitlement": agreement, "ref_on_cost": on_cost, "reg_position": positions, "reg_person": people}
