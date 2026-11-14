@@ -185,6 +185,17 @@ COMPOSED_ROLES = {"SALES_BUDGET_HOLDER": ("Sales budget holder", "The sales dire
 ROLE_COLUMNS = ["role_code", "role_name", "description", "action", "composed_by", "composed_on"]
 
 
+# a report a person made: a saved question over the measure register, never figures (DEC-20261114-02) — one row a report
+REPORT_COLUMNS = ["report_id", "owner", "report_name", "measures", "rows_axis", "rows_level", "columns_axis", "versions", "compare",
+                  "filter_material", "filter_customer", "saved_on"]
+
+
+def reports(plan_fy: int, latest_closed: str) -> list[dict]:
+    return [{"report_id": "RP-00001", "owner": "finance.manager@caldera", "report_name": "Net sales by category and year, the latest view against the business plan",
+             "measures": "valued.net_sales;finance.revenue", "rows_axis": "material", "rows_level": "category", "columns_axis": "fiscal_year",
+             "versions": f"LV-{latest_closed};BP-FY{plan_fy}", "compare": "Y", "filter_material": "", "filter_customer": "", "saved_on": "2026-11-04T09:00:00"}]
+
+
 def composed_roles() -> list[dict]:
     return [{"role_code": code, "role_name": name, "description": d, "action": a, "composed_by": "finance.manager@caldera", "composed_on": "2026-11-03T09:00:00"}
             for code, (name, d, acts) in COMPOSED_ROLES.items() for a in acts]

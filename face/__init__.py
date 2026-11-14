@@ -315,7 +315,7 @@ CONTEXT = [
     Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts), known=_known_material),
 ]
 
-SHELL = Shell(brand="Caldera", strapline="integrated business planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map")],
+SHELL = Shell(brand="Caldera", strapline="integrated business planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map"), ("Reports", "plan.reports")],
               context=CONTEXT, skin=SPECIMEN_SKIN if "--skin" in sys.argv[1:] else None)
 
 # the entry file's contract — every column the landing writes; the generator writes the same

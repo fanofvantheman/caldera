@@ -26,7 +26,7 @@ checks that individual pay shows only to the holders of its verb (read only); `u
 and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote); `uv run python -m tests.version_horizon` checks
 that every grid takes its actual and plan periods from the version, and that an actual period, a year and a period past
 the horizon are refused (nothing saved). `uv run python -m tests.undo_before_save` types, undoes and redoes on Finance's grid and the opex
-schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.horizon_act` changes the latest view's horizon on the Versions page and checks every grid takes it (it removes what it wrote); `uv run python -m tests.entitlement_kinds` checks the kinds of entitlement, that the labour model's rates are made from the agreements' entitlements, and the page (read only); `uv run python -m tests.role_compose` reads the rights, composes a role of the client's own and checks the kind of plan on an assignment (it removes what it wrote); `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
+schedule and checks each step against the plan as saved (nothing saved). `uv run python -m tests.horizon_act` changes the latest view's horizon on the Versions page and checks every grid takes it (it removes what it wrote); `uv run python -m tests.report_declaration` makes, refuses and draws reports and checks them against the warehouse (it removes what it wrote); `uv run python -m tests.entitlement_kinds` checks the kinds of entitlement, that the labour model's rates are made from the agreements' entitlements, and the page (read only); `uv run python -m tests.role_compose` reads the rights, composes a role of the client's own and checks the kind of plan on an assignment (it removes what it wrote); `uv run python -m tests.withdrawal_acts` withdraws a Finance figure, a schedule act
 and a layer entry through the confirmation page and checks the plan after the run is what the page said (it removes
 what it wrote).
 
@@ -96,7 +96,10 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   category opening to products and materials — the material structure, with accuracy and bias at every node; the
   units with their submission state; versions; the pages their roles reach; and the submission ladder across the
   bottom (inputs in, plans built, units submitted, plan submitted, reference declared) with the one act at its end.
-  The **forecast accuracy** page under Demand reads the same judgement at every lag, by unit and by period. **The map** (in the top bar, and from the home page) draws the plan end to end — what
+  The **forecast accuracy** page under Demand reads the same judgement at every lag, by unit and by period. **Reports** (in the top bar): a report is a saved question over the measure register — measures from every
+  model (the demand plan, the plan valued, Finance's plan, the schedule, labour, the strategic plan), rows by a structure
+  and level, periods or years across, versions, the first less the second — drawn as whoever opens it, each measure by
+  its own roll-up, individual pay withheld from those without the right. **The map** (in the top bar, and from the home page) draws the plan end to end — what
   sends, what the plan holds, what it makes, what is read — from a register beside the menu (`MAP_NODES`, `MAP_FLOWS` in
   `face/__init__.py`): every box opens the page that owns it and says what waits there after the last run, a heavy line
   from the left is a door, a dashed box is named and not yet built. "Acting as" in the top bar opens the sign-in screen: every person, the roles they hold

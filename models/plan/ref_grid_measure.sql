@@ -1,4 +1,5 @@
-/* The measures of each grid a person types into, and the rules behind each — one row per grid × measure. Read by the one
+/* The measures of every model's output — each grid a person types into, and each the models only calculate (the demand
+   plan, the plan valued, labour, the strategic plan: no spread, no verb) — and the rules behind each — one row per grid × measure. Read by the one
    calculation the grid and the run share (calc/finance.py for the finance grid, calc/schedule.py for the opex schedule —
    each called from its model and from the face), and shown on
    the page "How each figure is calculated".
@@ -15,7 +16,7 @@
      set_says, formula_says (and every *_says column).
    field / source_field name the figure's column in plan.finance_plan; unit is the line's label on the grid; shown_as how its figures are written (count · rate · money). */
 MODEL (name plan.ref_grid_measure, kind FULL, grain (grid, measure));
-SELECT * FROM (VALUES
+WITH t AS (SELECT * FROM (VALUES
   ('finance', 'Revenue', 'plan.revenue', 1, 'volume', 'Volume', 'cases', 'count', 'cases', 'source_cases',
    'typed over a source', 'Typed by Finance, or the demand plan''s cases where the account × material is fed by it',
    NULL,
@@ -82,6 +83,111 @@ SELECT * FROM (VALUES
    'the calculated amount, or the month as typed',
    'sum', NULL, NULL, 'the sum of the figures beneath it',
    NULL, 'typed in a month of a line, never at a total',
-   'schedule.line.enter', TRUE, NULL)
+   'schedule.line.enter', TRUE, NULL),
+  ('demand', 'Demand plan', 'plan.demand', 1, 'cases', 'Unconstrained demand', 'cases', 'count', 'cases', NULL,
+   'calculated', 'The sum of every layer in force on the version, spread to material × ship-to × week',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here — entered as a layer entry on the demand plan',
+   NULL, TRUE, NULL),
+  ('demand', 'Demand plan', 'plan.demand', 2, 'tonnes', 'Tonnes', 'tonnes', 'count', 'tonnes', NULL,
+   'calculated', 'The cases × each material''s net weight',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('valued', 'The plan valued', 'plan.money', 1, 'cases', 'Cases valued', 'cases', 'count', 'cases', NULL,
+   'calculated', 'The demand plan''s cases on every line the gross-to-net prices',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('valued', 'The plan valued', 'plan.money', 2, 'gross_at_list', 'Gross at list', 'gross sales', 'money', 'gross_at_list', NULL,
+   'calculated', 'Each line''s cases × the list price in force in its week',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('valued', 'The plan valued', 'plan.money', 3, 'deductions', 'Deductions', 'deductions', 'money', NULL, NULL,
+   'calculated', 'Every deduction of the gross-to-net together — standing discount, price reduction, rebates, allowances, scan funding, settlement, returns and claims — at the terms in force',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('valued', 'The plan valued', 'plan.money', 4, 'net_sales', 'Net sales', 'net sales', 'money', 'net_sales', NULL,
+   'calculated', 'Gross at list less every deduction, line by line',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('valued', 'The plan valued', 'plan.money', 5, 'net_per_case', 'Net per case', 'net / case', 'rate', NULL, NULL,
+   'calculated', 'Calculated, never stored',
+   NULL,
+   'ratio', 'net_sales', 'cases', 'calculated: net sales ÷ cases',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('labour', 'Labour', 'plan.headcount_role', 1, 'cost', 'Labour cost', 'labour cost', 'money', 'amount', NULL,
+   'calculated', 'Wages and on-costs: by role, FTE × hours × the agreement''s rate; by name, salary and incentive — individual pay where planned by name',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('labour', 'Labour', 'plan.headcount_role', 2, 'fte', 'FTE', 'FTE', 'rate', 'fte', NULL,
+   'calculated', 'The positions and people on the books in the period',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the positions and people beneath it, in a period — never added across periods',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('strategic', 'Strategic plan', 'plan.strategic', 1, 'cases', 'Cases', 'cases', 'count', 'cases', NULL,
+   'calculated', 'The latest view rolled up where it covers a whole year; grown by Finance''s rates by category beyond',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('strategic', 'Strategic plan', 'plan.strategic', 2, 'net_sales', 'Net revenue', 'net sales', 'money', 'net_sales', NULL,
+   'calculated', 'The latest view''s net sales rolled up; beyond, the grown cases at its last inside year''s net price per case',
+   NULL,
+   'sum', NULL, NULL, 'the sum of the figures beneath it',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL),
+  ('strategic', 'Strategic plan', 'plan.strategic', 3, 'net_per_case', 'Net per case', 'net / case', 'rate', NULL, NULL,
+   'calculated', 'Calculated, never stored',
+   NULL,
+   'ratio', 'net_sales', 'cases', 'calculated: net revenue ÷ cases',
+   NULL, 'not typed here',
+   NULL, TRUE, NULL)
 ) AS t(grid, grid_label, grid_page, ord, measure, label, unit, shown_as, field, source_field,
        set_by, set_says, formula_says, rollup, rollup_num, rollup_den, rollup_says, breakback, breakback_says, verb, built, not_built_says)
+),
+-- where each measure's figures are read, for anything that reads the plan by measure (a report): the relation, the
+-- column (an expression over its columns where the measure is several together), the column holding the version (none:
+-- the measure belongs to a plan with no version), the axes it can be cut by, and the lines withheld from a reader without
+-- a verb. A measure with no column here (a ratio, a figure read only by its line) is read through its parts or not at all.
+r AS (SELECT * FROM (VALUES
+  ('finance', 'volume', 'plan.finance_plan', 'cases', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('finance', 'revenue', 'plan.finance_plan', 'net_sales', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('finance', 'price', 'plan.finance_plan', NULL, 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('finance', 'std_cost', 'plan.finance_plan', NULL, 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('finance', 'cogs', 'plan.finance_plan', 'cogs', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('finance', 'margin', 'plan.finance_plan', 'margin', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('schedule', 'driver', 'plan.opex_schedule', NULL, 'version_id', 'entity,cost_centre,account,period,fiscal_year', NULL, NULL),
+  ('schedule', 'rate_calc', 'plan.opex_schedule', NULL, 'version_id', 'entity,cost_centre,account,period,fiscal_year', NULL, NULL),
+  ('schedule', 'rate', 'plan.opex_schedule', NULL, 'version_id', 'entity,cost_centre,account,period,fiscal_year', NULL, NULL),
+  ('schedule', 'amount', 'plan.opex_schedule', 'amount', 'version_id', 'entity,cost_centre,account,period,fiscal_year', NULL, NULL),
+  ('schedule', 'amount_calc', 'plan.opex_schedule', 'amount_calc', 'version_id', 'entity,cost_centre,account,period,fiscal_year', NULL, NULL),
+  ('demand', 'cases', 'plan.demand_financialised', 'cases', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('demand', 'tonnes', 'plan.demand_financialised', 'tonnes', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('valued', 'cases', 'plan.demand_financialised', 'CASE WHEN priced THEN cases ELSE 0 END', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('valued', 'gross_at_list', 'plan.demand_financialised', 'gross_at_list', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('valued', 'deductions', 'plan.demand_financialised', 'gross_at_list - net_sales', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('valued', 'net_sales', 'plan.demand_financialised', 'net_sales', 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('valued', 'net_per_case', 'plan.demand_financialised', NULL, 'version_id', 'material,customer,period,fiscal_year', NULL, NULL),
+  ('labour', 'cost', 'plan.labour_cost', 'amount', 'version_id', 'entity,cost_centre,account,period,fiscal_year', 'model = ''name''', 'read.pay'),
+  ('labour', 'fte', 'plan.labour_cost', 'fte', 'version_id', 'entity,cost_centre,account,period,fiscal_year', 'model = ''name''', 'read.pay'),
+  ('strategic', 'cases', 'plan.strategic_volume', 'cases', NULL, 'category,channel,fiscal_year', NULL, NULL),
+  ('strategic', 'net_sales', 'plan.strategic_volume', 'net_sales', NULL, 'category,channel,fiscal_year', NULL, NULL),
+  ('strategic', 'net_per_case', 'plan.strategic_volume', NULL, NULL, 'category,channel,fiscal_year', NULL, NULL)
+) AS r(grid, measure, relation, value_column, version_column, axes, withheld_when, withheld_verb))
+SELECT t.*, r.relation, r.value_column, r.version_column, r.axes, r.withheld_when, r.withheld_verb
+FROM t LEFT JOIN r USING (grid, measure)
+

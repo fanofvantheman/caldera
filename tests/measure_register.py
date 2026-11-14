@@ -11,6 +11,11 @@
    is changed — the calculation obeys the register, it does not keep its own copy.
 
 The opex schedule's rows (grid `schedule`, calc/schedule.py) are checked the same three ways against plan.opex_schedule.
+
+4. Every row says where its figures are read (DEC-20261114-02): the relation and its columns exist, the version column
+   exists where one is named, a ratio's parts are measures of its grid, the axes are ones a reader knows, a sum's column
+   adds up — and the grids nobody types (the demand plan, the plan valued, labour, the strategic plan) take no spread and
+   no verb. The plan valued's deductions and net sales agree with the gross-to-net on every line.
 """
 from __future__ import annotations
 
@@ -136,13 +141,51 @@ def small_grid(rules: dict, std: float | None = None) -> Grid:
     return g
 
 
+AXES = {"material", "customer", "period", "fiscal_year", "entity", "cost_centre", "account", "category", "channel"}
+
+
+def read_checks(rows: list[dict], fail) -> None:
+    """4 · where every measure is read."""
+    cols: dict[str, set] = {}
+    for r in rows:
+        if not r["relation"]:
+            fail(f"{r['grid']}.{r['measure']}: no relation says where its figures are read"); continue
+        if r["relation"] not in cols:
+            schema, table = r["relation"].split(".")
+            cols[r["relation"]] = {x["column_name"] for x in q("select column_name from information_schema.columns where table_schema = ? and table_name = ?", schema, table)}
+        have = cols[r["relation"]]
+        if not have:
+            fail(f"{r['grid']}.{r['measure']}: {r['relation']} does not exist"); continue
+        if r["version_column"] and r["version_column"] not in have:
+            fail(f"{r['grid']}.{r['measure']}: no column {r['version_column']} in {r['relation']}")
+        if r["value_column"]:
+            try:
+                q(f"select sum({r['value_column']}) s from {r['relation']}")
+            except Exception as e:                                              # noqa: BLE001
+                fail(f"{r['grid']}.{r['measure']}: {r['value_column']} does not read on {r['relation']} — {e}")
+        elif r["rollup"] == "sum":
+            fail(f"{r['grid']}.{r['measure']}: adds up as a sum and names no column to add") if r["grid"] not in ("schedule", "finance") else None
+        if r["rollup"] == "ratio" and not {r["rollup_num"], r["rollup_den"]} <= {x["measure"] for x in rows if x["grid"] == r["grid"]}:
+            fail(f"{r['grid']}.{r['measure']}: a ratio of {r['rollup_num']} ÷ {r['rollup_den']}, not measures of its grid")
+        if not set((r["axes"] or "").split(",")) <= AXES:
+            fail(f"{r['grid']}.{r['measure']}: axes {r['axes']} not all ones a reader knows")
+        if r["relation"] not in ("plan.finance_plan", "plan.opex_schedule") and (r["breakback"] or r["verb"]):
+            fail(f"{r['grid']}.{r['measure']}: nobody types it, yet it has a spread or a verb")
+    bad = q("""select count(*) n from plan.demand_financialised where priced and abs(gross_at_list - (gross_at_list - net_sales) - net_sales) > 0.005
+               or abs(gross_at_list - standing_discount - temporary_price_reduction - retro_rebate - volume_rebate_accrual - warehouse_allowance
+                      - scan_funding - settlement_discount - returns_and_ullage - claims - net_sales) > 0.01""")[0]["n"]
+    grids = sorted({r["grid"] for r in rows})
+    (fail(f"valued: deductions and net sales disagree with the gross-to-net on {bad} lines") if bad else
+     print(f"✓ every measure of {', '.join(grids)} says where it is read; its columns exist; the plan valued's deductions are the gross-to-net's on every line"))
+
+
 def main() -> None:
     rows = q("select * from plan.ref_grid_measure order by grid, ord")
     failures: list[str] = []
     def fail(s: str):
         failures.append(s); print("✕", s)
 
-    for grid in sorted({r["grid"] for r in rows} - {"schedule"}):
+    for grid in sorted({r["grid"] for r in rows if r["relation"] == "plan.finance_plan"}):       # the grids calc/finance computes
         rules = rules_from(rows, grid)
         label = {m: r["label"].lower() for m, r in rules.items()}
 
@@ -218,6 +261,7 @@ def main() -> None:
               f"{typed({**rules, 'price': {**rules['price'], 'breakback': None}})})")
 
     schedule_checks(rows, fail)
+    read_checks(rows, fail)
 
     if failures:
         raise SystemExit(f"{len(failures)} disagreement{'s' if len(failures) != 1 else ''} between the register and the calculation")

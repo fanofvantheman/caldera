@@ -96,6 +96,7 @@ PLAN = {
     "reg_strategic_growth": ("fiscal_year", "growth_pct"),
     "reg_role": (),
     "reg_entitlement": ("value",),
+    "reg_report": (),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})
