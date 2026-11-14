@@ -154,27 +154,25 @@ MACROS = """{% macro money(x) %}{{ '' if x is none else '{:,.0f}'.format(x) }}{%
 <td class="sticky"><span>{{ l.account_code }} {{ l.account_name }}</span> <span class="small muted">{{ l.entity_code }}</span>{% if l.n_typed and l.may_month %} <a class="small" tabindex="-1" href="{{ url_for('plan.schedule_reset', line=l.id, **s.keep) }}">reset…</a>{% endif %}</td>
 <td class="small">{% if l.driver == 'labour_model' %}the labour model{% elif s.may_method and s.open %}<select name="d|{{ l.id }}" onchange="this.form.submit()">{% for d in s.drivers %}<option value="{{ d.driver }}" {{ 'selected' if d.driver == l.driver }}>{{ d.driver_label }}</option>{% endfor %}</select>{% else %}{{ s.driver_label.get(l.driver, l.driver) }}{% endif %}</td>
 <td class="n {{ 'typed' if l.rate_typed }} {{ 'unsaved' if l.rate_unsaved }}">{% if l.driver == 'labour_model' %}<span class="muted">—</span>{% elif s.may_method and s.open %}<input class="cell" name="r|{{ l.id }}" value="{{ rate_shown(l.rate, l.driver) if l.rate_typed else '' }}" placeholder="{{ rate_shown(l.rate_calc, l.driver) }}" data-live='{"cell": "r|{{ l.id }}"}' inputmode="decimal">{% else %}{{ rate_shown(l.rate, l.driver) }}{% endif %}<span class="src">{{ 'from the headcount' if l.driver == 'labour_model' else ('calculated ' ~ rate_shown(l.rate_calc, l.driver) if l.rate_calc is not none else 'no history') }}</span></td>
-{% for p in s.closed %}<td class="n closed">{{ money(l.actual.get(p)) }}</td>{% endfor %}
-{% for p in s.planned %}{% set c = l.cells.get(p) %}<td class="n {{ c.state if c }} {{ 'unsaved' if c and c.unsaved }}">{% if c %}{% if l.may_month and s.open and c.state != 'model' %}<input class="cell" name="m|{{ l.id }}|{{ p }}" value="{{ money(c.amount) }}" data-live='{"cell": "m|{{ l.id }}|{{ p }}"}' inputmode="decimal">{% else %}{{ money(c.amount) }}{% endif %}{% if c.state == 'typed' %}<span class="src">calc {{ money(c.amount_calc) }}{% if c.amount_calc is not none %} · {{ '{:+,.0f}'.format(c.amount - c.amount_calc) }}{% endif %}{% if c.moved %} <b title="the calculated amount has moved since this month was typed (it was {{ money(c.typed_calc) }})">◆</b>{% endif %}</span>{% endif %}{% endif %}</td>{% endfor %}
-<td class="n tot">{{ money(l.fy) }}</td></tr>{% endmacro %}
+{% for col in s.cols %}{% set p = col.period %}{% if col.kind == 'actual' %}<td class="n closed">{{ money(l.actual.get(p)) }}</td>{% elif col.kind == 'total' %}<td class="n tot">{{ money(l.fy) }}</td>{% else %}{% set c = l.cells.get(p) %}<td class="n {{ c.state if c }} {{ 'unsaved' if c and c.unsaved }}">{% if c %}{% if l.may_month and s.open and c.state != 'model' %}<input class="cell" name="m|{{ l.id }}|{{ p }}" value="{{ money(c.amount) }}" data-live='{"cell": "m|{{ l.id }}|{{ p }}"}' inputmode="decimal">{% else %}{{ money(c.amount) }}{% endif %}{% if c.state == 'typed' %}<span class="src">calc {{ money(c.amount_calc) }}{% if c.amount_calc is not none %} · {{ '{:+,.0f}'.format(c.amount - c.amount_calc) }}{% endif %}{% if c.moved %} <b title="the calculated amount has moved since this month was typed (it was {{ money(c.typed_calc) }})">◆</b>{% endif %}</span>{% endif %}{% endif %}</td>{% endif %}{% endfor %}</tr>{% endmacro %}
 {% macro sch_group(s, g) %}<tr id="sch-g-{{ g.code }}" class="grp"><td class="sticky"><b>{{ g.name }}</b> <span class="small muted">{{ g.code }}</span></td><td></td><td></td>
-{% for p in s.closed %}<td class="n closed"><b>{{ money(g.by.get(p)) }}</b></td>{% endfor %}{% for p in s.planned %}<td class="n"><b>{{ money(g.by.get(p)) }}</b></td>{% endfor %}<td class="n tot"><b>{{ money(g.fy) }}</b></td></tr>{% endmacro %}
-{% macro sch_total(s) %}<tr id="sch-t" class="total"><td class="sticky">Total shown</td><td></td><td></td>{% for p in s.closed %}<td class="n closed">{{ money(s.tot.get(p)) }}</td>{% endfor %}{% for p in s.planned %}<td class="n">{{ money(s.tot.get(p)) }}</td>{% endfor %}<td class="n tot">{{ money(s.tot_fy) }}</td></tr>{% endmacro %}"""
+{% for col in s.cols %}{% if col.kind == 'total' %}<td class="n tot"><b>{{ money(g.fy) }}</b></td>{% else %}<td class="n {{ 'closed' if col.kind == 'actual' }}"><b>{{ money(g.by.get(col.period)) }}</b></td>{% endif %}{% endfor %}</tr>{% endmacro %}
+{% macro sch_total(s) %}<tr id="sch-t" class="total"><td class="sticky">Total shown</td><td></td><td></td>{% for col in s.cols %}{% if col.kind == 'total' %}<td class="n tot">{{ money(s.tot_fy) }}</td>{% else %}<td class="n {{ 'closed' if col.kind == 'actual' }}">{{ money(s.tot.get(col.period)) }}</td>{% endif %}{% endfor %}</tr>{% endmacro %}"""
 
 PAGE = MACROS + """<h1>Opex schedule<small>FY{{ fy }} · {{ version }} · {{ s.where }} · every line a driver and a rate; every month driver × rate until it is typed</small></h1>
 <form class="toolbar" method="get">{{ context_fields() }}<label>entity<select name="entity" onchange="this.form.submit()"><option value="">both</option>{% for e in s.entities %}<option value="{{ e.entity_code }}" {{ 'selected' if e.entity_code == s.entity }}>{{ e.entity_name }}</option>{% endfor %}</select></label>
 <label>cost centre<select name="cc" onchange="this.form.submit()">{% for c in s.centres %}<option value="{{ c.code }}" {{ 'selected' if c.code == s.cc }}>{{ '· ' * c.depth }}{{ c.name }}</option>{% endfor %}</select></label></form>
 <p class="hint">{{ entity_note }}</p>
 {% if s.withheld %}<p class="hint">The labour lines of {{ s.withheld|length }} cost centres planned by name are individual pay, read by {{ s.pay_holders|join(', ') or 'nobody yet' }}: they are left out here and out of every total shown.</p>{% endif %}
-{% if not s.open %}<p class="hint">{{ version }} is {{ s.status }}{% if s.planned %} — read only: nothing is typed on a closed version{% else %}: the schedule is kept on the latest view, for the twelve periods after the last closed one{% endif %}.</p>{% endif %}
+{% if not s.open %}<p class="hint">{{ version }} is {{ s.status }}{% if s.planned %} — read only: nothing is typed on a closed version{% else %}: the schedule is kept on an open version, for the {{ s.step_n }} periods after its last actual one{% endif %}.</p>{% endif %}
 <div class="schlive"{% if s.editable %} data-live-post="{{ url_for('plan.schedule_cell') }}" data-live-context='{{ s.live_context|tojson }}'{% endif %}>
 {{ sch_status(s) }}
 <form method="post" action="{{ url_for('plan.schedule_cell') }}" id="sch-grid">{% for k, v in s.keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-<div class="schwrap"><table class="sch"><thead><tr><th class="sticky">Line</th><th>Driver</th><th class="n">Rate</th>{% for p in s.closed %}<th class="n closed" title="actual">{{ p[2:4] }}·{{ p[5:] }}</th>{% endfor %}{% for p in s.planned %}<th class="n">{{ p[2:4] }}·{{ p[5:] }}</th>{% endfor %}<th class="n">FY{{ fy }}</th></tr></thead>
-{% for g in s.groups %}<tbody>{{ sch_group(s, g) }}{% for l in g.lines %}{{ sch_row(s, l) }}{% endfor %}</tbody>{% else %}<tbody><tr><td colspan="{{ 4 + s.closed|length + s.planned|length }}" class="muted">No line in this selection.</td></tr></tbody>{% endfor %}
+<div class="schwrap"><table class="sch"><thead><tr><th class="sticky">Line</th><th>Driver</th><th class="n">Rate</th>{% for col in s.cols %}{% set p = col.period %}{% if col.kind == 'total' %}<th class="n tot">FY{{ s.fy }}{% if s.closed %}<div class="small muted">actual + plan</div>{% endif %}</th>{% elif col.kind == 'actual' %}<th class="n closed" title="an actual period of {{ version }} — nothing is typed here">{{ p[2:4] }}·{{ p[5:] }}<div class="small muted">actual</div></th>{% else %}<th class="n">{{ p[2:4] }}·{{ p[5:] }}</th>{% endif %}{% endfor %}</tr></thead>
+{% for g in s.groups %}<tbody>{{ sch_group(s, g) }}{% for l in g.lines %}{{ sch_row(s, l) }}{% endfor %}</tbody>{% else %}<tbody><tr><td colspan="{{ 3 + s.cols|length }}" class="muted">No line in this selection.</td></tr></tbody>{% endfor %}
 <tbody>{{ sch_total(s) }}</tbody></table></div>
 {% if s.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
-<p class="hint">Shaded periods are closed: the ledgers' actuals through the mapping. The rest is the plan, for the twelve periods after the last closed one{% if s.beyond %}; FY{{ fy }}'s later periods are past the schedule's horizon{% endif %}. Under each rate, the rate calculated from the last twelve closed periods ({{ s.window[0] }}–{{ s.window[-1] }}); a rate typed over it is boxed. A boxed month was typed: it holds, the calculated amount beneath it with the difference; ◆ marks one whose calculated amount has moved since it was typed. Hatched: typed and not yet saved.
+<p class="hint">{% if s.closed %}Shaded periods are {{ version }}'s actual periods, to {{ s.from }}: the ledgers' actuals through the mapping, never typed. {% endif %}The rest is the plan: the schedule plans {{ s.planned|length }} periods after them — its own rolling year of {{ s.step_n }}, never more than the version's horizon of {{ s.horizon }}, both shown on <a href="{{ url_for('plan.versions') }}">Versions</a>{% if s.past_fy %} — so it runs past the year end, and FY{{ s.fy }} is its actual periods and its plan periods together{% endif %}. Under each rate, the rate calculated from the twelve periods to {{ s.from }} ({{ s.window[0] }}–{{ s.window[-1] }}); a rate typed over it is boxed. A boxed month was typed: it holds, the calculated amount beneath it with the difference; ◆ marks one whose calculated amount has moved since it was typed. Hatched: typed and not yet saved.
 {% for r in s.measures %} <b>{{ r.label }}</b>{% if r.formula_says %} = {{ r.formula_says }}{% endif %}.{% endfor %} <a href="{{ url_for('plan.rules') }}#schedule">How each figure is calculated</a></p>
 {% if s.editable %}<form method="post" action="{{ url_for('plan.schedule_save') }}" class="form-row" id="sch-save">{% for k, v in s.keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
 <label class="small">reason <select name="reason_code">{% for r in s.reasons %}<option value="{{ r.reason_code }}">{{ r.description }}</option>{% endfor %}</select></label>
@@ -244,9 +242,16 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
     shown = under.get(cc, set()) & visible
     may_method = bool(_verb("rate")) and roles.may(who, _verb("rate"))
     accounts = {a["account_code"]: a["account_name"] for a in q("select account_code, account_name from dims.dim_gl_account")}
-    closed = [r["period"] for r in q("select period from dims.dim_period where fiscal_year = ? and period_state = 'CLOSED' order by period", fy)]
-    planned = [p for p in inp.periods if inp.fy_of.get(p) == fy]
-    all_fy = [r["period"] for r in q("select period from dims.dim_period where fiscal_year = ? order by period", fy)]
+    # the version says which periods are actual, not the calendar: its actual periods of the year it is named for, then
+    # the periods the schedule plans — its own window, never longer than the version's horizon — past the year end
+    vp = reads.version_periods(version)
+    fy = vp["fy"] or fy
+    closed = [p for p in vp["actual"] if inp.fy_of.get(p) == fy]
+    planned = list(inp.periods)
+    in_fy = [p for p in planned if inp.fy_of.get(p) == fy]
+    cols = [{"period": p, "kind": "actual"} for p in closed] + [{"period": p, "kind": "plan"} for p in in_fy] + \
+        [{"period": "FY", "kind": "total"}] + [{"period": p, "kind": "plan"} for p in planned if p not in in_fy]
+    step = next((r for r in reads.step_horizons() if r["step"] == "opex_schedule"), {})
     actual: dict = defaultdict(dict)
     if closed:
         for r in q(f"""select entity_code, cost_centre_code, account_code, period, sum(amount) a from plan.cost_actual where state = 'mapped'
@@ -275,7 +280,7 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
             c["unsaved"] = bool(wc and wc.acts) and (s0.get("amount") != c["amount"] or s0.get("state") != c["state"])
         first = next(iter(cs.values()), None)
         s0 = saved.get((*line, planned[0] if planned else "")) or {}
-        fy_amt = sum(actual[line].get(p) or 0 for p in closed) + sum((cs[p]["amount"] or 0) for p in planned if p in cs)
+        fy_amt = sum(actual[line].get(p) or 0 for p in closed) + sum((cs[p]["amount"] or 0) for p in in_fy if p in cs)
         l = {"id": line_id(line), "entity_code": line[0], "cost_centre_code": line[1], "account_code": line[2], "account_name": accounts.get(line[2], ""),
              "driver": first["driver"] if first else "last_year", "rate": first["rate"] if first else None, "rate_calc": first["rate_calc"] if first else None,
              "rate_typed": bool(first and first["rate_typed"]), "rate_unsaved": bool(first and s0 and (s0.get("rate") != first["rate"] or s0.get("driver") != first["driver"])),
@@ -301,7 +306,8 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
     editable = open_ and (may_method or any(l["may_month"] for g in groups.values() for l in g["lines"]))
     return {"entities": ents, "entity": entity, "cc": cc, "centres": [c for c in tree if c["code"] in visible],
             "where": " · ".join(x for x in [next((c["name"] for c in tree if c["code"] == cc), ""), next((e["entity_name"] for e in ents if e["entity_code"] == entity), "both entities")] if x),
-            "open": open_, "status": v.get("status"), "closed": closed, "planned": planned, "beyond": bool(planned) and len(closed) + len(planned) < len(all_fy),
+            "open": open_, "status": v.get("status"), "closed": closed, "planned": planned, "cols": cols, "fy": fy, "from": vp["from"],
+            "step_n": step.get("horizon_periods"), "horizon": vp["horizon"], "past_fy": len(planned) - len(in_fy),
             "window": inp.window, "groups": list(groups.values()), "tot": tot, "tot_fy": sum(g["fy"] for g in groups.values()),
             "may_method": may_method, "editable": editable, "unsaved": unsaved, "say": say, "keep": keep, "live_context": {"page": keep},
             "drivers": drivers, "driver_label": {d["driver"]: d["driver_label"] for d in drivers},
@@ -330,7 +336,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         version = src.get("version") or c.get("version")
         from . import reads
         v = reads.version(version) or {}
-        fy = int(src.get("fy") or c.get("fy") or v.get("fiscal_year") or 0)
+        fy = int(v.get("fiscal_year") or src.get("fy") or c.get("fy") or 0)       # the version's year and its window, whatever the context names
         return {"version": version, "fy": fy, "cc": src.get("cc") or "", "entity": src.get("entity") or ""}
 
     def _back(pg: dict) -> str:
@@ -346,6 +352,9 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         b = base(version)
         if kind == "m":
             if period not in b["inp"].periods:
+                upto = v.get("from_period")
+                if upto and period and period <= upto:
+                    return f"{period} is an actual period of {version} — nothing is typed there, by anyone"
                 return f"{period} is not a period the schedule plans"
             if not _may_month(roles, who, line[1]):
                 return f"{who} does not hold {said(_verb('amount'))} at {line[1]}"

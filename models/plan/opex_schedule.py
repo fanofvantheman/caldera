@@ -30,7 +30,7 @@ def _records(df: pd.DataFrame) -> list[dict]:
     kind="FULL",
     grain=["version_id", "entity_code", "cost_centre_code", "account_code", "period"],
     depends_on=["plan.cost_actual", "plan.schedule_edit", "plan.labour_cost", "plan.ref_grid_measure", "plan.demand_financialised", "history.shipments",
-                "dims.dim_period", "dims.ctl_version", "dims.ref_route", "dims.reg_assumption", "plan.assumption_in_force"],
+                "dims.dim_period", "dims.ctl_version", "dims.ref_step_horizon", "dims.ref_route", "dims.reg_assumption", "plan.assumption_in_force"],
     columns={c: TYPES[c] for c in COLUMNS},
     description="The opex schedule: each line a driver and a rate; each month calculated until typed.",
 )

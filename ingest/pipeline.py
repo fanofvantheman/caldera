@@ -24,7 +24,9 @@ from chassis.ingest import log_resource
 REFERENCE = {
     "dim_week": ("fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month"),
     "ctl_period": ("fiscal_year", "fiscal_period", "quarter", "weeks"),
-    "ctl_version": (),
+    "ctl_version": ("horizon_periods", "horizon_quarters"),
+    "ref_version_kind": ("horizon_periods", "horizon_quarters", "ord"),
+    "ref_step_horizon": ("horizon_periods", "ord"),
     "dim_category": (),
     "dim_product": (),
     "dim_format": ("size_g", "units_per_case", "case_net_kg"),
@@ -93,7 +95,7 @@ PLAN = {
     "reg_strategic_growth": ("fiscal_year", "growth_pct"),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
-           "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "ord"})
+           "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})
 
 
 def main() -> None:

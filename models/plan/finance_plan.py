@@ -30,7 +30,7 @@ TYPES = {"version_id": "TEXT", "account_code": "TEXT", "material_code": "TEXT", 
     kind="FULL",
     grain=["version_id", "account_code", "material_code", "period"],
     depends_on=["plan.demand_financialised", "plan.finance_edit", "plan.finance_edit_cell", "plan.finance_source", "plan.ref_grid_measure",
-                "dims.dim_customer_hierarchy", "dims.dim_material_hierarchy", "dims.dim_period"],
+                "dims.dim_customer_hierarchy", "dims.dim_material_hierarchy", "dims.dim_period", "dims.ctl_version"],
     columns={c: TYPES[c] for c in COLUMNS},
     description="Finance's plan: volume × price = revenue at account × material × period, fed by the demand plan or built by Finance.",
 )
@@ -47,6 +47,7 @@ def execute(context: ExecutionContext, start: datetime, end: datetime, execution
     cust = context.fetchdf(f"select ancestor_code, descendant_code from {T('dims.dim_customer_hierarchy')} where descendant_level = 'account'")
     mats = context.fetchdf(f"select ancestor_code, descendant_code from {T('dims.dim_material_hierarchy')} where descendant_level = 'material'")
     fy_of = {p: int(fy) for p, fy in context.fetchdf(f"select period, fiscal_year from {T('dims.dim_period')}").itertuples(index=False, name=None)}
+    actual_through = {v: f for v, f in context.fetchdf(f"select version_id, from_period from {T('dims.ctl_version')} where from_period is not null").itertuples(index=False, name=None)}
     reg = context.fetchdf(f"select * from {T('plan.ref_grid_measure')}").astype(object)
     rules = rules_from(reg.where(reg.notna(), None).to_dict("records"))
 
@@ -63,6 +64,6 @@ def execute(context: ExecutionContext, start: datetime, end: datetime, execution
     for typed, a, m, x in written.itertuples(index=False, name=None):
         on_record[typed].append((a, m, float(x)))
 
-    grid = Grid(dict(accounts_under), dict(materials_under), source_of, fy_of, rules).from_source(demand.itertuples(index=False, name=None))
+    grid = Grid(dict(accounts_under), dict(materials_under), source_of, fy_of, rules, actual_through).from_source(demand.itertuples(index=False, name=None))
     grid.replay(edits.to_dict("records"), on_record)
     return pd.DataFrame(list(grid.cells.values()), columns=COLUMNS)

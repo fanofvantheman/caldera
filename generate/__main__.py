@@ -14,7 +14,7 @@ from . import calendar as cal
 from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIALS, CATEGORIES, PRODUCTS, FORMATS,
                          PROMO_GROUPS, ACCOUNTS, PROMOTIONS_MASTER, BASELINE_SOURCE, PROMO_WEEK_START, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
 from .history import forecast_snapshots, generate_demand, generate_prices, value_shipments
-from .registers import versions, period_control, roles, capacity_register, assumptions, assumption_amendments, version_acts, strategic_plan, strategic_growth
+from .registers import versions, period_control, roles, capacity_register, assumptions, assumption_amendments, version_acts, strategic_plan, strategic_growth, version_kinds, step_horizons
 from .plan import business_plan_entries, latest_view_entries, promo_events, promo_neighbours, terms_register, reason_codes, submissions, finance_edits, finance_sources
 from .emit import emit_all, dataclass_rows
 from . import sender
@@ -41,6 +41,8 @@ def main() -> None:
         "dim_week": [{**{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in w.__dict__.items()}} for w in weeks],
         "ctl_period": period_control(weeks, LATEST_CLOSED),
         "ctl_version": versions(weeks, PLAN_FY, LATEST_CLOSED),
+        "ref_version_kind": version_kinds(),          # the horizon each kind of version is named with
+        "ref_step_horizon": step_horizons(),          # a step's own shorter window, never longer than the version's
         "dim_category": [{"category_code": c, "category_name": n, "trend": t} for c, (n, t) in CATEGORIES.items()],
         "dim_product": [{"product_code": p[0], "product_name": p[1], "category_code": p[2], "segment": p[3], "brand": p[4],
                          "sub_brand": p[5], "price_tier": p[6], "branded": p[7], "seasonal_flag": p[8], "campaign_input": p[9]} for p in PRODUCTS],

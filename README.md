@@ -23,7 +23,9 @@ calculation agree (read only), and `uv run python -m tests.finance_working_copy`
 app, saves, and checks the plan after the run equals what the grid showed (it removes what it wrote);
 `uv run python -m tests.schedule_working_copy` does the same for the opex schedule, and `uv run python -m tests.pay_verb`
 checks that individual pay shows only to the holders of its verb (read only); `uv run python -m tests.version_acts` closes
-and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote).
+and reopens the latest view through the app, as a holder and a non-holder of the verb (it removes what it wrote); `uv run python -m tests.version_horizon` checks
+that every grid takes its actual and plan periods from the version, and that an actual period, a year and a period past
+the horizon are refused (nothing saved).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean

@@ -31,7 +31,7 @@ PAGE = """<h1>Assumptions<small>FY{{ fy }} · {{ version }} · the one set every
 <p class="hint">{% if may_edit and open %}You maintain the assumptions: an amendment is a value from a period on {{ version }} — the value in force is never edited — and takes effect on the next run.{% elif may_edit %}{{ version }} is {{ status }} — its assumptions are not changed.{% else %}You read the assumptions; they are maintained by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}
 A figure that differs from {{ ref or 'the reference' }} is marked ≠; one amended from a period is boxed. What a step sets for itself — a schedule line's driver, a history window — stays on that step's page.</p>
 {% if waiting %}<p class="hint"><b>{{ waiting|length }} amendment{{ 's' if waiting|length != 1 }} placed and waiting for the next run</b> — {% for w in waiting %}{{ w.assumption_code }} from {{ w.valid_from }} = {{ w.value }}{{ '; ' if not loop.last }}{% endfor %}. The grid shows the plan as last run.</p>{% endif %}
-<div class="finwrap"><table class="assume"><thead><tr><th>Assumption</th>{% for p in periods %}<th class="n {{ 'closed' if p.closed }}">{{ p.label }}{% if p.closed %}<div class="small muted">closed</div>{% endif %}</th>{% endfor %}<th>What reads it</th></tr></thead><tbody>
+<div class="finwrap"><table class="assume"><thead><tr><th>Assumption</th>{% for p in periods %}<th class="n {{ 'closed' if p.closed }}">{{ p.label }}{% if p.closed %}<div class="small muted">actual</div>{% endif %}</th>{% endfor %}<th>What reads it</th></tr></thead><tbody>
 {% for a in rows %}<tr><td class="node"><b>{{ a.name }}</b><div class="small muted">{{ a.code }} · {{ a.kind_said }}</div></td>
 {% for c in a.cells %}<td class="n {{ 'amended' if c.amended }} {{ 'differs' if c.differs }}"{% if c.title %} title="{{ c.title }}"{% endif %}>{{ c.show }}{% if c.differs %} <span class="small">≠</span>{% endif %}{% if c.ref is not none %}<span class="src">{{ c.ref_show }}</span>{% endif %}</td>{% endfor %}
 <td class="small reads">{% for r in a.readers %}<div>{% if r.href %}<a href="{{ r.href }}">{{ r.page_label }}</a>{% else %}{{ r.page_label }}{% endif %}{% if not r.built %} <span class="muted">(not yet built)</span>{% endif %} — {{ r.how }}{% if r.inputs %} ({{ r.inputs }} input material{{ 's' if r.inputs != 1 }}){% endif %}</div>{% else %}<span class="muted">Nothing reads it yet{% if a.code == 'WAGE_INDEX' %} — the labour model uses each agreement's own increase{% endif %}: a change here moves no figure.</span>{% endfor %}</td></tr>
@@ -91,7 +91,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             v = reads.version(version or "") or {}
             ref = v.get("reference_version")
             per = q("select period, fiscal_period, period_state from dims.dim_period where fiscal_year = ? order by period", fy)
-            periods = [{"period": p["period"], "label": f"P{p['fiscal_period']:02d}", "closed": p["period_state"] == "CLOSED"} for p in per]
+            upto = v.get("from_period") or ""             # the version's actual periods, not the calendar's closed ones
+            periods = [{"period": p["period"], "label": f"P{p['fiscal_period']:02d}", "closed": p["period"] <= upto} for p in per]
             inforce = q("select * from plan.assumption_in_force where version_id = ? and fiscal_year = ?", version, fy)
             refs = {(r["assumption_code"], r["period"]): r["value"] for r in q("select assumption_code, period, value from plan.assumption_in_force where version_id = ? and fiscal_year = ?", ref, fy)} if ref else {}
             by: dict = {}
@@ -118,7 +119,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                                                any_value(version_value) version_value, any_value(amend_note) amend_note, any_value(amended_by) amended_by, any_value(amended_on) amended_on
                                         from plan.assumption_in_force where version_id = ? and source = 'amended' and period = amended_from
                                         group by assumption_code, amended_from order by amended_from, assumption_code""", version)]
-            closed = {r["period"] for r in q("select period from dims.dim_period where period_state = 'CLOSED'")}
+            closed = {r["period"] for r in q("select period from dims.dim_period where period <= ?", v.get("from_period") or "")}
             amendable = [r["period"] for r in q("select distinct period from plan.assumption_in_force where version_id = ? order by 1", version) if r["period"] not in closed]
             all_codes = [{"code": r["assumption_code"], "name": r["assumption_name"]}
                          for r in q("select distinct assumption_code, assumption_name from dims.reg_assumption where version_id = ? order by 2", version)]
@@ -138,7 +139,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         code, start, raw, note = f.get("assumption_code", ""), f.get("valid_from", ""), f.get("value"), (f.get("note") or "").strip()
         a = (q("select assumption_name, kind from dims.reg_assumption where version_id = ? and assumption_code = ? limit 1", version, code) or [None])[0]
         horizon = {r["period"] for r in q("select period from plan.assumption_in_force where version_id = ? and assumption_code = ?", version, code)}
-        closed = {r["period"] for r in q("select period from dims.dim_period where period_state = 'CLOSED'")}
+        closed = {r["period"] for r in q("select period from dims.dim_period where period <= ?", v.get("from_period") or "")}
         value = _num(raw); lo, hi = BOUNDS.get((a or {}).get("kind"), (-1e12, 1e12))
         may = roles.may(who, VERB)
         checks = [
@@ -146,7 +147,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}" + ("" if v.get("status") == "open" else " — its assumptions are not changed")},
             {"check": "an assumption of the version", "ok": a is not None, "says": f"{code} · {a['assumption_name']}" if a else f"{code or 'nothing'} is not an assumption on {version}"},
             {"check": "from an open period of the version", "ok": start in horizon and start not in closed,
-             "says": f"from {start}" if start in horizon and start not in closed else f"{start or 'no period'} is closed or outside {version}'s horizon"},
+             "says": f"from {start}" if start in horizon and start not in closed else f"{start or 'no period'} is an actual period of {version} or outside its horizon"},
             {"check": "a value it can be", "ok": value is not None and lo <= value <= hi,
              "says": (_show((a or {}).get("kind", "rate"), value) if value is not None and lo <= value <= hi
                       else f"{raw!r} is not {SAY_KIND.get((a or {}).get('kind'), 'a number')} between {lo:g} and {hi:g}")},

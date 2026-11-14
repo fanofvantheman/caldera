@@ -74,7 +74,9 @@ def base(version: str, landing) -> tuple[tuple, Grid]:
         acc, mat, declared, fy_of = _structures()
         def source_of(a: str, m: str) -> str:
             return declared.get((a, m)) or declared.get((a, "ALL")) or "fed"
-        g = Grid(acc, mat, source_of, fy_of, rules()).from_plan(q("select * from plan.finance_plan where version_id = ?", version))
+        # the version's from point: the grid writes nothing into an actual period, at whatever node a figure is typed
+        upto = {r["version_id"]: r["from_period"] for r in q("select version_id, from_period from dims.ctl_version where version_id = ? and from_period is not null", version)}
+        g = Grid(acc, mat, source_of, fy_of, rules(), upto).from_plan(q("select * from plan.finance_plan where version_id = ?", version))
         figures, cells = _pending_rows(landing, version)
         g.replay(figures, cells)
         _BASE[version] = (stamp, g)

@@ -12,6 +12,9 @@ grain), so what the grid shows before a save is what the run makes of it after. 
 spread at the moment of typing and kept as that spread: the parent is then the sum of its children, a later figure
 anywhere beneath or above simply overwrites the cells it reaches, and the mix is fixed as it was when typed.
 
+A version's actual periods — up to its from point — take nothing: given the from point (`actual_through`), the grid
+writes no figure into one, whoever asks and at whatever node, so a figure typed above the grain reaches plan periods only.
+
 The rules are a register, `plan.ref_grid_measure`, which both callers read from the warehouse and hand to the grid
 (`rules_from`). The grid obeys its settings — how a figure reads at a total (`rollup`), how one typed at a total spreads
 (`breakback`) and so which figures are typed — and keeps no copy of them. The formulas are not read from the register:
@@ -70,9 +73,10 @@ class Grid:
     from until it writes one — a person's working copy costs only the cells they have changed."""
 
     def __init__(self, accounts_under: dict[str, set], materials_under: dict[str, set], source_of: Callable[[str, str], str],
-                 fy_of: dict[str, int], rules: Rules):
+                 fy_of: dict[str, int], rules: Rules, actual_through: dict[str, str] | None = None):
         self.accounts_under, self.materials_under, self.source_of, self.fy_of = accounts_under, materials_under, source_of, fy_of
         self.rules = rules
+        self.actual_through = dict(actual_through or {})                # version → its from point: the last actual period
         self.cells: dict[Key, dict] = {}
         self.by_period: dict[tuple, list[Key]] = defaultdict(list)    # (version, period) → its cells, for scope matching
         self._owned: set | None = None                                  # None: every cell is this grid's own
@@ -113,7 +117,7 @@ class Grid:
         return self
 
     def copy(self) -> "Grid":
-        g = Grid(self.accounts_under, self.materials_under, self.source_of, self.fy_of, self.rules)
+        g = Grid(self.accounts_under, self.materials_under, self.source_of, self.fy_of, self.rules, self.actual_through)
         g.cells, g.by_period, g._owned = dict(self.cells), dict(self.by_period), set()
         return g
 
@@ -122,13 +126,20 @@ class Grid:
         A, M = self.accounts_under.get(customer, ()), self.materials_under.get(material, ())
         return [k for k in self.by_period.get((version, period), ()) if k[1] in A and k[2] in M]
 
+    def actual(self, version: str, period: str) -> bool:
+        """An actual period of the version: at or before its from point. Nothing is written into one."""
+        return period <= self.actual_through.get(version, "")
+
     def at_grain(self, customer: str, material: str) -> bool:
         return customer in self.accounts_under.get(customer, ()) and material in self.materials_under.get(material, ())
 
     def type(self, version: str, customer: str, material: str, period: str, measure: str, value: float, edit_id: str) -> list[tuple[Key, float]]:
         """A figure typed at a node: spread to every cell beneath it by the measure's breakback, and kept as that spread.
         At the grain, where nothing is yet, the cell is started — a built material, or a fed one the demand plan lacks.
-        Returns the cells written and the value each now holds; none where the node has nothing in that period."""
+        Returns the cells written and the value each now holds; none where the node has nothing in that period, and none in
+        an actual period of the version."""
+        if self.actual(version, period):
+            return []
         if self.at_grain(customer, material) and (version, customer, material, period) not in self.cells:
             src = self.source_of(customer, material)
             self.start((version, customer, material, period), src, 0.0 if src == "fed" else None, 0.0 if src == "fed" else None)
@@ -174,6 +185,8 @@ class Grid:
         before spreads were recorded is spread now, by the same rule."""
         for e in figures:
             cells = on_record.get(e["edit_id"])
+            if self.actual(e["version_id"], e["period"]):
+                continue                                               # an actual period takes nothing, as when typed
             if cells:
                 for a, m, x in cells:
                     key = (e["version_id"], a, m, e["period"])

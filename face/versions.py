@@ -7,7 +7,12 @@ calculation keeps reading it.
 
 An act is a file in the landing, released at once by a run scoped to the version's state (the whole run when another file
 is waiting). Naming a new version from a base and any state per step inside a version are not built — the decision
-leaves both open. Registered on the plan's blueprint by `register(...)`, called from `face/__main__.py`."""
+leaves both open.
+
+Each version also carries its from point — the last period it treats as actual, fixed when it was named — and its horizon:
+periods by month after the from point, then quarters, set from its kind when named. Every grid reads both from here. The
+defaults by kind, and the shorter window a step plans (the opex schedule's rolling year), are shown beneath; changing a
+version's horizon is not built — it would be an act with a receipt, like closing. Registered on the plan's blueprint by `register(...)`, called from `face/__main__.py`."""
 from __future__ import annotations
 
 import datetime as dt
@@ -27,8 +32,10 @@ RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_version_a
 
 PAGE = """<h1>Versions<small>named, owned, open or closed — the plan is a stack of entries on a version; a closed version takes no entry and stays readable</small></h1>
 <p class="hint">{% if may %}You close and reopen versions: each is an act with a receipt; reopening asks why. A version another is read against is not reopened — a changed reference is a new version.{% else %}Versions are closed and reopened by {{ holders|join(', ') or 'nobody yet' }}.{% endif %} The actuals are closed by the period, not here.</p>
-<table><thead><tr><th>Version</th><th>Kind</th><th>Cycle</th><th>Horizon</th><th>Read against</th><th>State</th><th>Last act</th>{% if may %}<th></th>{% endif %}</tr></thead><tbody>
+<table><thead><tr><th>Version</th><th>Kind</th><th>Cycle</th><th>Actual to</th><th>Horizon</th><th>Calculated</th><th>Read against</th><th>State</th><th>Last act</th>{% if may %}<th></th>{% endif %}</tr></thead><tbody>
 {% for v in versions %}<tr class="{{ 'off' if v.status == 'closed' }}"><td><b>{{ v.version_id }}</b><div class="small muted">named {{ v.named_on }} · {{ v.owner }}</div></td><td class="small">{{ v.version_kind.replace('_', ' ') }}</td><td class="small">{{ v.cycle or '' }}</td>
+<td class="small">{% if v.version_kind == 'actual' %}{{ v.from_period }}{% elif v.fiscal_year and v.from_period < v.fiscal_year ~ 'P01' %}<span class="muted">none in FY{{ v.fiscal_year }}</span>{% else %}{{ v.from_period }}{% endif %}</td>
+<td class="small">{% if v.horizon_periods %}{{ v.horizon_periods }} periods, to {{ v.plan_through }}{% if v.horizon_quarters %}; then {{ v.horizon_quarters }} quarters{% endif %}{% else %}<span class="muted">nothing planned</span>{% endif %}</td>
 <td class="small">{{ v.horizon_start }} – {{ v.horizon_end }}</td><td class="small">{{ v.reference_version or '—' }}{% if v.reference_of %}<div class="muted">the reference of {{ v.reference_of }}</div>{% endif %}</td>
 <td><span class="state">{{ v.status }}</span></td>
 <td class="small">{% if v.last_act %}{{ v.last_act }} by {{ v.last_act_by }}, {{ (v.last_act_on or '')[:16].replace('T', ' ') }}{% if v.last_act_reason %} — {{ v.last_act_reason }}{% endif %}{% elif v.version_kind == 'actual' %}closed by the period{% else %}as named{% endif %}</td>
@@ -37,6 +44,14 @@ PAGE = """<h1>Versions<small>named, owned, open or closed — the plan is a stac
 {% else %}<form class="inline" method="post" action="{{ url_for('plan.version_reopen') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="18" required placeholder="why it reopens"> <button class="act" onclick="this.textContent='Reopening…'">reopen</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>
 {% if last and last.act in ('version.close', 'version.reopen') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else '✕' }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+<p class="hint"><b>Actual to</b> is the last period a version treats as actual, fixed when it was named: every grid on the version shows the periods of its year up to it as actuals, marked and never typed, by anyone — a later close does not move it; a later close is a new version. <b>Horizon</b> is how far the plan runs after it, past the year end where it reaches, and it is the version's own. <b>Calculated</b> is how far the plan's models calculate on the version; a horizon never runs past it.</p>
+<h2>Horizons<span class="count">what each kind of version is named with, and the shorter window a step plans</span></h2>
+<div class="cards"><div class="card"><table><thead><tr><th>Kind</th><th class="n">Periods by month</th><th class="n">Then quarters</th><th>Reaches</th></tr></thead><tbody>
+{% for k in kinds %}<tr><td>{{ k.kind_label }}</td><td class="n">{{ k.horizon_periods }}</td><td class="n">{{ k.horizon_quarters }}</td><td class="small">{{ k.says }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">A version takes its kind's horizon when it is named. Quarters past the months are not planned yet.</p></div>
+<div class="card"><table><thead><tr><th>Step</th><th class="n">Periods</th><th>Window</th></tr></thead><tbody>
+{% for s in steps %}<tr><td>{{ s.step_label }}</td><td class="n">{{ s.horizon_periods }}</td><td class="small">{{ s.says }}</td></tr>{% endfor %}</tbody></table>
+<p class="hint">A step may plan a shorter window than the version, never a longer one: it plans the lesser of the two.</p></div></div>
 <h2>Acts<span class="count">every close and reopen, newest first — the register the states above are read from</span></h2>
 <table><thead><tr><th>When</th><th>Version</th><th>Act</th><th>By</th><th>Why</th></tr></thead><tbody>
 {% for a in acts %}<tr><td class="small">{{ (a.entered_on or '')[:16].replace('T', ' ') }}</td><td>{{ a.version_id }}</td><td>{{ a.act }}</td><td class="small">{{ a.entered_by }}</td><td class="small">{{ a.reason or '' }}</td></tr>
@@ -62,7 +77,7 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
         try:
             who = who_fn()
             return page(PAGE, title="Versions", active="versions", versions=reads.versions(), acts=q("select * from plan.version_act order by entered_on desc, act_id desc"),
-                        waiting=_waiting(), may=roles.may(who, VERB), holders=reads.holders(VERB), last=session.last, receipt_acts=("version.",))
+                        waiting=_waiting(), kinds=reads.version_kinds(), steps=reads.step_horizons(), may=roles.may(who, VERB), holders=reads.holders(VERB), last=session.last, receipt_acts=("version.",))
         except Busy as e:
             return busy("Versions", e)
 

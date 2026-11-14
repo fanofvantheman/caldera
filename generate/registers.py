@@ -7,21 +7,52 @@ from .calendar import Week, periods
 from .structures import LINES, COST_CENTRES
 
 
+# What each kind of version reaches by default: the periods by month planned after its from point, then quarters. A
+# version's horizon is set from its kind when it is named and is the version's own from then on.
+VERSION_KINDS = [
+    # kind, label, periods, quarters, says
+    ("actual", "Actuals", 0, 0, "what happened, closed by the period; nothing is planned on it"),
+    ("business_plan", "Business plan", 12, 0, "the fiscal year it is named for, every period of it planned"),
+    ("latest_view", "Latest view", 18, 0, "eighteen periods by month from the last actual one, past the year end"),
+]
+# A step may plan a shorter window than the version, never a longer one: the lesser of the two is planned.
+STEP_HORIZONS = [
+    # step, label, periods, says
+    ("opex_schedule", "Opex schedule", 12, "a rolling year: the twelve periods after the version's last actual one"),
+]
+
+
+def version_kinds() -> list[dict]:
+    return [{"version_kind": k, "kind_label": l, "horizon_periods": p, "horizon_quarters": q, "says": s, "ord": i}
+            for i, (k, l, p, q, s) in enumerate(VERSION_KINDS, start=1)]
+
+
+def step_horizons() -> list[dict]:
+    return [{"step": k, "step_label": l, "horizon_periods": p, "says": s, "ord": i} for i, (k, l, p, s) in enumerate(STEP_HORIZONS, start=1)]
+
+
 def versions(weeks: list[Week], plan_fy: int, latest_closed: str) -> list[dict]:
-    """Every forward view is a version, named by the cycle that produced it, with a horizon.
+    """Every forward view is a version, named by the cycle that produced it, with a reach and a horizon.
     ACTUAL is the closed history; BP is the business plan for the year; LV-<period> the latest view
-    produced by a cycle, rolling 36 periods from the period after the one it closed; scenarios hang off the version they were read against."""
-    return [
+    produced by a cycle, calculated 36 periods from the period after the one it closed; scenarios hang off the version they were read against.
+    The from point is the last period a version treats as actual, fixed when it is named: the business plan has none in
+    its year (it was made before the year began), the latest view the period its cycle closed. The horizon — periods by
+    month after the from point, then quarters — is set from the version's kind when it is named."""
+    kind = {k: (p, q) for k, _, p, q, _ in VERSION_KINDS}
+    rows = [
         {"version_id": "ACTUAL", "version_kind": "actual", "cycle": "", "fiscal_year": "", "horizon_start": weeks[0].period,
          "horizon_end": latest_closed, "calendar_variant": "4-4-5", "standard_version": "STD-FY2027", "reference_version": "",
-         "status": "closed", "owner": "finance", "named_on": "2026-10-26"},
+         "status": "closed", "owner": "finance", "named_on": "2026-10-26", "from_period": latest_closed},
         {"version_id": f"BP-FY{plan_fy}", "version_kind": "business_plan", "cycle": f"AOP FY{plan_fy}", "fiscal_year": plan_fy,
          "horizon_start": f"{plan_fy}P01", "horizon_end": f"{plan_fy}P12", "calendar_variant": "4-4-5", "standard_version": "STD-FY2027",
-         "reference_version": "", "status": "frozen", "owner": "finance", "named_on": "2026-06-15"},
+         "reference_version": "", "status": "frozen", "owner": "finance", "named_on": "2026-06-15", "from_period": f"{plan_fy - 1}P12"},
         {"version_id": f"LV-{latest_closed}", "version_kind": "latest_view", "cycle": f"IBP {latest_closed}", "fiscal_year": plan_fy,
          "horizon_start": f"{plan_fy}P05", "horizon_end": f"{plan_fy + 3}P04", "calendar_variant": "4-4-5", "standard_version": "STD-FY2027",
-         "reference_version": f"BP-FY{plan_fy}", "status": "open", "owner": "finance", "named_on": "2026-11-02"},
+         "reference_version": f"BP-FY{plan_fy}", "status": "open", "owner": "finance", "named_on": "2026-11-02", "from_period": latest_closed},
     ]
+    for r in rows:
+        r["horizon_periods"], r["horizon_quarters"] = kind[r["version_kind"]]
+    return rows
 
 
 def period_control(weeks: list[Week], latest_closed: str) -> list[dict]:

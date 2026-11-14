@@ -339,12 +339,12 @@ def home():
 
 # ---- the demand plan ----
 DEMAND = TOOLBAR + """
-<h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material · {{ where }} · {{ d.n_actual }} closed periods as actuals, then the plan · totals by fiscal year with comparatives</small></h1>
+<h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material · {{ where }} · {{ d.n_actual }} actual periods, then the plan for {{ d.n_plan }} · totals by fiscal year with comparatives</small></h1>
 {% if editable %}<p class="hint">Cells are open: click one, type the total you want, Enter, give a reason. What is placed is an entry on layer {{ layer }} for the difference; the cell shows the run's number until the next run takes it in.</p>
 {% elif can_enter %}<p class="hint">Choose an account as the customer in the context to open the cells for input.</p>{% endif %}
 <div class="wide"><table class="plan tree" {% if editable %}data-cells-post="{{ url_for('plan.cell') }}" data-cells-reasons="reasons"{% endif %}><thead>
 <tr><th rowspan="2" class="sticky">Material</th><th colspan="{{ d.periods|length }}" style="text-align:center">Periods</th>
-{% for c in d.comps %}<th colspan="{{ 1 + (1 if c.py else 0) + (1 if c.ref else 0) }}" style="text-align:center;border-left:1px solid var(--rule)">FY{{ c.fy }}</th>{% endfor %}<th class="n" rowspan="2">Horizon</th></tr>
+{% for c in d.comps %}<th colspan="{{ 1 + (1 if c.py else 0) + (1 if c.ref else 0) }}" style="text-align:center;border-left:1px solid var(--rule)">FY{{ c.fy }}{% if c.to %} to {{ c.to }}{% endif %}</th>{% endfor %}<th class="n" rowspan="2">Horizon</th></tr>
 <tr>{% for pp in d.periods %}<th class="n {{ 'actual' if d.source_of[pp] == 'actual' }}" title="{{ pp }}{{ ' · actual' if d.source_of[pp] == 'actual' }}">{{ pp[2:4] }}·{{ pp[5:] }}</th>{% endfor %}
 {% for c in d.comps %}<th class="n" style="border-left:1px solid var(--rule)">Total</th>{% if c.py %}<th class="n" title="same periods, prior fiscal year: shipments where closed, else this view">PY</th>{% endif %}{% if c.ref %}<th class="n" title="{{ d.ref_id }}">{{ d.ref_id }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
 {% macro row(r, cls, parent, tog, id, label) %}<tr class="{{ cls }}"{% if parent %} data-parent="{{ parent }}"{% endif %}><td class="sticky">{% if tog %}<button type="button" class="tog" data-id="{{ id }}"></button>{% endif %}{{ label }}{% if cls == 'l2' %} <span class="muted">{{ r.material }}</span>{% endif %}</td>{% for c in r.cells %}{% set pp = d.periods[loop.index0] %}{% set key = r.material ~ '|' ~ pp %}
@@ -355,7 +355,7 @@ DEMAND = TOOLBAR + """
 {% for m in p.children %}{{ row(m, 'l2', p.code, False, None, m.label) }}{% endfor %}{% endfor %}{% endfor %}
 {{ row(d.totals, 'total', None, False, None, 'Total') }}
 </tbody></table></div>
-<p class="hint">Categories and products are sums of the standard materials beneath them and are read-only; open a category, then a product, to reach its materials{% if editable %} — only a material's open periods take input{% endif %}. Shaded periods are closed and read from shipments; the rest is the plan. PY is the same periods a year earlier — shipments where that year is closed, otherwise this view; {{ d.ref_id }} is the reference version where its horizon overlaps.</p>
+<p class="hint">Categories and products are sums of the standard materials beneath them and are read-only; open a category, then a product, to reach its materials{% if editable %} — only a material's open periods take input{% endif %}. Shaded periods are {{ version }}'s actual periods, read from shipments, and take no input; the rest is the plan, for the version's horizon — past the year end, where a year it cuts is totalled to where it stops. PY is the same periods a year earlier — shipments where that year is closed, otherwise this view; {{ d.ref_id }} is the reference version where its horizon overlaps.</p>
 <h2>Plan by layer and fiscal year</h2>
 <table><thead><tr><th>Fiscal year</th><th class="n">1 Baseline</th><th class="n">2 Adjustment</th><th class="n">4 Distribution</th><th class="n">6 Promotions</th><th class="n">7 Innovation</th><th class="n">8 Exit</th><th class="n">Plan</th></tr></thead><tbody>
 {% for r in layers %}<tr><td>FY{{ r.fiscal_year }}</td><td class="n">{{ r.l1|n }}</td><td class="n">{{ r.l2|n }}</td><td class="n">{{ r.l4|n }}</td><td class="n">{{ r.l6|n }}</td><td class="n">{{ r.l7|n }}</td><td class="n">{{ r.l8|n }}</td><td class="n">{{ r.cases|n }}</td></tr>{% endfor %}
@@ -526,6 +526,9 @@ def _enter(f: dict, who: str) -> tuple[dict, bool, str]:
         {"check": "material scope resolves", "ok": ms, "says": f"{f['scope_material']} reaches leaf materials" if ms else f"{f['scope_material']} is not a node of the product structure or a promo group"},
         {"check": "customer scope resolves", "ok": cs, "says": f"{f['scope_customer']} reaches ship-tos" if cs else f"{f['scope_customer']} is not a node of the customer structure"},
         {"check": "window in horizon", "ok": win, "says": f"{f['period_from']} – {f['period_to']} within {v['horizon_start']} – {v['horizon_end']}" if v and win else "window outside the version's horizon or reversed"},
+        {"check": "after the version's actual periods", "ok": bool(v and v.get("from_period") and f["period_from"] > v["from_period"]),
+         "says": (f"from {f['period_from']}, after {version}'s actual periods (to {v['from_period']})" if f["period_from"] > v["from_period"]
+                  else f"{f['period_from']} is an actual period of {version} — nothing is entered there, by anyone") if v and v.get("from_period") else f"{version} has no from point"},
         {"check": "reason offered on layer", "ok": offered, "flag": True,
          "says": f"{f['reason_code']} is offered on layer {layer}" if offered else f"{f['reason_code']} is not a reason this layer usually gives — placed, flagged"},
         {"check": "value is a number", "ok": value is not None and value != 0, "says": "a number" if value is not None and value != 0 else "not a number, or zero"},
@@ -749,6 +752,7 @@ def revenue():
     try:
         version = _version(); v = reads.version(version) or {}
         fy, _ = _fy(version, v)
+        fy = int(v.get("fiscal_year") or fy)              # the grid is the version's year and its horizon, whatever the context names
         c = _ctx()
         page = {**_page_args(request.args), "version": version, "fy": fy, "customer": c.get("customer") or "ALL", "material": c.get("material") or "ALL"}
         measure = page.get("measure") if page.get("measure") in FIN_TABS else "volume"
@@ -820,7 +824,7 @@ def revenue_versions():
 # The grid recalculates as Finance types: one figure posted (chassis live.js), applied to the person's working copy by the
 # same function the run uses (face/finance_live.py → calc/finance.py), and only the parts of the view it changed sent
 # back. Each part below is a macro so the page and the reply render it the same way.
-FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles"><div class="card stat"><span>Finance's plan · FY{{ fin.fy }}{% if fin.unsaved_n %} · unsaved{% endif %}</span><b>{{ fin.tot.fin_rev|m }}</b><div class="small muted">{{ fin.tot.fin_vol|n }} cases at {{ fin.tot.fin_price }} a case · {{ fin.customer_label }}</div></div>
+FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles"><div class="card stat"><span>Finance's plan · FY{{ fin.fy }}{% if fin.unsaved_n %} · unsaved{% endif %}</span><b>{{ fin.tot.fin_rev|m }}</b><div class="small muted">{{ fin.tot.fin_vol|n }} cases at {{ fin.tot.fin_price }} a case · {{ fin.customer_label }}{% if fin.tot.act_rev is not none %} · {{ fin.tot.act_rev|m }} of it actual{% endif %}</div></div>
 <div class="card stat"><span>The demand plan beneath</span><b>{{ fin.tot.src_rev|m if fin.tot.src_rev is not none else '—' }}</b><div class="small muted">{% if fin.tot.src_rev is not none %}{{ fin.tot.src_vol|n }} cases at {{ fin.tot.src_price }} a case · where it feeds{% else %}nothing feeds this node — Finance builds it{% endif %}</div></div>
 <div class="card stat"><span>Variance, where fed</span><b>{{ fin.tot.var_rev|aud if fin.tot.var_rev is not none else '—' }}</b><div class="small delta {{ fin.tot.var_d|dir }}">{% if fin.tot.var_rev is not none %}{{ fin.tot.var_d|pct }} on the demand plan · {{ fin.tot.var_vol|signed }} cases{% else %}no fed figure to differ from{% endif %}</div></div>
 <div class="card stat"><span>Built by Finance</span><b>{{ fin.tot.built_rev|m if fin.tot.built_rev else '—' }}</b><div class="small muted">{{ fin.tot.built_vol|n if fin.tot.built_vol else 'no' }} cases with no demand plan beneath</div></div></div>{% endmacro %}
@@ -830,7 +834,7 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 <td class="small muted">{{ m.label }}</td>
 {% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% if x.input %}<input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{% else %}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
 </tr>{% endfor %}</tbody>{% endmacro %}
-{% macro fin_typed(fin) %}<div id="fin-typed">{% if fin.edits %}<h2>Typed here<span class="count">{{ fin.customer_label }} × the rows above · FY{{ fin.fy }}</span></h2>
+{% macro fin_typed(fin) %}<div id="fin-typed">{% if fin.edits %}<h2>Typed here<span class="count">{{ fin.customer_label }} × the rows above · the plan periods shown</span></h2>
 <table><thead><tr><th>Node</th><th>Period</th><th>Figure</th><th class="n">Typed</th><th class="n">At the node now</th><th class="n">Demand plan then</th><th class="n">Demand plan now</th><th>Standing</th><th>Reason</th><th>By</th></tr></thead><tbody>
 {% for e in fin.edits %}<tr class="{{ 'off' if e.state != 'in_force' }}"><td>{{ e.scope_material }}</td><td>{{ e.period }}</td><td>{{ e.measure }}</td><td class="n">{{ e.typed }}</td><td class="n">{{ e.now }}</td><td class="n">{{ e.then }}</td><td class="n">{{ e.src_now }}{% if e.source_moved %} <span class="moved">◆</span>{% endif %}</td>
 <td>{% if e.standing == 'unsaved' %}<span class="state unsaved">unsaved</span>{% elif e.standing == 'held' %}held{% elif e.standing == 'overwritten' %}<span class="state">changed</span> <span class="small muted">by a later figure</span>{% else %}<span class="state">{{ e.standing }}</span>{% endif %}</td><td class="small">{{ e.reason }}</td><td class="small">{{ e.entered_by }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>{% endmacro %}"""
@@ -844,10 +848,10 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 <div class="finlive"{% if fin.editable %} data-live-post="{{ url_for('plan.finance_cell') }}" data-live-context='{{ fin.live_context|tojson }}'{% endif %}>
 {{ fin_status(fin) }}
 <form method="post" action="{{ url_for('plan.finance_cell') }}" id="fin-grid">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
-<div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}<th class="n {{ 'closed' if p.closed }}"{% if p.closed %} title="a closed period — what happened is read on the actuals, nothing is planned here"{% endif %}>{{ p.label }}{% if p.closed %}<div class="small muted">closed</div>{% endif %}</th>{% endfor %}<th class="n">FY{{ fy }}</th></tr></thead>
-{% for r in fin.rows %}{{ fin_row(fin, r) }}{% else %}<tbody><tr><td colspan="{{ fin.periods|length + 3 }}" class="muted">Nothing in Finance's plan at {{ fin.customer_label }} × {{ fin.path[-1].label }} in FY{{ fy }}.</td></tr></tbody>{% endfor %}
+<div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}{% if p.total %}<th class="n tot"{% if fin.n_actual %} title="actual + plan"{% endif %}>{{ p.label }}{% if fin.n_actual %}<div class="small muted">actual + plan</div>{% endif %}</th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="an actual period of {{ version }} — what was shipped and invoiced; nothing is typed here"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>
+{% for r in fin.rows %}{{ fin_row(fin, r) }}{% else %}<tbody><tr><td colspan="{{ fin.periods|length + 2 }}" class="muted">Nothing in Finance's plan at {{ fin.customer_label }} × {{ fin.path[-1].label }} in FY{{ fy }}.</td></tr></tbody>{% endfor %}
 </table></div>{% if fin.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
-<p class="hint">{% if fin.reading == 'finance' %}The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
+<p class="hint">{% if fin.n_actual %}{{ version }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.reading == 'finance' %}The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
 {% for r in fin.measures %} <b>{{ r.name }}</b>{% if r.formula %} = {{ r.formula }}{% endif %}; at a total, {{ r.rollup_says }}{% if r.typed %}; typed at a total, {{ r.breakback_says }}{% endif %}.{% endfor %} <a href="{{ url_for('plan.rules') }}#finance">How each figure is calculated</a></p>
 {% if fin.may and fin.open and version %}<form method="post" action="{{ url_for('plan.finance_save') }}" class="form-row" id="fin-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
 <label class="small">reason <select name="reason_code">{% for r in fin.reasons %}<option value="{{ r.reason_code }}" {{ 'selected' if r.reason_code == fin.default_reason }}>{{ r.description }}</option>{% endfor %}</select></label>
@@ -872,7 +876,7 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 table.fin tr.first td{border-top:1px solid var(--rule)}table.fin .src{display:block;font-size:.72rem;color:var(--muted)}table.fin td.typed{box-shadow:inset 0 0 0 1px var(--ink)}
 table.fin td.unsaved{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 14%,transparent) 5px 6px)}table.fin td.unsaved input.cell{font-style:italic}
 .state.unsaved,.unsaved-note b{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 18%,transparent) 5px 6px)}
-table.fin td.closed,table.fin th.closed{color:var(--muted)}.toolbar .seg{display:inline-flex;gap:.6rem;margin-left:auto}.toolbar .seg b{font-weight:600}.notbuilt{border-left:2px solid var(--rule);padding-left:.6rem}table.fin input.cell{width:5.6rem;text-align:right;font-size:.85rem;padding:.15rem .35rem}.finlive.live-busy table.fin{cursor:progress}
+table.fin td.actual,table.fin th.actual{color:var(--muted);background:var(--soft)}table.fin td.tot,table.fin th.tot{border-left:1px solid var(--rule);border-right:1px solid var(--rule)}.toolbar .seg{display:inline-flex;gap:.6rem;margin-left:auto}.toolbar .seg b{font-weight:600}.notbuilt{border-left:2px solid var(--rule);padding-left:.6rem}table.fin input.cell{width:5.6rem;text-align:right;font-size:.85rem;padding:.15rem .35rem}.finlive.live-busy table.fin{cursor:progress}
 .moved{font-size:.7rem;margin-left:.15rem}table.fin td.down{color:var(--muted)}.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}
 .form-row label{display:flex;flex-direction:column;gap:.2rem}</style>
 {% if fin.editable %}{{ live_script }}{% endif %}
@@ -906,12 +910,14 @@ def _figures(cs: list[dict], rules: dict, measures: list[str]) -> dict | None:
     def agg(cells, m, source=False):
         return calc_finance.aggregate(cells, m, rules, source)
     fed = [c for c in cs if c["source"] == "fed"]
-    built = [c for c in cs if c["source"] != "fed"]
+    act = [c for c in cs if c["source"] == "actual"]          # what happened in an actual period: no source, no variance
+    built = [c for c in cs if c["source"] not in ("fed", "actual")]
     out = {"fin": {m: agg(cs, m) for m in measures},
-           "src": {m: agg(fed, m, True) for m in measures} if fed else None,
-           "built": {m: agg(built, m) for m in measures} if built and fed else None, "built_only": not fed}
+           "src": {m: agg(fed + act, m, True) for m in measures} if fed or act else None,
+           "built": {m: agg(built, m) for m in measures} if built and (fed or act) else None, "built_only": not fed and not act,
+           "act": {m: agg(act, m) for m in measures} if act else None}
     if fed:
-        ff, s = {m: agg(fed, m) for m in measures}, out["src"]
+        ff, s = {m: agg(fed, m) for m in measures}, {m: agg(fed, m, True) for m in measures}      # the fed part only: an actual has nothing to differ from
         out["var"], out["var_d"] = {}, {}
         for m in measures:
             a, b = ff[m], s[m]
@@ -993,19 +999,36 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
     nodes = [fm] + list(kids)
     wc = finance_live.working_copy(who, version, FINANCE) if version else None
     grid = wc.grid if wc else (finance_live.base(version, FINANCE)[1] if version else None)
-    periods = [{"period": p["period"], "label": f"P{p['fiscal_period']:02d}", "closed": p["period_state"] == "CLOSED"} for p in _once(reads.fy_periods)(fy)]
-    opens = set(_once(reads.open_periods)(version)) if version and is_open else set()
+    # the periods are the version's, not the calendar's: its actual periods of the year it is named for, marked and never
+    # typed, then its plan periods for the horizon — past the year end — with the year's total after the year's last period
+    vp = _once(reads.version_periods)(version)
+    fy = vp["fy"] or fy
+    periods = [{"period": p["period"], "label": f"P{p['fiscal_period']:02d}" if p["fiscal_year"] == fy else f"FY{str(p['fiscal_year'])[2:]} P{p['fiscal_period']:02d}",
+                "actual": p["actual"], "fy": p["fiscal_year"]} for p in vp["periods"]]
+    in_fy = [p for p in periods if p["fy"] == fy]
+    cols = in_fy + [{"period": "FY", "label": f"FY{fy}", "total": True}] + [p for p in periods if p["fy"] != fy]
+    opens = set(vp["plan"]) if version and is_open else set()
     buckets: dict[tuple, list] = defaultdict(list)          # (node, period) → the cells beneath it at this customer node
+    actual_at: dict[tuple, list] = defaultdict(list)        # (node, period) → what happened beneath it, in an actual period
     if grid is not None:
         A, M = grid.accounts_under.get(fc, set()), grid.materials_under.get(fm, set())
         child_of = {m: ch for ch in kids for m in grid.materials_under.get(ch, ())}
         for p in periods:
+            if p["actual"]:
+                continue
             for k in grid.by_period.get((version, p["period"]), ()):
                 if k[1] in A and k[2] in M:
                     buckets[(fm, p["period"])].append(k)
                     if k[2] in child_of:
                         buckets[(child_of[k[2]], p["period"])].append(k)
-    edits = _once(reads.finance_edits_at)(version, fy, fc, nodes) if version else []
+        for r in _once(reads.finance_actuals)(vp["actual"]):
+            if r["account_code"] in A and r["material_code"] in M:
+                c = {"source": "actual", "cases": r["cases"], "net_sales": r["net_sales"], "source_cases": r["cases"], "source_net_sales": r["net_sales"],
+                     "price": None, "source_price": None, "std_cost": None, "cogs": None, "margin": None}
+                actual_at[(fm, r["period"])].append(c)
+                if r["material_code"] in child_of:
+                    actual_at[(child_of[r["material_code"]], r["period"])].append(c)
+    edits = _once(reads.finance_edits_at)(version, list(vp["plan"]), fc, nodes) if version else []
     typed: dict[tuple, dict] = {}
     for e in edits:                       # latest first: the first in force is the one standing at the cell
         if e["state"] == "in_force":
@@ -1025,7 +1048,9 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
     for code in nodes:
         keys_by_p = {p["period"]: buckets.get((code, p["period"]), []) for p in periods}
         all_keys = [k for ks in keys_by_p.values() for k in ks]
-        if code != fm and not all_keys:
+        fy_keys = [k for p in in_fy for k in keys_by_p[p["period"]]]
+        fy_actual = [c for p in in_fy for c in actual_at.get((code, p["period"]), [])]
+        if code != fm and not all_keys and not fy_actual:
             continue
         nb = sum(1 for k in all_keys if grid.cells[k]["source"] != "fed")
         lvl = kids[code]["lvl"] if code != fm else None
@@ -1033,11 +1058,19 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
         row = {"code": code, "label": kids[code]["label"] if code != fm else fm_label, "current": code == fm, "href": L(material=code) if has_kids else None,
                "level": ("this node" if code == fm else levels.get(lvl, lvl or "")), "built": ("built by Finance" if nb and nb == len(all_keys) else "part built" if nb else ""),
                "cells": {m["key"]: [] for m in MEASURES}}
-        for p in periods + [{"period": "FY", "closed": False}]:
-            ks = all_keys if p["period"] == "FY" else keys_by_p[p["period"]]
-            F = _figures([grid.cells[k] for k in ks], rules, lines)
+        for p in cols:
+            if p.get("actual"):              # what happened: shown in Finance's plan and the demand plan alike, never typed
+                F = _figures(actual_at.get((code, p["period"]), []), rules, lines)
+                for m in MEASURES:
+                    k = m["key"]
+                    row["cells"][k].append({"show": _show(k, F["fin"][k]) if F and reading != "variance" else "", "src": None, "built": None,
+                                            "cls": "actual", "title": "actual — what was shipped and invoiced; nothing is planned or typed here",
+                                            "input": None, "moved": False})
+                continue
+            ks = fy_keys if p.get("total") else keys_by_p[p["period"]]
+            F = _figures([grid.cells[k] for k in ks] + (fy_actual if p.get("total") else []), rules, lines)
             for m in MEASURES:
-                k = m["key"]; x = {"show": "", "src": None, "built": None, "cls": "closed" if p["closed"] else "", "title": "", "input": None, "moved": False}
+                k = m["key"]; x = {"show": "", "src": None, "built": None, "cls": "tot" if p.get("total") else "", "title": "", "input": None, "moved": False}
                 if F:
                     if reading == "finance":
                         x["show"] = _show(k, F["fin"][k])
@@ -1071,30 +1104,33 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                             x["cls"] += " unsaved"; x["title"] = "changed by a figure typed and not saved"
                 row["cells"][k].append(x)
         rows.append(row)
-    T = _figures([grid.cells[k] for p in periods for k in buckets.get((fm, p["period"]), [])], rules, ["volume", "price", "revenue"]) or {} if grid is not None else {}
+    T = _figures([grid.cells[k] for p in in_fy for k in buckets.get((fm, p["period"]), [])] + [c for p in in_fy for c in actual_at.get((fm, p["period"]), [])],
+                 rules, ["volume", "price", "revenue"]) or {} if grid is not None else {}
     fin_t, src_t = T.get("fin") or {}, T.get("src") or {}
     tot = {"fin_rev": fin_t.get("revenue"), "fin_vol": fin_t.get("volume"), "fin_price": _show("price", fin_t.get("price")) or "—",
            "src_rev": src_t.get("revenue"), "src_vol": src_t.get("volume"), "src_price": _show("price", src_t.get("price")) or "—",
            "var_rev": (T.get("var") or {}).get("revenue"), "var_vol": (T.get("var") or {}).get("volume"), "var_d": (T.get("var_d") or {}).get("revenue"),
            "built_rev": (T.get("built") or {}).get("revenue") if T.get("built") else (fin_t.get("revenue") if T.get("built_only") else None),
-           "built_vol": (T.get("built") or {}).get("volume") if T.get("built") else (fin_t.get("volume") if T.get("built_only") else None)}
+           "built_vol": (T.get("built") or {}).get("volume") if T.get("built") else (fin_t.get("volume") if T.get("built_only") else None),
+           "act_rev": (T.get("act") or {}).get("revenue")}
     decl = {d["account_code"]: d["source"] for d in _once(reads.finance_sources)() if d["material_code"] == "ALL" and d["valid"]}
     unsaved_rows = [{"scope_material": t.material, "period": t.period, "measure": t.measure, "typed": _show(t.measure, t.value),
                      "now": _show(t.measure, finance_live.node_value(grid, version, fc, t.material, t.period, t.measure)),
                      "then": _show(t.measure, t.source_at_entry), "src_now": _show(t.measure, t.source_at_entry), "source_moved": False,
                      "standing": "unsaved", "state": "in_force", "reason": "", "entered_by": who}
-                    for t in reversed(wc.typed if wc else []) if t.customer == fc and t.material in nodes and t.period in {p["period"] for p in periods}]
+                    for t in reversed(wc.typed if wc else []) if t.customer == fc and t.material in nodes and t.period in {p["period"] for p in periods if not p["actual"]}]
     return {"fy": fy, "fc": fc, "fm": fm, "reading": reading, "measure": measure, "tab_label": rules[measure]["label"],
             "not_built": [rules[m]["not_built_says"] for m in lines if not rules[m]["built"] and rules[m]["not_built_says"]][:1], "customers": customers, "customer_label": next((x["label"] for x in customers if x["code"] == fc), fc), "source_of": decl,
             "path": [{**n, "href": L(material=n["code"])} for n in _once(reads.node_path)("material", fm)] or [{"code": "ALL", "label": "All materials", "href": L(material="ALL")}],
             "readings": [{"label": lab, "on": key == reading, "href": L(reading=key)} for key, lab in READINGS],
-            "n_waiting": len(FINANCE.pending()), "row_head": fm_label, "periods": periods, "measures": MEASURES, "rows": rows, "tot": tot,
+            "n_waiting": len(FINANCE.pending()), "row_head": fm_label, "periods": cols, "measures": MEASURES, "rows": rows, "tot": tot,
+            "from": vp["from"], "n_actual": len(vp["actual"]), "n_plan": len(vp["plan"]), "through": vp["through"], "past_fy": len(periods) - len(in_fy),
             "any_built": any(r["built"] for r in rows) or any(s == "built" for s in decl.values()),
             "editable": editable, "may": may, "open": is_open, "status": v.get("status", "unknown"), "holders": _once(reads.holders)("overlay.finance.enter"),
             "post_keep": {**page, "version": version or "", "fy": fy}, "live_context": {"page": {**page, "version": version or "", "fy": fy}},
             "unsaved_n": len(wc.typed) if wc else 0, "unsaved_here": sum(1 for t in (wc.typed if wc else []) if grid is not None and grid.accounts_under.get(t.customer, set()) <= grid.accounts_under.get(fc, set())), "say": say,
             "can_add": editable and _once(reads.is_account)(fc), "add_materials": _once(reads.account_materials)(fc) if editable and _once(reads.is_account)(fc) else [],
-            "open_in_fy": [p["period"] for p in periods if p["period"] in opens],
+            "open_in_fy": [p["period"] for p in periods if p["period"] in opens],      # every plan period, past the year end too
             "reasons": _once(reads.finance_reasons)(), "default_reason": "BUILD" if decl.get(fc) == "built" else "MARKET",
             "edits": unsaved_rows + [{**e, "typed": _show(e["measure"], e["value"]), "now": _show(e["measure"], e["now_at_node"]), "then": _show(e["measure"], e["source_at_entry"]),
                                       "src_now": _show(e["measure"], e["source_now"])} for e in edits[:80]],
@@ -1131,8 +1167,11 @@ def _cell_refusal(who: str, version: str, v: dict, fc: str, node: str, period: s
         return f"{who} does not hold {said(rule['verb'])} — {rule['label'].lower()} is typed by {', '.join(reads.holders(rule['verb']))}"
     if not reads.material_node(node):
         return f"{node} is not a node of the material structure"
-    if period not in set(reads.open_periods(version)):
-        return f"{period} is closed — figures are typed in open periods only"
+    vp = reads.version_periods(version)
+    if period not in set(vp["plan"]):
+        if vp["from"] and period <= vp["from"]:
+            return f"{period} is an actual period of {version} — nothing is typed there, by anyone"
+        return f"{period} is not a plan period of {version} — figures are typed in {vp['plan'][0]} to {vp['plan'][-1]}" if vp["plan"] else f"{version} plans no period"
     if value is None:
         return f"'{raw}' is not a number"
     if (measure == "volume" and value < 0) or (measure == "price" and value <= 0):

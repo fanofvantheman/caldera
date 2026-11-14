@@ -14,6 +14,12 @@ AUDIT (name version_vocabulary);
 SELECT version_id, version_kind, status FROM @this_model
 WHERE version_kind NOT IN ('actual', 'business_plan', 'latest_view', 'scenario') OR status NOT IN ('open', 'frozen', 'closed', 'retired');
 
+AUDIT (name version_from_point);
+/* blocking: a version's from point is a period at or before the last closed one, and its horizon ends inside what the
+   models calculate on it — a grid showing plan periods nothing calculates would show empty months as a plan */
+SELECT version_id, from_period, plan_through, horizon_end FROM @this_model
+WHERE NOT from_not_after_closed OR NOT horizon_inside_reach OR horizon_periods < 0 OR horizon_quarters < 0;
+
 AUDIT (name material_product_exists);
 SELECT material_code FROM @this_model WHERE NOT product_exists;
 

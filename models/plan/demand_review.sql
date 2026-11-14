@@ -1,7 +1,7 @@
-/* The plan as a review reads it: by fiscal year, the closed periods of the current year as actuals and the open ones as
-   plan, so a year's total is year-to-date actual plus the plan for the rest. One row per version × standard material ×
+/* The plan as a review reads it: by fiscal year, the version's actual periods (up to its from point) as actuals and the
+   rest as plan, so a year's total is year-to-date actual plus the plan for the rest. One row per version × standard material ×
    account × period, with the source of the number; the plan rows are unconstrained demand at review grain, the actual
-   rows are shipments at the same grain for every closed period of a fiscal year the version's horizon touches. Money
+   rows are shipments at the same grain for every actual period of a fiscal year the version's horizon touches. Money
    beside the cases on both: the actual rows carry what was invoiced, the plan rows the gross-to-net at the list and
    terms in force — history is revenue and units, the plan is units and a price, and this is where they meet. */
 MODEL (name plan.demand_review, kind FULL, grain (version_id, standard_material, account_code, period));
@@ -23,6 +23,6 @@ SELECT y.version_id, s.standard_material, s.account_code, s.period, s.fiscal_yea
        SUM(s.gross_sales), SUM(s.net_sales)
 FROM years y
 JOIN dims.ctl_version v ON v.version_id = y.version_id
-JOIN history.shipments_period s ON s.fiscal_year = y.fiscal_year AND s.period < v.horizon_start
+JOIN history.shipments_period s ON s.fiscal_year = y.fiscal_year AND s.period <= v.from_period AND s.period < v.horizon_start
 JOIN dims.dim_period p ON p.period = s.period AND p.period_state = 'CLOSED'
 GROUP BY ALL

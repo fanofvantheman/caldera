@@ -2,7 +2,7 @@
    material structure × a period, volume or price, the value, and the demand plan at that node when it was typed. A save
    is the figures typed together under one reason; a later row naming a save releases it, and its figures return to the
    source. A figure stands when it is typed by a holder of Finance's verb on a known version, for a known reason, at nodes
-   both structures have. Never in the demand stack: plan.finance_plan applies these over the demand plan valued. */
+   both structures have, in a period the version plans — after its last actual one and inside its horizon. Never in the demand stack: plan.finance_plan applies these over the demand plan valued. */
 MODEL (name plan.finance_edit, kind FULL, grain (edit_id));
 WITH rows_ AS (SELECT * FROM bronze.reg_finance_overlay),
 entered AS (SELECT * FROM rows_ WHERE action = 'enter'),
@@ -22,6 +22,8 @@ SELECT e.edit_id::TEXT AS edit_id, e.save_id::TEXT AS save_id, e.version_id::TEX
             WHEN c.lvl IS NULL OR c.lvl = 'ship_to' THEN 'refused: the customer is not a node at account or above'
             WHEN m.lvl IS NULL THEN 'refused: the material is not a node of the material structure'
             WHEN p.period IS NULL THEN 'refused: no such period'
+            WHEN e.period <= v.from_period THEN 'refused: an actual period of the version — nothing is typed there'
+            WHEN e.period > v.plan_through THEN 'refused: past the version''s horizon'
             WHEN e.measure NOT IN ('volume', 'price') THEN 'refused: a figure is a volume or a price'
             WHEN e.value IS NULL OR e.value::DOUBLE < 0 OR (e.measure = 'price' AND e.value::DOUBLE = 0) THEN 'refused: a volume of zero or more, a price above zero'
             ELSE 'in_force' END AS state

@@ -32,8 +32,8 @@ ROLLUPS = ("sum", "months", "line")
 QUANTITY = ("cases_made_ech", "cases_made_lox", "cases_shipped", "net_sales")
 DRIVERS = QUANTITY + ("none", "last_year", "labour_model")
 MOVED = 0.5                    # half a dollar: a calculated amount that has moved since a month was typed
-HORIZON = 12                   # periods planned after the last closed one
 WINDOW = 12                    # the rolling year a rate is calculated over
+STEP = "opex_schedule"         # the schedule's row of dims.ref_step_horizon: how many periods it plans
 
 COLUMNS = ["version_id", "entity_code", "cost_centre_code", "account_code", "period", "fiscal_year", "driver", "driver_qty",
            "rate_calc", "rate", "rate_typed", "amount_calc", "amount", "state", "typed_calc", "moved", "rate_edit_id", "month_edit_id"]
@@ -69,8 +69,9 @@ def total(cells: list[dict], measure: str, rules: Rules) -> float | None:
 
 class Inputs:
     """What the schedule is computed from (a plain class: SQLMesh carries this module into the model by its source).
-      periods       planned: the next twelve after the last closed, in the version's horizon
-      window        the last twelve closed
+      periods       planned: after the version's last actual period, the lesser of the schedule's own window
+                    (dims.ref_step_horizon) and the version's horizon
+      window        the twelve periods up to the version's last actual one
       prior         period → the same period a year earlier
       actual        (line, period) → actual, over the window
       driver_plan   (driver, period) → the version's plan quantity
@@ -90,12 +91,17 @@ def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], ver
     table a model name resolves to. `version` is a version id (no quotes in ids)."""
     v = version.replace("'", "")
     per = fetch(f"select period, fiscal_year, prior_year_period, period_state from {T('dims.dim_period')} order by period")
-    closed = [p["period"] for p in per if p["period_state"] == "CLOSED"]
-    window = closed[-WINDOW:]
-    ver = (fetch(f"select horizon_start, horizon_end, status from {T('dims.ctl_version')} where version_id = '{v}'") or [{}])[0]
+    ver = (fetch(f"""select horizon_start, horizon_end, status, from_period, horizon_periods, plan_through
+                     from {T('dims.ctl_version')} where version_id = '{v}'""") or [{}])[0]
     is_open = ver.get("status") == "open"
-    after = [p["period"] for p in per if p["period"] > (closed[-1] if closed else "")][:HORIZON]
-    periods = [p for p in after if ver and ver["horizon_start"] <= p <= ver["horizon_end"]] if is_open else []
+    # the version says which periods are actual, not the calendar: the rate's window ends at its from point, and the
+    # schedule plans the periods after it — its own window, never more than the version's horizon
+    upto = ver.get("from_period") or ""
+    window = [p["period"] for p in per if p["period"] <= upto][-WINDOW:]
+    step = fetch(f"select horizon_periods from {T('dims.ref_step_horizon')} where step = '{STEP}'")
+    n = min(int(step[0]["horizon_periods"]) if step else 0, int(ver.get("horizon_periods") or 0))
+    after = [p["period"] for p in per if upto and p["period"] > upto][:n]
+    periods = [p for p in after if ver["horizon_start"] <= p <= ver["horizon_end"] and p <= (ver.get("plan_through") or "")] if is_open else []
     fy_of = {p["period"]: int(p["fiscal_year"]) for p in per}
     prior = {p["period"]: p["prior_year_period"] for p in per}
     inn = ",".join(f"'{p}'" for p in window) or "''"
@@ -131,7 +137,7 @@ def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], ver
 
 
 def calculated_rate(inp: Inputs, line: Line, driver: str) -> float | None:
-    """Line actuals ÷ driver actuals over the last twelve closed periods; a flat amount is the year ÷ 12; last year's
+    """Line actuals ÷ driver actuals over the twelve periods up to the version's last actual one; a flat amount is the year ÷ 12; last year's
     rate is the index on it."""
     if driver == "last_year":
         return inp.index

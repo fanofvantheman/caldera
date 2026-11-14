@@ -15,6 +15,7 @@ from . import costs
 from .words import said
 
 ROLE = """<h1>Headcount by role<small>FY{{ fy }} · {{ version }} · the factory cost centres — positions priced through each entity's agreement; a change of person moves nothing</small></h1>
+{% if plan_in_fy %}<p class="hint">FY{{ fy }} here is {{ version }}'s plan periods in the year, {{ plan_in_fy[0] }} to {{ plan_in_fy[-1] }}{% if upto %}: the periods to {{ upto }} are actual for this version and are not planned — what was paid in them is in the <a href="{{ url_for('plan.cost_actuals') }}">ledgers' actuals</a>{% endif %}.</p>{% endif %}
 <p class="hint">FTE are positions at 38 paid hours a week; the casual pool is a position for the campaign periods at a 25% loading. Wages land on the schedule's 6100 line and the employer's on-costs on 6150, for every period of the schedule. Penalties, allowances and leave are not yet planned.</p>
 {% for g in groups %}<h2>{{ g.name }}<span class="count">{{ g.code }} · {{ g.entity }}</span></h2>
 <table><thead><tr><th>Position</th><th>Classification</th><th>Employment</th><th class="n">FTE</th><th class="n">Rate now</th><th class="n">From {{ step }}</th><th class="n">FY{{ fy }} wages</th><th class="n">On-costs</th></tr></thead><tbody>
@@ -26,6 +27,7 @@ ROLE = """<h1>Headcount by role<small>FY{{ fy }} · {{ version }} · the factory
 {% for a in agreements %}<tr><td class="small">{{ a.agreement_name }} <span class="muted">{{ a.entity_code }}</span></td><td>{{ a.classification_name }}</td>{% for p in agreement_periods %}<td class="n">{{ '%.2f'|format(a.rates[p]) if a.rates.get(p) else '' }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>"""
 
 NAME = """<h1>Headcount by name<small>FY{{ fy }} · {{ version }} · the overhead cost centres — each person's own terms; nothing accrues to a role</small></h1>
+{% if plan_in_fy %}<p class="hint">FY{{ fy }} here is {{ version }}'s plan periods in the year, {{ plan_in_fy[0] }} to {{ plan_in_fy[-1] }}{% if upto %}: the periods to {{ upto }} are actual for this version and are not planned — what was paid in them is in the <a href="{{ url_for('plan.cost_actuals') }}">ledgers' actuals</a>{% endif %}.</p>{% endif %}
 {% if not may %}<p class="lede">This is individual pay. It is read by {{ pay_holders|join(', ') or 'nobody yet' }} — not by the cost centre's owner — and {{ viewer }} does not hold it.</p>
 {% else %}<p class="hint">Individual pay, read by the holders of {{ pay_said }}. Salary × (1 + the incentive at target) for the weeks each person is employed in a period; a named vacancy is planned at a typed figure from its start; the employer's on-costs at the entity's rates. Wages land on the schedule's 6100 line, on-costs on 6150.</p>
 {% for g in groups %}<h2>{{ g.name }}<span class="count">{{ g.code }} · {{ g.entity }}</span></h2>
@@ -68,7 +70,12 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         c = ctx_fn()
         version = c.get("version") or reads.default_version()
         v = reads.version(version) or {}
-        return version, int(c.get("fy") or v.get("fiscal_year") or 0)
+        return version, int(v.get("fiscal_year") or c.get("fy") or 0)          # the version's own year
+
+    def _plan_in(version: str, fy: int) -> dict:
+        """The version's plan periods in the year, asked of the version — the periods the year's wages are summed over."""
+        vp = reads.version_periods(version)
+        return {"plan_in_fy": [p["period"] for p in vp["periods"] if not p["actual"] and p["fiscal_year"] == fy] if vp["periods"] else [], "upto": vp["from"]}
 
     @bp.get("/headcount/role")
     def headcount_role():
@@ -90,7 +97,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 l = by.get(p["position_id"]) or {}
                 rows.append({**p, "rate_now": x.get(periods[0]) if periods else None, "rate_step": x.get(step), "wages": l.get("wages"), "on_costs": l.get("on_costs"),
                              "fte": p["fte"]})
-            return page(ROLE, title="Headcount by role", active="hc_role", version=version, fy=fy, groups=_groups(rows, by, mine),
+            return page(ROLE, title="Headcount by role", active="hc_role", version=version, fy=fy, groups=_groups(rows, by, mine), **_plan_in(version, fy),
                         agreements=list(rates.values()), agreement_periods=periods, step=step)
         except Busy as e:
             return busy("Headcount by role", e)
@@ -108,7 +115,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                          "fte": ((by.get(p["person_id"]) or {}).get("fte") or 0) / n}
                         for p in q("select * from dims.reg_person order by cost_centre_code, entity_code, vacancy, person_id")]
                 groups = _groups(rows, by, mine)
-            return page(NAME, title="Headcount by name", active="hc_name", version=version, fy=fy, may=may, viewer=who, groups=groups,
+            return page(NAME, title="Headcount by name", active="hc_name", version=version, fy=fy, may=may, viewer=who, groups=groups, **_plan_in(version, fy),
                         pay_holders=reads.holders(costs.PAY_VERB), pay_verb=costs.PAY_VERB, pay_said=said(costs.PAY_VERB))
         except Busy as e:
             return busy("Headcount by name", e)

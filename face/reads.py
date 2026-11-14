@@ -36,6 +36,32 @@ def horizon(version_id: str) -> list[str]:
     return [r["period"] for r in q("select period from dims.dim_period where period between ? and ? order by period", v["horizon_start"], v["horizon_end"])]
 
 
+def version_periods(version_id: str | None) -> dict:
+    """The periods a grid shows on a version, asked of the version and not the calendar: the actual periods of the year it
+    is named for (up to its from point), then the plan periods for its horizon — past the year end where it reaches. Each
+    period: period, fiscal_year, fiscal_period, actual."""
+    v = version(version_id) if version_id else None
+    out = {"fy": None, "from": None, "through": None, "periods": [], "actual": [], "plan": [], "horizon": 0, "quarters": 0}
+    if not v or not v.get("from_period"):
+        return out
+    fy = int(v["fiscal_year"]) if v.get("fiscal_year") else None
+    rows = q("""select period, fiscal_year, fiscal_period from dims.dim_period
+                where (fiscal_year = ? and period <= ?) or (period > ? and period <= ?) order by period""",
+             fy or -1, v["from_period"], v["from_period"], v.get("plan_through") or v["from_period"])
+    ps = [{**r, "actual": r["period"] <= v["from_period"]} for r in rows]
+    return {"fy": fy, "from": v["from_period"], "through": v.get("plan_through"), "periods": ps,
+            "actual": [p["period"] for p in ps if p["actual"]], "plan": [p["period"] for p in ps if not p["actual"]],
+            "horizon": int(v.get("horizon_periods") or 0), "quarters": int(v.get("horizon_quarters") or 0)}
+
+
+def version_kinds() -> list[dict]:
+    return q("select * from dims.ref_version_kind order by ord")
+
+
+def step_horizons() -> list[dict]:
+    return q("select * from dims.ref_step_horizon order by ord")
+
+
 def layers() -> list[dict]:
     return q("select * from plan.ref_layer order by layer_no")
 
@@ -45,11 +71,16 @@ def accounts() -> list[dict]:
 
 
 def demand(version_id: str, customer: str | None = None, material: str | None = None) -> dict:
-    """One row per standard material; every period across — closed periods as actuals (marked), open ones as plan — then,
-    at the end, each fiscal year's total beside its comparatives: the prior year's actual and the reference version. At a
-    node of either structure (an account, a unit, all; a category, a product, a material)."""
+    """One row per standard material; the version's periods across — its actual periods of the year it is named for
+    (marked), then the plan for its horizon, past the year end — then, at the end, each fiscal year's total beside its
+    comparatives: the prior year's actual and the reference version, over the same periods (a year the horizon cuts is
+    totalled to where it stops). At a node of either structure (an account, a unit, all; a category, a product, a material)."""
     acct, ap = _scope_sql(customer, material, "account_code", "standard_material")
     rows = q(f"select standard_material, fiscal_year, period, source, sum(cases) cases from plan.demand_review where version_id = ?{acct} group by all order by 3", version_id, *ap)
+    vp = version_periods(version_id)
+    if vp["periods"]:                       # the version's periods, not every period its models calculate
+        shown = {p["period"] for p in vp["periods"]}
+        rows = [r for r in rows if r["period"] in shown]
     v = version(version_id) or {}
     fys = sorted({r["fiscal_year"] for r in rows})
     periods = sorted({r["period"] for r in rows})
@@ -68,7 +99,9 @@ def demand(version_id: str, customer: str | None = None, material: str | None = 
             py_tot[(m, fy + 1)] = py_tot.get((m, fy + 1), 0.0) + c
     py_years = {fy for (_, fy) in py_tot}
     ref_id = v.get("reference_version")
-    ref = q(f"select standard_material, fiscal_year, sum(cases) cases from plan.unconstrained_demand_period where version_id = ?{acct} group by all", ref_id, *ap) if ref_id else []
+    shown_p = sorted({r["period"] for r in rows})
+    ref = q(f"""select standard_material, fiscal_year, sum(cases) cases from plan.unconstrained_demand_period where version_id = ?{acct}
+                and period in ({','.join('?' * len(shown_p)) or "''"}) group by all""", ref_id, *ap, *shown_p) if ref_id and shown_p else []
     ref_years = {r["fiscal_year"] for r in ref}
     mats = sorted({r["standard_material"] for r in rows})
     cell = {(r["standard_material"], r["period"]): r["cases"] for r in rows}
@@ -76,7 +109,7 @@ def demand(version_id: str, customer: str | None = None, material: str | None = 
     for r in rows:
         fy_tot[(r["standard_material"], r["fiscal_year"])] = fy_tot.get((r["standard_material"], r["fiscal_year"]), 0.0) + r["cases"]
     ref_tot = {(r["standard_material"], r["fiscal_year"]): r["cases"] for r in ref}
-    comps = [{"fy": fy, "py": fy in py_years, "ref": fy in ref_years} for fy in fys]
+    comps = [{"fy": fy, "py": fy in py_years, "ref": fy in ref_years, "to": f"P{fps[fy][-1]:02d}" if fps[fy] and fps[fy][-1] < 12 and fps[fy][0] == 1 else None} for fy in fys]
     indexed: dict[int, dict] = {}
     def idx(d: dict) -> dict:
         """d keyed (material, k) -> k -> material -> value, built once per dict."""
@@ -113,7 +146,7 @@ def demand(version_id: str, customer: str | None = None, material: str | None = 
         groups.append(row)
     groups.sort(key=lambda r: -r["total"])
     return {"periods": periods, "source_of": source_of, "comps": comps, "ref_id": ref_id, "groups": groups, "rows": [line([m], m) for m in mats], "totals": line(None, "Total"),
-            "n_actual": sum(1 for p in periods if source_of[p] == "actual")}
+            "n_actual": sum(1 for p in periods if source_of[p] == "actual"), "n_plan": sum(1 for p in periods if source_of[p] != "actual")}
 
 
 def by_layer(version_id: str, customer: str | None = None, material: str | None = None) -> list[dict]:
@@ -711,9 +744,18 @@ def finance_reasons() -> list[dict]:
 
 
 def open_periods(version_id: str) -> list[str]:
-    """The version's periods not yet closed — where Finance may type."""
-    return [r["period"] for r in q("""select distinct b.period from plan.revenue_bridge b join dims.dim_period p on p.period = b.period
-                                      where b.version_id = ? and p.period_state <> 'CLOSED' order by 1""", version_id)]
+    """The version's plan periods — after its last actual one, inside its horizon: where Finance may type. Asked of the
+    version, not the calendar."""
+    return version_periods(version_id)["plan"]
+
+
+def finance_actuals(periods: list[str]) -> list[dict]:
+    """What happened in the version's actual periods, at Finance's grain — account × material × period: the cases
+    shipped and the net sales invoiced."""
+    if not periods:
+        return []
+    return q(f"""select account_code, standard_material material_code, period, sum(cases) cases, sum(net_sales) net_sales
+                 from history.shipments_period where period in ({','.join('?' * len(periods))}) group by all""", *periods)
 
 
 def fy_periods(fy: int) -> list[dict]:
@@ -779,11 +821,13 @@ def finance_cells(version_id: str, fy: int, customer: str, nodes: list[str]) -> 
                  where f.version_id = ? and f.fiscal_year = ? group by all""", customer, *nodes, version_id, fy)
 
 
-def finance_edits_at(version_id: str, fy: int, customer: str, nodes: list[str]) -> list[dict]:
-    """The figures typed at this customer node on the nodes shown, latest first."""
-    marks = ",".join("?" * len(nodes))
-    return q(f"""select * from plan.finance_edit_reading where version_id = ? and fiscal_year = ? and scope_customer = ?
-                 and scope_material in ({marks}) order by entered_on desc, edit_id desc""", version_id, fy, customer, *nodes)
+def finance_edits_at(version_id: str, periods: list[str], customer: str, nodes: list[str]) -> list[dict]:
+    """The figures typed at this customer node on the nodes shown, in the periods shown, latest first."""
+    if not periods or not nodes:
+        return []
+    marks, pm = ",".join("?" * len(nodes)), ",".join("?" * len(periods))
+    return q(f"""select * from plan.finance_edit_reading where version_id = ? and period in ({pm}) and scope_customer = ?
+                 and scope_material in ({marks}) order by entered_on desc, edit_id desc""", version_id, *periods, customer, *nodes)
 
 
 def finance_saves(version_id: str) -> list[dict]:
