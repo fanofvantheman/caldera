@@ -158,7 +158,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             landing.place([{"submission_id": sid, "action": act, "version_id": version, "subject": step["subject"], "scope_node": node, "submitted_by": who,
                             "submitted_on": dt.date.today().isoformat(), "note": note, "due_on": ""}], who)
         session.last = receipts.write(f"workflow.{act}", who, f"{f.get('step')}@{node}", checks, placed)
-        back = url_for("plan.workflow", via=_process())
+        nxt = f.get("next") or ""
+        back = nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("plan.workflow", via=_process())
         if not placed:
             session.say(f"{act.replace('_', ' ')} refused: " + "; ".join(c["says"] for c in checks if not c["ok"]), False)
             return redirect(back)

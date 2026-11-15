@@ -122,12 +122,18 @@ PROCESSES = [
             Section("headcount", "Headcount", "plan.headcount_role", uses=COST_SIDE, tabs=[
                 Tab("hc_role", "By role", "plan.headcount_role", verbs=COST_READ),
                 Tab("hc_name", "By name", "plan.headcount_name", verbs=["read.pay"]),
+                # the reviewer's and the process owner's views of the same object (DEC-20261115-02 point 5)
+                Tab("hc_review", "Review", "plan.headcount_review", verbs=["review.labour.close"]),
+                Tab("hc_compare", "Compare", "plan.headcount_compare", verbs=["review.labour.close"]),
                 # what the labour model prices: the kinds, and each agreement's entitlements with their clauses (DEC-20261114-03)
                 Tab("hc_entitlements", "Entitlements", "plan.entitlements", verbs=COST_READ + ["register.agreement.maintain"], uses=("entity",))]),
         ]),
         Area("opex", "Opex", [
             Section("schedule", "Opex schedule", "plan.schedule", uses=COST_SIDE, tabs=[
-                Tab("sch_schedule", "Schedule", "plan.schedule", verbs=COST_READ)]),
+                Tab("sch_schedule", "Schedule", "plan.schedule", verbs=COST_READ),
+                # the reviewer's and the process owner's views of the same object (DEC-20261115-02 point 5)
+                Tab("sch_review", "Review", "plan.schedule_review", verbs=["review.opex.close"]),
+                Tab("sch_compare", "Compare", "plan.schedule_compare", verbs=["review.opex.close"])]),
         ]),
         Area("capital", "Capital", [
             # the capital plan: planned, not approved — projects, sustaining rates, leases, the register walked (DEC-20261115-01)
