@@ -70,9 +70,11 @@ def _pending_rows(landing, version: str) -> tuple[list[dict], dict[str, list]]:
 
 
 def standard_of(version: str) -> dict:
-    """The standard cost per case by material and period on a version — what the run's grid is made with."""
-    return {(r["version_id"], r["material_code"], r["period"]): r["std_cost"]
-            for r in q("select version_id, material_code, period, std_cost from plan.standard_cost where version_id = ? and complete", version)}
+    """The standard per case by material and period on a version, its sum and its four components — what the run's grid is made with."""
+    return {(r["version_id"], r["material_code"], r["period"]): {"std_cost": r["std_cost"], "std_material": r["material_cost"], "std_labour": r["labour_cost"],
+                                                                  "std_variable": r["variable_overhead"], "std_fixed": r["fixed_overhead"]}
+            for r in q("""select version_id, material_code, period, std_cost, material_cost, labour_cost, variable_overhead, fixed_overhead
+                          from plan.standard_cost where version_id = ? and complete""", version)}
 
 
 def base(version: str, landing) -> tuple[tuple, Grid]:

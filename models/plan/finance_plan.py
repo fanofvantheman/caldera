@@ -22,7 +22,8 @@ from calc.finance import COLUMNS, Grid, rules_from
 TYPES = {"version_id": "TEXT", "account_code": "TEXT", "material_code": "TEXT", "period": "TEXT", "fiscal_year": "INT",
          "source": "TEXT", "source_cases": "DOUBLE", "source_net_sales": "DOUBLE", "source_price": "DOUBLE",
          "cases": "DOUBLE", "price": "DOUBLE", "net_sales": "DOUBLE", "std_cost": "DOUBLE", "cogs": "DOUBLE", "margin": "DOUBLE",
-         "volume_edit_id": "TEXT", "price_edit_id": "TEXT"}
+         "volume_edit_id": "TEXT", "price_edit_id": "TEXT", "std_material": "DOUBLE", "std_labour": "DOUBLE", "std_variable": "DOUBLE",
+         "std_fixed": "DOUBLE", "cogs_material": "DOUBLE", "cogs_labour": "DOUBLE", "cogs_variable": "DOUBLE", "cogs_fixed": "DOUBLE"}
 
 
 @model(
@@ -65,8 +66,11 @@ def execute(context: ExecutionContext, start: datetime, end: datetime, execution
         on_record[typed].append((a, m, float(x)))
 
     # the standard cost per case of each material in each period, from the standard by plant (DEC-20261115-04)
-    standard = {(v, m, p): float(s) for v, m, p, s in context.fetchdf(
-        f"select version_id, material_code, period, std_cost from {T('plan.standard_cost')} where complete").itertuples(index=False, name=None)}
+    # and its four components, each carried on the cell with its amount (DEC-20261115-04 point 4)
+    standard = {(v, m, p): {"std_cost": float(s), "std_material": float(a), "std_labour": float(b), "std_variable": float(c), "std_fixed": float(d)}
+                for v, m, p, s, a, b, c, d in context.fetchdf(
+        f"""select version_id, material_code, period, std_cost, material_cost, labour_cost, variable_overhead, fixed_overhead
+            from {T('plan.standard_cost')} where complete""").itertuples(index=False, name=None)}
     grid = Grid(dict(accounts_under), dict(materials_under), source_of, fy_of, rules, actual_through, standard).from_source(demand.itertuples(index=False, name=None))
     grid.replay(edits.to_dict("records"), on_record)
     return pd.DataFrame(list(grid.cells.values()), columns=COLUMNS)

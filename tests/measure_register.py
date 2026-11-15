@@ -60,8 +60,21 @@ def margin_is_revenue_less_cogs(c: dict) -> bool:
     return close(c["margin"], c["net_sales"] - c["cogs"])
 
 
+def component_is_volume_times(per_case: str, amount: str):
+    """A component of the standard's cost: volume × its figure per case (DEC-20261115-04 point 4)."""
+    def check(c: dict) -> bool:
+        if c.get(per_case) is None or c["cases"] is None:
+            return c.get(amount) is None
+        return close(c[amount], c["cases"] * c[per_case])
+    return check
+
+
 FORMULAS = {
     ("finance", "revenue", "volume × price"): revenue_is_volume_times_price,
+    ("finance", "cogs_material", "volume × material per case"): component_is_volume_times("std_material", "cogs_material"),
+    ("finance", "cogs_labour", "volume × labour per case"): component_is_volume_times("std_labour", "cogs_labour"),
+    ("finance", "cogs_variable", "volume × variable overhead per case"): component_is_volume_times("std_variable", "cogs_variable"),
+    ("finance", "cogs_fixed", "volume × fixed overhead per case"): component_is_volume_times("std_fixed", "cogs_fixed"),
     ("finance", "cogs", "volume × standard cost"): cogs_is_volume_times_standard,
     ("finance", "margin", "revenue − cost of goods"): margin_is_revenue_less_cogs,
 }
@@ -138,10 +151,12 @@ def schedule_checks(rows: list[dict], fail) -> None:
 
 
 def small_grid(rules: dict, std: float | None = None) -> Grid:
-    """One account, two materials, one period: M1 fed by 100 cases at 10.00, M2 by 300 at 20.00."""
+    """One account, two materials, one period: M1 fed by 100 cases at 10.00, M2 by 300 at 20.00; the standard given with its four components."""
     g = Grid({"ALL": {"A1"}, "A1": {"A1"}}, {"ALL": {"M1", "M2"}, "M1": {"M1"}, "M2": {"M2"}}, lambda a, m: "fed", {"P1": 2027}, rules)
-    g.start(("V", "A1", "M1", "P1"), "fed", 100.0, 1000.0, std_cost=std)
-    g.start(("V", "A1", "M2", "P1"), "fed", 300.0, 6000.0, std_cost=None if std is None else std * 2)
+    def parts(x):                     # a standard and its four components, in the shares 5 : 2 : 1 : 2
+        return {"std_cost": x, **{k: None if x is None else x * w for k, w in (("std_material", .5), ("std_labour", .2), ("std_variable", .1), ("std_fixed", .2))}}
+    g.start(("V", "A1", "M1", "P1"), "fed", 100.0, 1000.0, **parts(std))
+    g.start(("V", "A1", "M2", "P1"), "fed", 300.0, 6000.0, **parts(None if std is None else std * 2))
     return g
 
 

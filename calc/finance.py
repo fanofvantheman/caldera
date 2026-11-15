@@ -30,7 +30,11 @@ BREAKBACKS = ("source_shape", "proportional", None)
 NEGLIGIBLE = {"count": 0.5, "rate": 0.005, "money": 0.005}    # half a case, half a cent: a figure that changes nothing
 
 COLUMNS = ["version_id", "account_code", "material_code", "period", "fiscal_year", "source", "source_cases", "source_net_sales",
-           "source_price", "cases", "price", "net_sales", "std_cost", "cogs", "margin", "volume_edit_id", "price_edit_id"]
+           "source_price", "cases", "price", "net_sales", "std_cost", "cogs", "margin", "volume_edit_id", "price_edit_id",
+           "std_material", "std_labour", "std_variable", "std_fixed", "cogs_material", "cogs_labour", "cogs_variable", "cogs_fixed"]
+# the standard's four components (DEC-20261115-04 point 4): each a figure per case from the standard by plant, and its
+# amount — volume × it — carried on the cell, so a node reads each per case as its amount ÷ volume, as price is revenue ÷ volume
+COMPONENTS = {"std_material": "cogs_material", "std_labour": "cogs_labour", "std_variable": "cogs_variable", "std_fixed": "cogs_fixed"}
 
 Key = tuple   # (version, account, material, period)
 Rules = dict  # measure → its register row
@@ -76,7 +80,7 @@ class Grid:
                  fy_of: dict[str, int], rules: Rules, actual_through: dict[str, str] | None = None, standard: dict | None = None):
         self.accounts_under, self.materials_under, self.source_of, self.fy_of = accounts_under, materials_under, source_of, fy_of
         self.rules = rules
-        self.standard = dict(standard or {})                            # (version, material, period) → the standard cost per case
+        self.standard = dict(standard or {})                            # (version, material, period) → the standard per case: its sum, or {std_cost, the four}
         self.actual_through = dict(actual_through or {})                # version → its from point: the last actual period
         self.cells: dict[Key, dict] = {}
         self.by_period: dict[tuple, list[Key]] = defaultdict(list)    # (version, period) → its cells, for scope matching
@@ -91,7 +95,10 @@ class Grid:
         c = {"version_id": key[0], "account_code": key[1], "material_code": key[2], "period": key[3], "fiscal_year": self.fy_of.get(key[3]),
              "source": src, "source_cases": source_cases, "source_net_sales": source_net_sales, "source_price": price,
              "cases": source_cases if source_cases is not None else 0.0, "price": price, "net_sales": source_net_sales,
-             "std_cost": self.standard.get((key[0], key[2], key[3])), "cogs": None, "margin": None, "volume_edit_id": None, "price_edit_id": None}
+             "std_cost": None, "cogs": None, "margin": None, "volume_edit_id": None, "price_edit_id": None,
+             **{k: None for k in COMPONENTS}, **{k: None for k in COMPONENTS.values()}}
+        std = self.standard.get((key[0], key[2], key[3]))
+        c.update(std if isinstance(std, dict) else {"std_cost": std})
         c.update(now)
         self.cells[key] = c
         if self._owned is None:
@@ -210,11 +217,15 @@ class Grid:
     def _revalue(c: dict) -> None:
         """The formulas — written here, once; the register states each in words (formula_says) and a test holds the two
         together. Revenue = volume × price, except that a fed cell nothing has been typed on is exactly the demand plan
-        valued, even where it has no cases. Cost of goods = volume × standard cost; margin = revenue − cost of goods."""
+        valued, even where it has no cases. Cost of goods = volume × standard cost; each component's cost = volume × its
+        figure per case; margin = revenue − cost of goods."""
         if c.get("volume_edit_id") is None and c.get("price_edit_id") is None and c["source"] == "fed":
             c["net_sales"] = c["source_net_sales"]
         else:
             c["net_sales"] = c["cases"] * c["price"] if c["cases"] is not None and c["price"] is not None else None
         std = c.get("std_cost")
         c["cogs"] = c["cases"] * std if std is not None and c["cases"] is not None else None
+        for per_case, amount in COMPONENTS.items():                    # each component's cost: volume × its figure per case
+            x = c.get(per_case)
+            c[amount] = c["cases"] * x if x is not None and c["cases"] is not None else None
         c["margin"] = c["net_sales"] - c["cogs"] if c["net_sales"] is not None and c["cogs"] is not None else None

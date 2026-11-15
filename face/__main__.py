@@ -847,7 +847,7 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 {% for e in fin.edits %}<tr class="{{ 'off' if e.state != 'in_force' }}"><td>{{ e.scope_material }}</td><td>{{ e.period }}</td><td>{{ e.measure }}</td><td class="n">{{ e.typed }}</td><td class="n">{{ e.now }}</td><td class="n">{{ e.then }}</td><td class="n">{{ e.src_now }}{% if e.source_moved %} <span class="moved">◆</span>{% endif %}</td>
 <td>{% if e.standing == 'unsaved' %}<span class="state unsaved">unsaved</span>{% elif e.standing == 'held' %}held{% elif e.standing == 'overwritten' %}<span class="state">changed</span> <span class="small muted">by a later figure</span>{% else %}<span class="state">{{ e.standing }}</span>{% endif %}{% if e.state == 'in_force' and e.edit_id and fin.may and fin.open %} <a class="small" tabindex="-1" href="{{ url_for('plan.withdrawal', grid='finance', id=e.edit_id, version=fin.post_keep.version) }}">withdraw…</a>{% endif %}</td><td class="small">{{ e.reason }}</td><td class="small">{{ e.entered_by }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>{% endmacro %}"""
 
-FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ version }} · {{ fin.tab_label }} · {% if fin.entry == 'Revenue' %}Finance's volume × price = revenue{% else %}the volume typed under Revenue × the standard cost per case = cost of goods; margin = revenue − cost of goods{% endif %}, the demand plan beneath every figure</small></h1>
+FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ version }} · {{ fin.tab_label }} · {% if fin.entry == 'Revenue' %}Finance's volume × price = revenue{% else %}the volume typed under Revenue × the standard cost per case — material, labour, variable and fixed overhead — = cost of goods; margin = revenue − cost of goods{% endif %}, the demand plan beneath every figure</small></h1>
 {{ fin_tiles(fin) }}
 <div class="toolbar"><span class="small muted">{{ fin.customer_label }}{% if fin.source_of.get(fin.fc) == 'built' %} · built by Finance{% endif %} ×</span>
 <span class="crumbs">{% for n in fin.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}</span>
@@ -891,7 +891,7 @@ table.fin td.actual,table.fin th.actual{color:var(--muted);background:var(--soft
 """
 # the financial forecast's tabs, one per measure of the register — each a view of the same working copy, showing the
 # measure with the lines it is calculated from above it where that makes it readable (caldera ambiguity #20 f)
-FIN_TABS = {"volume": ["volume"], "price": ["price"], "revenue": ["revenue"], "cogs": ["volume", "std_cost", "cogs"], "margin": ["revenue", "cogs", "margin"]}
+FIN_TABS = {"volume": ["volume"], "price": ["price"], "revenue": ["revenue"], "cogs": ["volume", "std_material", "std_labour", "std_variable", "std_fixed", "std_cost", "cogs"], "margin": ["revenue", "cogs", "margin"]}
 READINGS = [("finance", "Finance plan"), ("source", "Demand plan"), ("variance", "Variance")]
 PAGE_KEYS = ("version", "fy", "customer", "material", "reading", "measure")      # where the financial forecast stands
 _FIN_MODULE: dict = {}
