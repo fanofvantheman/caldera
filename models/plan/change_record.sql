@@ -9,6 +9,7 @@ MODEL (name plan.change_record, kind FULL, grain (record, act_id));
 WITH sched_standing AS (
   SELECT DISTINCT version_id, month_edit_id AS edit_id FROM plan.opex_schedule WHERE month_edit_id IS NOT NULL
   UNION SELECT DISTINCT version_id, rate_edit_id FROM plan.opex_schedule WHERE rate_edit_id IS NOT NULL
+  UNION SELECT DISTINCT version_id, adjust_edit_id FROM plan.opex_schedule WHERE adjust_edit_id IS NOT NULL
 ),
 sched_driver AS (                         -- the latest driver act in force on each line is the one that stands
   SELECT edit_id FROM plan.schedule_edit
@@ -49,14 +50,17 @@ UNION ALL
 SELECT 'opex schedule', s.edit_id, s.version_id, s.action, s.entered_on, s.entered_by, s.reason_code || COALESCE(' · ' || s.note, ''),
        CASE s.action WHEN 'withdraw' THEN 'withdraws ' || s.withdraws
                      ELSE s.account_code || ' at ' || s.cost_centre_code || ' (' || s.entity_code || ')' ||
-                          CASE s.action WHEN 'month' THEN ' · ' || s.period || ' ' || ROUND(s.value, 0)
+                          CASE s.action WHEN 'month' THEN ' · ' || s.period || ' ' || ROUND(s.value, 0) || ' locked'
+                                        WHEN 'lock' THEN ' · ' || s.period || ' locked at ' || ROUND(s.value, 0)
+                                        WHEN 'adjust' THEN ' · ' || s.period || ' adjusted ' || CASE WHEN s.value >= 0 THEN '+' ELSE '' END || ROUND(s.value, 0)
+                                        WHEN 'unlock' THEN ' · ' || s.period || ' unlocked, following its driver' 
                                         WHEN 'rate' THEN ' · rate ' || COALESCE(ROUND(s.value, 4)::TEXT, 'back to calculated')
                                         WHEN 'driver' THEN ' · driver ' || s.driver
                                         ELSE ' · ' || COALESCE(s.period, 'every typed month') || ' back to calculated' END END
          || COALESCE(' · copied from ' || s.copied_from, ''),
-       CASE WHEN s.action = 'withdraw' OR s.action = 'reset' THEN CASE WHEN s.withdrawn_by_act IS NOT NULL THEN 'withdrawn' ELSE 'stands' END
+       CASE WHEN s.action IN ('withdraw', 'reset', 'unlock') THEN CASE WHEN s.withdrawn_by_act IS NOT NULL THEN 'withdrawn' ELSE 'stands' END
             WHEN s.withdrawn_by_act IS NOT NULL THEN 'withdrawn'
-            WHEN s.action IN ('month', 'rate') AND ss.edit_id IS NULL THEN 'overwritten'
+            WHEN s.action IN ('month', 'rate', 'adjust', 'lock') AND ss.edit_id IS NULL THEN 'overwritten'
             WHEN s.action = 'driver' AND sd.edit_id IS NULL THEN 'overwritten'
             ELSE 'stands' END,
        s.withdraws, CASE WHEN s.action <> 'withdraw' THEN 'schedule' END, CASE WHEN s.action <> 'withdraw' THEN s.edit_id END, s.save_id

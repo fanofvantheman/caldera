@@ -1,6 +1,6 @@
 /* Every act on the opex schedule, in the order typed: a line's driver, its rate typed over the calculated one (no value:
-   back to calculated), a month typed (with the calculated amount when it was typed), a reset of typed months back to
-   calculated. One file per save; each act carries the save's reason. plan.opex_schedule applies them in order. A
+   back to calculated), a month's adjustment, a month locked (or typed and held — a lock at the figure), unlocked, a
+   reset of months back to calculated. One file per save; each act carries the save's reason. plan.opex_schedule applies them in order. A
    withdrawal is a later row naming an act (its edit_id) or a save (its save_id): what it names is out of force, and
    stays on record here. */
 MODEL (name plan.schedule_edit, kind FULL, grain (edit_id), audits (schedule_edit_valid));

@@ -32,7 +32,7 @@ what it wrote); `uv run python -m tests.version_fork` names a what-if from the l
 cell with every copy naming its original and the arrivals read, not copied, promotes it and back, and names a version from
 the business plan at the last close (it removes what it wrote); `uv run python -m tests.agreement_door` takes the renegotiated
 agreement in through the door with the model replaced by a stub, and checks the quotation check, the refusals, the no-key
-path and that only accepted rows reach the labour model (it removes what it wrote). `uv run python -m tests.capex_plan` checks that the capital plan opens on the register as loaded and walks, the units-of-production charge, that the schedule's depreciation and lease lines are the capital plan's charge, and enters and withdraws a project through the page (it removes what it wrote).
+path and that only accepted rows reach the labour model (it removes what it wrote). `uv run python -m tests.capex_plan` checks that the capital plan opens on the register as loaded and walks, the units-of-production charge, that the schedule's depreciation and lease lines are the capital plan's charge, and enters and withdraws a project through the page (it removes what it wrote); `uv run python -m tests.schedule_lock` checks a schedule month adjusted, locked and unlocked, and that every month typed before reads locked at its figure (it removes what it wrote).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -217,7 +217,8 @@ version the latest view — the version every page opens on — whole, nothing m
   account × period for the twelve periods after the last closed, closed periods beside it as actuals: each line a driver
   (cases made at a plant, cases shipped, net sales, a flat amount, or last year × the index) and a rate, the rate
   calculated from the last twelve closed periods shown beneath the one in use; each month driver × rate until someone
-  types it, a typed month held with the calculated amount beneath it and a mark when that has moved since; typed into a
+  types it — a figure typed is an adjustment on top and the month goes on following its driver — or ticks its lock, which
+  holds it with the calculated amount beneath it and a mark when that has moved since; typed into a
   working copy that recalculates at once (the same function as the run, `calc/schedule.py`), Save with one reason
   releasing it by a run scoped to the schedule, Discard, Undo and Redo (a step each: a month, a rate, a driver, a confirmed reset), *Recalculate* (calculated months only — it says how many typed
   months it left alone) and *Reset to base* (a confirmation naming the typed months it removes); months typed by the cost

@@ -153,7 +153,7 @@ def main() -> None:
         c.post("/schedule/reset", data={**spage, "line": S.line_id(travel), "period": [SP[1]]})
         assert scell(travel, SP[1])["state"] == "calculated"
         c.post("/schedule/undo", data=spage)                       # the reset out: the typed month is back
-        assert scell(travel, SP[1])["state"] == "typed" and abs(scell(travel, SP[1])["amount"] - round(m0["amount"] + 9000)) < 1e-9
+        assert scell(travel, SP[1])["state"] == "adjusted" and abs(scell(travel, SP[1])["amount"] - round(m0["amount"] + 9000)) < 1e-9
         c.post("/schedule/undo", data=spage)                       # the rate out
         assert abs(scell(elec, SP[2])["amount"] - e0["amount"]) < 1e-6 and scell(elec, SP[2])["rate"] == e0["rate"], (scell(elec, SP[2]), e0)
         html = c.get("/schedule?" + "&".join(f"{k}={v}" for k, v in spage.items())).data.decode()
@@ -161,7 +161,7 @@ def main() -> None:
         c.post("/schedule/undo", data=spage)                       # the month out: as saved
         assert scell(travel, SP[1])["state"] == m0["state"] and abs(scell(travel, SP[1])["amount"] - m0["amount"]) < 1e-9
         c.post("/schedule/redo", data=spage); c.post("/schedule/redo", data=spage)
-        assert scell(elec, SP[2])["rate"] == 0.31 and scell(travel, SP[1])["state"] == "typed"
+        assert scell(elec, SP[2])["rate"] == 0.31 and scell(travel, SP[1])["state"] == "adjusted"
         print(f"schedule       a month, a rate and a reset undone in turn to the schedule as saved; two redone — the month typed, the rate 0.31")
         c.post("/schedule/discard", data=spage)
         assert set(M.FINANCE.files()) | set(S.LANDING.files()) == landing_before, "nothing reaches the landing"

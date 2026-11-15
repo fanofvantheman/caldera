@@ -1,5 +1,5 @@
 """The opex schedule at its grain — entity × the plan's cost centre × account × period: each line a driver and a rate,
-each month calculated as driver × rate until someone types it.
+each month calculated as driver × rate, adjusted where someone typed a figure, held where someone locked it.
 
 Written once, called from two places:
 
@@ -17,11 +17,20 @@ beneath; the sum of one line's months; or the line's own figure, not added acros
 (a `verb`). The formulas are written below, in `compute`, and `tests/measure_register.py` checks them against the
 register's words.
 
-An act is one of four, applied in the order typed:
-  driver   the line's driver (a typed rate goes back to calculated — it was in the old driver's units; typed months stay)
+A month is in one of three states (DEC-20261115-05): *calculated* (driver × rate), *adjusted* (driver × rate + an
+adjustment, an amount — it goes on following the driver), *locked* (the amount as it stood when locked — the driver no
+longer moves it; the calculated amount is kept beside it).
+
+An act is one of these, applied in the order typed:
+  driver   the line's driver (a typed rate goes back to calculated — it was in the old driver's units; adjustments and
+           locks stay)
   rate     the rate in use, typed over the calculated one; no value returns it to calculated
-  month    a month's amount, typed — it holds; the calculated amount when it was typed is kept beside it
-  reset    a typed month back to calculated, or every typed month of the line when no period is named
+  adjust   a month's adjustment: the figure typed less the calculated amount at that moment
+  lock     a month locked at its amount at that moment (the calculated amount then kept beside it)
+  month    a month typed and held — a lock at the figure typed. Every month typed before adjustments existed is one of
+           these, which is why nothing typed before moved when they came; typing into a locked month writes one
+  unlock   a locked month following its driver again, keeping any adjustment it had
+  reset    a month back to calculated — its adjustment and its lock both — or every month of the line when no period is named
 """
 from __future__ import annotations
 
@@ -37,7 +46,10 @@ WINDOW = 12                    # the rolling year a rate is calculated over
 STEP = "opex_schedule"         # the schedule's row of dims.ref_step_horizon: how many periods it plans
 
 COLUMNS = ["version_id", "entity_code", "cost_centre_code", "account_code", "period", "fiscal_year", "driver", "driver_qty",
-           "rate_calc", "rate", "rate_typed", "amount_calc", "amount", "state", "typed_calc", "moved", "rate_edit_id", "month_edit_id"]
+           "rate_calc", "rate", "rate_typed", "amount_calc", "amount", "state", "typed_calc", "moved", "rate_edit_id", "month_edit_id",
+           "adjustment", "adjust_edit_id"]
+STATES = ("calculated", "adjusted", "locked", "model")
+MONTH_ACTS = ("adjust", "lock", "month", "unlock")
 
 Line = tuple       # (entity, cost centre, account)
 Rules = dict
@@ -185,7 +197,8 @@ def compute(inp: Inputs, acts: Iterable[dict], rules: Rules | None = None) -> di
     """Every cell of the schedule: (entity, cost centre, account, period) → its figures. Acts in the order typed."""
     driver: dict[Line, str] = {l: "last_year" for l in inp.lines}
     rate_typed: dict[Line, tuple] = {}
-    typed: dict[tuple, tuple] = {}
+    locked: dict[tuple, tuple] = {}           # (line, period) → (amount, calculated when locked, act)
+    adjusted: dict[tuple, tuple] = {}         # (line, period) → (adjustment, act)
     for e in acts:
         line = (e["entity_code"], e["cost_centre_code"], e["account_code"])
         driver.setdefault(line, "last_year")
@@ -198,11 +211,16 @@ def compute(inp: Inputs, acts: Iterable[dict], rules: Rules | None = None) -> di
                 rate_typed.pop(line, None)
             else:
                 rate_typed[line] = (float(e["value"]), e["edit_id"])
-        elif a == "month" and p:
-            typed[(line, p)] = (float(e["value"]), None if e.get("calc_at_entry") is None else float(e["calc_at_entry"]), e["edit_id"])
+        elif a in ("month", "lock") and p:
+            locked[(line, p)] = (float(e["value"]), None if e.get("calc_at_entry") is None else float(e["calc_at_entry"]), e["edit_id"])
+        elif a == "adjust" and p:
+            adjusted[(line, p)] = (float(e["value"] or 0.0), e["edit_id"])
+        elif a == "unlock" and p:
+            locked.pop((line, p), None)
         elif a == "reset":
-            for k in [k for k in typed if k[0] == line and (p is None or k[1] == p)]:
-                typed.pop(k)
+            for held in (locked, adjusted):
+                for k in [k for k in held if k[0] == line and (p is None or k[1] == p)]:
+                    held.pop(k)
     for line in inp.labour_lines:
         driver[line] = "labour_model"
     for line in inp.capex_lines:
@@ -220,15 +238,18 @@ def compute(inp: Inputs, acts: Iterable[dict], rules: Rules | None = None) -> di
                 calc = (inp.labour if d == "labour_model" else inp.capex).get((line, p), 0.0)
             else:
                 calc = q * rate if q is not None and rate is not None else None
-            t = typed.get((line, p)) if d not in MODELS else None
-            amount = t[0] if t else calc
+            t = locked.get((line, p)) if d not in MODELS else None
+            j = adjusted.get((line, p)) if d not in MODELS else None
+            following = None if calc is None and not j else (calc or 0.0) + (j[0] if j else 0.0)
+            amount = t[0] if t else following
             moved = bool(t and t[1] is not None and calc is not None and abs(calc - t[1]) > MOVED)
             out[(*line, p)] = {"version_id": inp.version, "entity_code": line[0], "cost_centre_code": line[1], "account_code": line[2],
                                "period": p, "fiscal_year": inp.fy_of.get(p), "driver": d, "driver_qty": q, "rate_calc": rc, "rate": rate,
                                "rate_typed": bool(rt), "amount_calc": calc, "amount": amount,
-                               "state": "model" if d in MODELS else ("typed" if t else "calculated"),
+                               "state": "model" if d in MODELS else ("locked" if t else "adjusted" if j else "calculated"),
                                "typed_calc": t[1] if t else None, "moved": moved, "rate_edit_id": rt[1] if rt else None,
-                               "month_edit_id": t[2] if t else None}
+                               "month_edit_id": t[2] if t else (j[1] if j else None),
+                               "adjustment": j[0] if j else None, "adjust_edit_id": j[1] if j else None}
     return out
 
 

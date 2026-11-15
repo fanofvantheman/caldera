@@ -1,7 +1,8 @@
 """The opex schedule as a person types into it: entity × the plan's cost centre × account × period, each line a driver and
-a rate, each month calculated as driver × rate until someone types it.
+a rate, each month driver × rate — with an adjustment on top where a figure was typed (it goes on following the driver),
+or held where its lock is ticked (DEC-20261115-05).
 
-A person's unsaved acts — a month, a rate, a driver, a reset — sit in a working copy in this process (chassis.working),
+A person's unsaved acts — an adjustment, a lock, a rate, a driver, a reset — sit in a working copy in this process (chassis.working),
 never seen by anyone else, dropped by Discard, lost on a restart. The copy keeps them as steps (chassis.working.History):
 Undo takes the last step out — a confirmed reset of several months is one step — and Redo puts it back, until a save. Every view is the schedule computed by the run's own
 function (`calc.schedule.compute`) over the inputs the run reads (`read_inputs`), the acts on file, the acts saved and
@@ -142,13 +143,19 @@ def step_says(step: list[dict]) -> str:
     a = step[0]
     line = f"{a['account_code']} at {a['cost_centre_code']} ({a['entity_code']})"
     if a["action"] == "month":
-        return f"{a['value']:,.0f} in {a['period']} on {line}"
+        return f"{a['value']:,.0f} locked in {a['period']} on {line}"
+    if a["action"] == "adjust":
+        return f"an adjustment of {a['value']:+,.0f} in {a['period']} on {line}"
+    if a["action"] == "lock":
+        return f"{a['period']} locked at {a['value']:,.0f} on {line}"
+    if a["action"] == "unlock":
+        return f"{a['period']} unlocked on {line}"
     if a["action"] == "rate":
         rate = "cleared" if a["value"] is None else f"{a['value']:,.4f}"
         return f"the rate {rate} on {line}"
     if a["action"] == "driver":
         return f"the driver {a['driver']} on {line}"
-    return f"a reset of {len(step)} typed month{'s' if len(step) != 1 else ''} on {line}"
+    return f"a reset of {len(step)} month{'s' if len(step) != 1 else ''} on {line}"
 
 
 def rows_for_save(wc: WorkingCopy, save_id: str, stamp: dt.datetime, who: str, reason: str, note: str) -> list[dict]:
@@ -172,12 +179,12 @@ def line_of(s: str) -> tuple | None:
 
 MACROS = """{% macro money(x) %}{{ '' if x is none else '{:,.0f}'.format(x) }}{% endmacro %}
 {% macro rate_shown(x, d) %}{{ '' if x is none else ('{:,.0f}'.format(x) if d == 'none' else ('{:.4f}'.format(x) if d == 'last_year' else '{:,.4f}'.format(x))) }}{% endmacro %}
-{% macro sch_status(s) %}<div id="sch-status" class="hint">{% if s.say %}<b class="no">{{ s.say }}</b> · {% endif %}{% if s.unsaved %}<b class="state unsaved">{{ s.unsaved }} change{{ '' if s.unsaved == 1 else 's' }} typed and not saved</b> — Save to keep them, Discard to drop them{% elif s.editable %}Type a month, or a line's rate; Enter or Tab recalculates at once.{% endif %}</div>{% endmacro %}
+{% macro sch_status(s) %}<div id="sch-status" class="hint">{% if s.say %}<b class="no">{{ s.say }}</b> · {% endif %}{% if s.unsaved %}<b class="state unsaved">{{ s.unsaved }} change{{ '' if s.unsaved == 1 else 's' }} typed and not saved</b> — Save to keep them, Discard to drop them{% elif s.editable %}Type a month — it is adjusted and goes on following its driver — or tick its lock to hold it; or type a line's rate. Enter or Tab recalculates at once.{% endif %}</div>{% endmacro %}
 {% macro sch_row(s, l) %}<tr id="sch-l-{{ l.id }}" class="line">
 <td class="sticky"><span>{{ l.account_code }} {{ l.account_name }}</span> <span class="small muted">{{ l.entity_code }}</span>{% if l.n_typed and l.may_month %} <a class="small" tabindex="-1" href="{{ url_for('plan.schedule_reset', line=l.id, **s.keep) }}">reset…</a>{% endif %}</td>
 <td class="small">{% if l.driver == 'labour_model' %}the labour model{% elif l.driver == 'capex_model' %}<a href="{{ url_for('plan.capex') }}">the capital plan</a>{% elif s.may_method and s.open %}<select name="d|{{ l.id }}" onchange="this.form.submit()">{% for d in s.drivers %}<option value="{{ d.driver }}" {{ 'selected' if d.driver == l.driver }}>{{ d.driver_label }}</option>{% endfor %}</select>{% else %}{{ s.driver_label.get(l.driver, l.driver) }}{% endif %}</td>
 <td class="n {{ 'typed' if l.rate_typed }} {{ 'unsaved' if l.rate_unsaved }}">{% if l.driver in ('labour_model', 'capex_model') %}<span class="muted">—</span>{% elif s.may_method and s.open %}<input class="cell" name="r|{{ l.id }}" value="{{ rate_shown(l.rate, l.driver) if l.rate_typed else '' }}" placeholder="{{ rate_shown(l.rate_calc, l.driver) }}" data-live='{"cell": "r|{{ l.id }}"}' inputmode="decimal">{% else %}{{ rate_shown(l.rate, l.driver) }}{% endif %}<span class="src">{{ 'from the headcount' if l.driver == 'labour_model' else 'from the capital plan' if l.driver == 'capex_model' else ('calculated ' ~ rate_shown(l.rate_calc, l.driver) if l.rate_calc is not none else 'no history') }}</span></td>
-{% for col in s.cols %}{% set p = col.period %}{% if col.kind == 'actual' %}<td class="n closed">{{ money(l.actual.get(p)) }}</td>{% elif col.kind == 'total' %}<td class="n tot">{{ money(l.fy) }}</td>{% else %}{% set c = l.cells.get(p) %}<td class="n {{ c.state if c }} {{ 'unsaved' if c and c.unsaved }}">{% if c %}{% if l.may_month and s.open and c.state != 'model' %}<input class="cell" name="m|{{ l.id }}|{{ p }}" value="{{ money(c.amount) }}" data-live='{"cell": "m|{{ l.id }}|{{ p }}"}' inputmode="decimal">{% else %}{{ money(c.amount) }}{% endif %}{% if c.state == 'typed' %}<span class="src">calc {{ money(c.amount_calc) }}{% if c.amount_calc is not none %} · {{ '{:+,.0f}'.format(c.amount - c.amount_calc) }}{% endif %}{% if c.moved %} <b title="the calculated amount has moved since this month was typed (it was {{ money(c.typed_calc) }})">◆</b>{% endif %}</span>{% endif %}{% endif %}</td>{% endif %}{% endfor %}</tr>{% endmacro %}
+{% for col in s.cols %}{% set p = col.period %}{% if col.kind == 'actual' %}<td class="n closed">{{ money(l.actual.get(p)) }}</td>{% elif col.kind == 'total' %}<td class="n tot">{{ money(l.fy) }}</td>{% else %}{% set c = l.cells.get(p) %}<td class="n {{ c.state if c }} {{ 'unsaved' if c and c.unsaved }}">{% if c %}{% if l.may_month and s.open and c.state != 'model' %}<input class="cell" name="m|{{ l.id }}|{{ p }}" value="{{ money(c.amount) }}" data-live='{"cell": "m|{{ l.id }}|{{ p }}"}' inputmode="decimal"><input type="checkbox" class="lock" name="k|{{ l.id }}|{{ p }}" data-live='{"cell": "k|{{ l.id }}|{{ p }}"}' tabindex="-1" title="{{ 'locked: the driver does not move this month — untick to follow it again' if c.state == 'locked' else 'lock this month: the driver will not move it' }}" {{ 'checked' if c.state == 'locked' }}>{% else %}{{ money(c.amount) }}{% if c.state == 'locked' %} <span class="lockmark" title="locked">▣</span>{% endif %}{% endif %}{% if c.state == 'adjusted' %}<span class="src">calc {{ money(c.amount_calc) }} · adj {{ '{:+,.0f}'.format(c.adjustment) }}</span>{% elif c.state == 'locked' %}<span class="src">locked · calc {{ money(c.amount_calc) }}{% if c.amount_calc is not none %} · {{ '{:+,.0f}'.format(c.amount - c.amount_calc) }}{% endif %}{% if c.moved %} <b title="the calculated amount has moved since this month was locked (it was {{ money(c.typed_calc) }})">◆</b>{% endif %}</span>{% endif %}{% endif %}</td>{% endif %}{% endfor %}</tr>{% endmacro %}
 {% macro sch_group(s, g) %}<tr id="sch-g-{{ g.code }}" class="grp"><td class="sticky"><b>{{ g.name }}</b> <span class="small muted">{{ g.code }}</span></td><td></td><td></td>
 {% for col in s.cols %}{% if col.kind == 'total' %}<td class="n tot"><b>{{ money(g.fy) }}</b></td>{% else %}<td class="n {{ 'closed' if col.kind == 'actual' }}"><b>{{ money(g.by.get(col.period)) }}</b></td>{% endif %}{% endfor %}</tr>{% endmacro %}
 {% macro sch_total(s) %}<tr id="sch-t" class="total"><td class="sticky">Total shown</td><td></td><td></td>{% for col in s.cols %}{% if col.kind == 'total' %}<td class="n tot">{{ money(s.tot_fy) }}</td>{% else %}<td class="n {{ 'closed' if col.kind == 'actual' }}">{{ money(s.tot.get(col.period)) }}</td>{% endif %}{% endfor %}</tr>{% endmacro %}"""
@@ -195,34 +202,35 @@ PAGE = MACROS + """<h1>Opex schedule<small>FY{{ fy }} · {{ version }} · {{ s.w
 {% for g in s.groups %}<tbody>{{ sch_group(s, g) }}{% for l in g.lines %}{{ sch_row(s, l) }}{% endfor %}</tbody>{% else %}<tbody><tr><td colspan="{{ 3 + s.cols|length }}" class="muted">No line in this selection.</td></tr></tbody>{% endfor %}
 <tbody>{{ sch_total(s) }}</tbody></table></div>
 {% if s.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
-<p class="hint">{% if s.closed %}Shaded periods are {{ version }}'s actual periods, to {{ s.from }}: the ledgers' actuals through the mapping, never typed. {% endif %}The rest is the plan: the schedule plans {{ s.planned|length }} periods after them — its own rolling year of {{ s.step_n }}, never more than the version's horizon of {{ s.horizon }}, both shown on <a href="{{ url_for('plan.versions') }}">Versions</a>{% if s.past_fy %} — so it runs past the year end, and FY{{ s.fy }} is its actual periods and its plan periods together{% endif %}. Under each rate, the rate calculated from the twelve periods to {{ s.from }} ({{ s.window[0] }}–{{ s.window[-1] }}); a rate typed over it is boxed. A boxed month was typed: it holds, the calculated amount beneath it with the difference; ◆ marks one whose calculated amount has moved since it was typed. Hatched: typed and not yet saved.
+<p class="hint">{% if s.closed %}Shaded periods are {{ version }}'s actual periods, to {{ s.from }}: the ledgers' actuals through the mapping, never typed. {% endif %}The rest is the plan: the schedule plans {{ s.planned|length }} periods after them — its own rolling year of {{ s.step_n }}, never more than the version's horizon of {{ s.horizon }}, both shown on <a href="{{ url_for('plan.versions') }}">Versions</a>{% if s.past_fy %} — so it runs past the year end, and FY{{ s.fy }} is its actual periods and its plan periods together{% endif %}. Under each rate, the rate calculated from the twelve periods to {{ s.from }} ({{ s.window[0] }}–{{ s.window[-1] }}); a rate typed over it is boxed. A month typed is adjusted: the figure less driver × rate is kept as its adjustment, and the month goes on following its driver with the adjustment on top (dotted). Tick a month's lock to hold it as it stands (boxed): the driver no longer moves it, the calculated amount beneath it with the difference; ◆ marks one whose calculated amount has moved since it was locked. Unticking returns it to its driver, keeping its adjustment. Hatched: typed and not yet saved.
 {% for r in s.measures %} <b>{{ r.label }}</b>{% if r.formula_says %} = {{ r.formula_says }}{% endif %}.{% endfor %} <a href="{{ url_for('plan.rules') }}#schedule">How each figure is calculated</a></p>
 {% if s.editable %}<form method="post" action="{{ url_for('plan.schedule_save') }}" class="form-row" id="sch-save">{% for k, v in s.keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
 <label class="small">reason <select name="reason_code">{% for r in s.reasons %}<option value="{{ r.reason_code }}">{{ r.description }}</option>{% endfor %}</select></label>
 <label class="small grow">note <input name="note" placeholder="what the driver does not know"></label>
 <button class="primary" onclick="this.textContent='Saving…'">Save</button><button class="act" formaction="{{ url_for('plan.schedule_discard') }}">Discard</button>
 <button class="act" formaction="{{ url_for('plan.schedule_recalculate') }}">Recalculate</button>{% if s.undo %}<button class="act" formaction="{{ url_for('plan.schedule_undo') }}" title="takes out {{ s.undo }}">Undo</button>{% endif %}{% if s.redo %}<button class="act" formaction="{{ url_for('plan.schedule_redo') }}" title="puts back {{ s.redo }}">Redo</button>{% endif %}
-<span class="hint">one reason for everything not yet saved · Save writes it to {{ version }} and carries it into the plan · Recalculate sets every calculated month to driver × rate again and leaves typed months alone</span></form>
+<span class="hint">one reason for everything not yet saved · Save writes it to {{ version }} and carries it into the plan · Recalculate sets every month not locked to driver × rate again, each with its adjustment, and leaves locked months alone</span></form>
 {% elif s.open %}<p class="hint">Months are typed by the cost centre's budget holder ({{ s.month_holders|join(', ') }}); drivers and rates by {{ s.method_holders|join(', ') }}.</p>{% endif %}
 </div>
 {% if last and last.act and last.act.startswith('schedule') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 <style>.schwrap{overflow-x:auto;margin-bottom:.6rem}table.sch{font-size:.8rem;width:max-content;min-width:100%}table.sch td.n{vertical-align:top;white-space:nowrap}
 table.sch .sticky{position:sticky;left:0;background:var(--panel);z-index:1;min-width:16rem}table.sch tr.grp td{background:var(--soft);border-top:1px solid var(--rule)}table.sch tr.grp td.sticky{background:var(--soft)}
-table.sch .src{display:block;font-size:.7rem;color:var(--muted)}table.sch td.typed{box-shadow:inset 0 0 0 1px var(--ink)}table.sch td.closed,table.sch th.closed{color:var(--muted);background:var(--soft)}
+table.sch .src{display:block;font-size:.7rem;color:var(--muted)}table.sch td.locked{box-shadow:inset 0 0 0 1px var(--ink)}table.sch td.adjusted{box-shadow:inset 0 0 0 1px var(--muted);outline:1px dotted var(--muted);outline-offset:-3px}
+table.sch input.lock{margin:0 0 0 .2rem;vertical-align:middle;width:.8rem;height:.8rem}table.sch .lockmark{font-size:.7rem;color:var(--muted)}table.sch td.closed,table.sch th.closed{color:var(--muted);background:var(--soft)}
 table.sch td.unsaved{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 14%,transparent) 5px 6px)}.state.unsaved{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 18%,transparent) 5px 6px)}
 table.sch input.cell{width:5.6rem;text-align:right;font-size:.8rem;padding:.12rem .3rem}table.sch td.tot{font-weight:600}.schlive.live-busy table.sch{cursor:progress}
 .form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}.form-row label{display:flex;flex-direction:column;gap:.2rem}</style>
 {% if s.editable %}{{ live_script }}{% endif %}"""
 
 RESET = """<h1>Reset to base<small>{{ l.account_code }} {{ l.account_name }} · {{ l.cc_name }} · {{ l.entity_code }} · {{ version }}</small></h1>
-{% if not typed %}<p class="lede">Nothing typed on this line: every month is already driver × rate.</p>{% else %}
+{% if not typed %}<p class="lede">Nothing adjusted or locked on this line: every month is already driver × rate.</p>{% else %}
 <form method="post" action="{{ url_for('plan.schedule_reset_do') }}">{% for k, v in keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}<input type="hidden" name="line" value="{{ l.id }}">
-<p class="lede">This removes <b>{{ typed|length }} typed figure{{ '' if typed|length == 1 else 's' }}</b> from the line — untick any to keep — and returns each to driver × rate. Nothing is removed until you confirm; the change is in your unsaved work until you Save.</p>
-<table><thead><tr><th></th><th>Period</th><th class="n">Typed</th><th class="n">Calculated</th><th class="n">Difference</th></tr></thead><tbody>
-{% for c in typed %}<tr><td><input type="checkbox" name="period" value="{{ c.period }}" checked></td><td>{{ c.period }}</td><td class="n">{{ '{:,.0f}'.format(c.amount) }}</td><td class="n">{{ '' if c.amount_calc is none else '{:,.0f}'.format(c.amount_calc) }}</td>
+<p class="lede">This removes <b>{{ typed|length }} month{{ '' if typed|length == 1 else 's' }}' adjustments and locks</b> from the line — {{ typed|selectattr('state', 'equalto', 'adjusted')|list|length }} adjusted, {{ typed|selectattr('state', 'equalto', 'locked')|list|length }} locked; untick any to keep — and returns each to driver × rate. Nothing is removed until you confirm; the change is in your unsaved work until you Save.</p>
+<table><thead><tr><th></th><th>Period</th><th>State</th><th class="n">Amount</th><th class="n">Calculated</th><th class="n">Difference</th></tr></thead><tbody>
+{% for c in typed %}<tr><td><input type="checkbox" name="period" value="{{ c.period }}" checked></td><td>{{ c.period }}</td><td>{{ c.state }}</td><td class="n">{{ '{:,.0f}'.format(c.amount) }}</td><td class="n">{{ '' if c.amount_calc is none else '{:,.0f}'.format(c.amount_calc) }}</td>
 <td class="n">{{ '' if c.amount_calc is none else '{:+,.0f}'.format(c.amount - c.amount_calc) }}</td></tr>{% endfor %}</tbody></table>
-<button class="primary">Remove the ticked typed figures</button> <a href="{{ back }}">keep them all</a></form>{% endif %}"""
+<button class="primary">Return the ticked months to driver × rate</button> <a href="{{ back }}">keep them all</a></form>{% endif %}"""
 
 
 def _macros():
@@ -309,7 +317,7 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
              "driver": first["driver"] if first else "last_year", "rate": first["rate"] if first else None, "rate_calc": first["rate_calc"] if first else None,
              "rate_typed": bool(first and first["rate_typed"]), "rate_unsaved": bool(first and s0 and (s0.get("rate") != first["rate"] or s0.get("driver") != first["driver"])),
              "cells": {p: cs[p] for p in planned if p in cs}, "actual": actual[line], "fy": fy_amt,
-             "n_typed": sum(1 for c in cs.values() if c["state"] == "typed"), "may_month": may_at(line[1]) and v.get("status") == "open"}
+             "n_typed": sum(1 for c in cs.values() if c["state"] in ("adjusted", "locked")), "may_month": may_at(line[1]) and v.get("status") == "open"}
         g = groups.setdefault(line[1], {"code": line[1], "name": next((c["name"] for c in tree if c["code"] == line[1]), line[1]), "lines": [], "by": defaultdict(float), "fy": 0.0})
         g["lines"].append(l)
         for p in closed:
@@ -376,7 +384,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         if not line:
             return "not a line of the schedule"
         b = base(version)
-        if kind == "m":
+        if kind in ("m", "k"):
             if period not in b["inp"].periods:
                 upto = v.get("from_period")
                 if upto and period and period <= upto:
@@ -388,6 +396,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
                 return "a labour line is filled by the labour model, from the headcount and the agreement — not typed here"
             if line in b["inp"].capex_lines:
                 return "a depreciation or lease line is filled by the capital plan, from its projects, assets and leases — not typed here"
+            if kind == "k":
+                return None
             if _num(raw) is None:
                 return f"{raw!r} is not an amount"
             if abs(_num(raw)) > MAX_MONTH:
@@ -408,10 +418,11 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         return None
 
     def _apply(who: str, version: str, field_: str, raw) -> tuple[bool, str | None]:
-        """One field typed: m|line|period, r|line or d|line. Returns (changed, refusal)."""
+        """One field typed: m|line|period (a month's figure), k|line|period (its lock ticked or not), r|line or d|line.
+        Returns (changed, refusal)."""
         bits = field_.split("|")
         kind, line = bits[0], line_of(bits[1] if len(bits) > 1 else "")
-        period = bits[2] if kind == "m" and len(bits) > 2 else None
+        period = bits[2] if kind in ("m", "k") and len(bits) > 2 else None
         why = _refuse(who, version, line, kind, period, raw)
         if why:
             return False, why
@@ -422,7 +433,20 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             if c and c.get("amount") is not None and abs(c["amount"] - x) < 0.005:
                 return False, None
             wc = working_copy(who, version, create=True)
-            act(wc, who, line, "month", period, x, calc=c.get("amount_calc"))
+            if c.get("state") == "locked" or c.get("amount_calc") is None:
+                act(wc, who, line, "month", period, x, calc=c.get("amount_calc"))       # a locked month takes the figure and stays locked
+            else:
+                act(wc, who, line, "adjust", period, x - c["amount_calc"], calc=c["amount_calc"])    # it goes on following its driver
+        elif kind == "k":
+            c = cells.get((*line, period)) or {}
+            want = str(raw or "").strip().lower() in ("1", "on", "true", "yes")
+            if want == (c.get("state") == "locked") or not c:
+                return False, None
+            wc = working_copy(who, version, create=True)
+            if want:
+                act(wc, who, line, "lock", period, c.get("amount"), calc=c.get("amount_calc"))
+            else:
+                act(wc, who, line, "unlock", period)
         elif kind == "r":
             first = next((c for k, c in cells.items() if k[:3] == line), {})
             x = _num(raw)
@@ -522,12 +546,13 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         who = who_fn(); pg = _page_args(request.form)
         base(pg["version"], fresh=True)
         cells, _, _ = cells_for(who, pg["version"])
-        calc = sum(1 for c in cells.values() if c["state"] == "calculated")
-        typed = [c for c in cells.values() if c["state"] == "typed"]
+        calc = sum(1 for c in cells.values() if c["state"] in ("calculated", "adjusted"))
+        adj = sum(1 for c in cells.values() if c["state"] == "adjusted")
+        typed = [c for c in cells.values() if c["state"] == "locked"]
         moved = sum(1 for c in typed if c["moved"])
-        session.say(f"recalculated: {calc} calculated months are driver × rate from the last run's drivers; {len(typed)} typed month"
-                    f"{'' if len(typed) == 1 else 's'} left as typed, {moved} of them marked ◆ — their calculated amount has moved since they were typed. "
-                    "Nothing typed was removed: Reset to base does that, line by line.", True)
+        session.say(f"recalculated: {calc} months follow driver × rate from the last run's drivers, {adj} of them with their adjustment; {len(typed)} locked month"
+                    f"{'' if len(typed) == 1 else 's'} left as locked, {moved} of them marked ◆ — their calculated amount has moved since they were locked. "
+                    "Nothing was removed: Reset to base does that, line by line.", True)
         return redirect(_back(pg))
 
     @bp.get("/schedule/reset")
@@ -535,7 +560,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         who = who_fn(); pg = _page_args(request.args)
         line = line_of(request.args.get("line", ""))
         cells, _, _ = cells_for(who, pg["version"])
-        typed = sorted((c for k, c in cells.items() if line and k[:3] == line and c["state"] == "typed"), key=lambda c: c["period"])
+        typed = sorted((c for k, c in cells.items() if line and k[:3] == line and c["state"] in ("adjusted", "locked")), key=lambda c: c["period"])
         acct = (q("select account_name from dims.dim_gl_account where account_code = ?", line[2]) or [{}])[0].get("account_name", "") if line else ""
         ccn = (q("select cost_centre_name from plan.planning_cost_centre where cost_centre_code = ?", line[1]) or [{}])[0].get("cost_centre_name", "") if line else ""
         l = {"id": line_id(line) if line else "", "account_code": line[2] if line else "", "account_name": acct, "cc_name": ccn, "entity_code": line[0] if line else ""}
@@ -557,7 +582,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             wc = working_copy(who, pg["version"], create=True)
             for i, p in enumerate(periods):
                 act(wc, who, line, "reset", p, join=i > 0)        # one confirmation, one step to undo
-        session.say(f"{len(periods)} typed month{'s' if len(periods) != 1 else ''} returned to driver × rate — not yet saved", True)
+        session.say(f"{len(periods)} month{'s' if len(periods) != 1 else ''} returned to driver × rate, adjustment and lock removed — not yet saved", True)
         return redirect(_back(pg))
 
     @bp.post("/schedule/save")

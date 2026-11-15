@@ -1,5 +1,6 @@
 """The opex schedule: entity × the plan's cost centre × account × period on each open version — every line a driver and a
-rate, every month driver × rate until someone types it, a typed month held with the calculated amount beside it.
+rate, every month driver × rate — with an adjustment on top where someone typed a figure, or held where someone locked it,
+the calculated amount beside it.
 
 The inputs are read by `calc.schedule.read_inputs` and the figures made by `calc.schedule.compute`, the same function the
 face's working copy calls as a person types, so the schedule before a save and this model after it agree to the cent.
@@ -17,7 +18,8 @@ from calc.schedule import COLUMNS, compute, in_force, read_inputs, rules_from
 
 TYPES = {"version_id": "TEXT", "entity_code": "TEXT", "cost_centre_code": "TEXT", "account_code": "TEXT", "period": "TEXT", "fiscal_year": "INT",
          "driver": "TEXT", "driver_qty": "DOUBLE", "rate_calc": "DOUBLE", "rate": "DOUBLE", "rate_typed": "BOOLEAN", "amount_calc": "DOUBLE",
-         "amount": "DOUBLE", "state": "TEXT", "typed_calc": "DOUBLE", "moved": "BOOLEAN", "rate_edit_id": "TEXT", "month_edit_id": "TEXT"}
+         "amount": "DOUBLE", "state": "TEXT", "typed_calc": "DOUBLE", "moved": "BOOLEAN", "rate_edit_id": "TEXT", "month_edit_id": "TEXT",
+         "adjustment": "DOUBLE", "adjust_edit_id": "TEXT"}
 
 
 def _records(df: pd.DataFrame) -> list[dict]:

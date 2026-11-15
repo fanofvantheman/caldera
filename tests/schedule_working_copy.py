@@ -3,7 +3,8 @@
     uv run python -m tests.schedule_working_copy        # from build/, with the warehouse built; takes one scoped run
 
 Types a month, a rate and a driver through the endpoint the page's script posts to; checks what comes back and what the
-working copy holds (a month holds, driver × rate follows a typed rate, a changed driver keeps the typed months); checks
+working copy holds (a month typed is adjusted, driver × rate follows a typed rate, a changed driver keeps the adjustment —
+DEC-20261115-05; the lock is tests/schedule_lock.py); checks
 a second person sees none of it and a person without the verb is refused; resets a typed month after the confirmation
 names it; Recalculate leaves typed months alone; then saves, lets the save's run carry it into plan.opex_schedule, and
 asserts that every cell of the version is what the page showed before saving. Everything it writes (the save's file,
@@ -66,13 +67,14 @@ def main() -> None:
         c.post("/schedule/discard", data=page)
         assert c.get("/schedule?" + "&".join(f"{k}={v}" for k, v in page.items())).status_code == 200
 
-        # 1 · a month typed holds; the calculated amount stays beneath it; the line's total and the grand total move
+        # 1 · a month typed is adjusted: the calculated amount stays beneath it, the adjustment rides on it; the totals move
         p1 = P[1]
         before = cell(travel, p1)
         reply = post(f"m|{S.line_id(travel)}|{p1}", round(before["amount"] + 5000))
         assert f"sch-l-{S.line_id(travel)}" in reply and "sch-t" in reply and "sch-status" in reply, list(reply)
         now = cell(travel, p1)
-        assert now["state"] == "typed" and abs(now["amount"] - round(before["amount"] + 5000)) < 1e-9 and abs(now["amount_calc"] - before["amount_calc"]) < 1e-9
+        assert now["state"] == "adjusted" and abs(now["amount"] - round(before["amount"] + 5000)) < 1e-9 and abs(now["amount_calc"] - before["amount_calc"]) < 1e-9
+        assert abs(now["adjustment"] - (now["amount"] - now["amount_calc"])) < 1e-9
         print(f"month typed     {travel} × {p1}: {before['amount']:,.2f} → {now['amount']:,.2f}, calculated beneath {now['amount_calc']:,.2f}")
 
         # 2 · a rate typed: every calculated month of the line follows driver × rate at once; a typed month would hold
@@ -83,16 +85,18 @@ def main() -> None:
         assert e1["rate"] == 0.25 and abs(e1["amount"] - e1["driver_qty"] * 0.25) < 1e-6 and e1["rate_typed"]
         print(f"rate typed      {elec}: {e0['rate']:.4f} → 0.25; {p2} {e0['amount']:,.2f} → {e1['amount']:,.2f} = {e1['driver_qty']:,.0f} cases × 0.25")
 
-        # 3 · a month on the flat line, then its driver changed: the typed month stays, the rate returns to calculated
+        # 3 · a month on the flat line, then its driver changed: the month keeps its adjustment on the new driver, the rate returns to calculated
         p3 = P[5]                                      # clear of the months typed when the schedule was seeded
+        calc0 = cell(repairs, p3)["amount_calc"]
         post(f"m|{S.line_id(repairs)}|{p3}", 250000)
         post(f"r|{S.line_id(repairs)}", 200000)
         reply = c.post("/schedule/cell", data={**page, f"d|{S.line_id(repairs)}": "cases_made_ech"})
         assert reply.status_code == 302
         r3 = cell(repairs, p3); r4 = cell(repairs, P[6])
-        assert r3["state"] == "typed" and r3["amount"] == 250000 and r4["driver"] == "cases_made_ech" and not r4["rate_typed"]
+        assert r3["state"] == "adjusted" and abs(r3["adjustment"] - (250000 - calc0)) < 1e-6 and abs(r3["amount"] - (r3["amount_calc"] + r3["adjustment"])) < 1e-6
+        assert r4["driver"] == "cases_made_ech" and not r4["rate_typed"]
         assert abs(r4["amount"] - r4["driver_qty"] * r4["rate_calc"]) < 1e-6
-        print(f"driver changed  {repairs}: none → cases made at Echuca; the typed {p3} kept at {r3['amount']:,.0f}; the typed rate back to calculated {r4['rate_calc']:.4f}")
+        print(f"driver changed  {repairs}: none → cases made at Echuca; {p3} keeps its adjustment {r3['adjustment']:+,.0f} on the new driver; the typed rate back to calculated {r4['rate_calc']:.4f}")
 
         # 4 · a second person sees none of it; a person without the verb is refused at a cost centre outside their scope
         session.become(OTHER)
@@ -111,22 +115,22 @@ def main() -> None:
         assert "filled by the labour model" in reply.get("sch-status", ""), reply.get("sch-status")
         print("refused         a month on a labour line: it is the labour model's, from the headcount and the agreement")
 
-        # 5 · Reset to base: the confirmation names the typed months it removes; confirmed, the month is calculated again
+        # 5 · Reset to base: the confirmation names the adjusted and locked months it returns; confirmed, the month is calculated again
         r = c.get(f"/schedule/reset?line={S.line_id(repairs)}&" + "&".join(f"{k}={v}" for k, v in page.items()))
-        assert b"2 typed figures" in r.data and p3.encode() in r.data, r.data[-600:]           # the one typed at onboarding and ours
+        assert b"2 months" in r.data and b"1 adjusted, 1 locked" in r.data and p3.encode() in r.data, r.data[-600:]   # ours, and the one typed at onboarding
         c.post("/schedule/reset", data={**page, "line": S.line_id(repairs), "period": [p3]})
-        assert cell(repairs, p3)["state"] == "calculated" and cell(repairs, "2027P08")["state"] == "typed"
+        assert cell(repairs, p3)["state"] == "calculated" and cell(repairs, "2027P08")["state"] == "locked"
         post(f"m|{S.line_id(repairs)}|{p3}", 250000)              # typed again, to be saved
-        print(f"reset           {repairs} × {p3}: the confirmation named the line's 2 typed figures; the one ticked off is calculated again, the other held")
+        print(f"reset           {repairs} × {p3}: the confirmation named the line's 2 months (one adjusted, one locked); the one ticked off is calculated again, the other held")
 
-        # 6 · Recalculate leaves every typed month alone
+        # 6 · Recalculate leaves every adjusted and locked month as it is
         with app.test_request_context():
-            typed_before = {k for k, x in S.cells_for(FINANCE, V)[0].items() if x["state"] == "typed"}
+            typed_before = {k: x["state"] for k, x in S.cells_for(FINANCE, V)[0].items() if x["state"] in ("adjusted", "locked")}
         c.post("/schedule/recalculate", data=page)
         with app.test_request_context():
-            typed_after = {k for k, x in S.cells_for(FINANCE, V)[0].items() if x["state"] == "typed"}
+            typed_after = {k: x["state"] for k, x in S.cells_for(FINANCE, V)[0].items() if x["state"] in ("adjusted", "locked")}
         assert typed_before == typed_after and len(typed_after) >= 4, (typed_before, typed_after)
-        print(f"recalculate     {len(typed_after)} typed months before and after")
+        print(f"recalculate     {len(typed_after)} adjusted or locked months before and after")
 
         # 7 · save: one file, the scoped run; every cell of the version equals the page before saving
         with app.test_request_context():

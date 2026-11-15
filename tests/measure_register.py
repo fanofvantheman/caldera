@@ -88,11 +88,15 @@ def schedule_formulas(inp) -> dict:
         return close(c["amount_calc"], c["driver_qty"] * c["rate"])
 
     def amount(c: dict) -> bool:
-        return c["state"] in ("calculated", "model") and close(c["amount"], c["amount_calc"]) or c["state"] == "typed" and c["month_edit_id"] is not None
+        if c["state"] in ("calculated", "model"):
+            return close(c["amount"], c["amount_calc"])
+        if c["state"] == "adjusted":
+            return close(c["amount"], (c["amount_calc"] or 0.0) + c["adjustment"]) and c["adjust_edit_id"] is not None
+        return c["state"] == "locked" and c["month_edit_id"] is not None
 
     return {("schedule", "rate_calc", "the line's actuals ÷ the driver's actuals over the last twelve closed periods"): rate_calc,
             ("schedule", "amount_calc", "driver × rate"): amount_calc,
-            ("schedule", "amount", "the calculated amount, or the month as typed"): amount}
+            ("schedule", "amount", "the calculated amount plus its adjustment, or the locked amount"): amount}
 
 
 def schedule_checks(rows: list[dict], fail) -> None:
