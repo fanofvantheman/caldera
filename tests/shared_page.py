@@ -69,6 +69,12 @@ def main() -> None:
     assert "via=" not in re.findall(r'<nav class="tabs">(.*?)</nav>', html, re.S)[0]
     print("from Demand     the same page, Integrated business planning marked")
 
+    # tabs that are views of one page (Revenue's volume, price, revenue) each stay marked when the address says which menu
+    for m, label in (("volume", "Volume"), ("price", "Price"), ("revenue", "Revenue")):
+        strip = re.findall(r'<nav class="tabs">(.*?)</nav>', c.get(f"/revenue?measure={m}&via=finplan").data.decode(), re.S)[0]
+        assert re.findall(r'class="active">([^<]+)', strip) == [label], (m, strip)
+    print("one page's tabs each marked on its own tab, opened from Financial planning")
+
     may_ibp = bool(re.search(r'action="/terms/amend', html))
     session.become(PLANNER)
     p_fin, p_ibp = c.get("/terms?via=finplan").data.decode(), c.get("/terms").data.decode()
