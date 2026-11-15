@@ -82,10 +82,12 @@ PROCESSES = [
             Section("scenarios", "Scenarios", RUNG, {"slug": "scenarios"}, verbs=["scenario.create", "scenario.promote", "decision.accept"]),
         ]),
         Area("management", "Management", [
-            Section("versions", "Versions", "plan.versions", verbs=VERSION_VERBS + ["read.plan"], tabs=[
+            # plan administration: the plans of the kinds this process owns, each process its own (DEC-20261115-03 a)
+            Section("versions", "Plan administration", "plan.versions", verbs=VERSION_VERBS + ["read.plan"], tabs=[
                 Tab("versions", "Versions", "plan.versions", verbs=VERSION_VERBS),
                 # the record of acts read as a page: every act on the version, who, when, why, whether it stands (DEC-20261114-01 c)
                 Tab("version_history", "Change history", "plan.change_history", verbs=VERSION_VERBS + ["read.plan"], uses=("version",))]),
+            Section("workflow", "Workflow", "plan.workflow", uses=("version",), verbs=["demand.plan.submit", "review.demand.close", "read.plan"]),
             Section("review", "Management review", RUNG, {"slug": "review"}, verbs=["review.mbr.close", "decision.accept", "decision.record", "read.proof"]),
         ]),
     ]),
@@ -142,6 +144,12 @@ PROCESSES = [
             Section("pnl", "P&L plan", RUNG, {"slug": "pnl"}, verbs=["register.assumptions.maintain", "register.timing_policy.maintain", "read.proof"]),
         ]),
         Area("setup", "Set-up", [
+            # the financial plan's own administration and workflow: the same pages, listed here (via) and scoped to its kinds and steps
+            Section("fp_admin", "Plan administration", "plan.versions", {"via": "finplan"}, verbs=VERSION_VERBS + ["read.plan"], tabs=[
+                Tab("fp_versions", "Versions", "plan.versions", {"via": "finplan"}, verbs=VERSION_VERBS + FIN_READ),
+                Tab("fp_history", "Change history", "plan.change_history", {"via": "finplan"}, verbs=VERSION_VERBS + FIN_READ, uses=("version",))]),
+            Section("fp_workflow", "Workflow", "plan.workflow", {"via": "finplan"}, uses=("version",),
+                    verbs=["schedule.line.enter", "headcount.enter", "capex.project.enter", "overlay.finance.enter", "review.opex.close", "read.proof"]),
             Section("slots", "Where each number comes from", "plan.slots", verbs=FIN_READ),
             Section("rules", "How each figure is calculated", "plan.rules", verbs=FIN_READ),
             Section("costcentres", "Cost centres", "plan.cost_centres", uses=("entity", "cc"), tabs=[
@@ -158,6 +166,7 @@ PROCESSES = [
     Process("strategic", "Strategic plan", says="Five years at category × channel: the latest view where it reaches, growth beyond, and the few capacities that would force a decision.", areas=[
         Area("strategic", "Strategic plan", [
             Section("strategic", "Five-year plan", "plan.strategic", verbs=FIN_READ + ["read.plan"]),
+            Section("st_admin", "Plan administration", "plan.versions", {"via": "strategic"}, verbs=VERSION_VERBS + FIN_READ),
         ]),
     ]),
     Process("actuals", "Actuals", says="What happened, closed and proved, for the plan to be read against.", areas=[
@@ -370,7 +379,7 @@ SHELL = Shell(brand="Caldera", strapline="integrated business planning", home="p
               context=CONTEXT, skin=SPECIMEN_SKIN if "--skin" in sys.argv[1:] else None)
 
 # the entry file's contract — every column the landing writes; the generator writes the same
-SUBMISSION_COLUMNS = ["submission_id", "action", "version_id", "subject", "scope_node", "submitted_by", "submitted_on", "note"]
+SUBMISSION_COLUMNS = ["submission_id", "action", "version_id", "subject", "scope_node", "submitted_by", "submitted_on", "note", "due_on"]
 ENTRY_COLUMNS = ["entry_id", "action", "withdraws", "version_id", "layer_no", "entered_by", "entered_on", "reason_code", "effect_type",
                  "scope_material", "scope_customer", "period_from", "period_to", "value_kind", "value", "spread_rule", "note"]
 

@@ -30,6 +30,7 @@ from . import costs
 from . import schedule
 from . import headcount
 from . import capex
+from . import workflow
 from . import assumptions
 from . import versions as versions_page
 from . import strategic
@@ -2510,6 +2511,7 @@ agreements.register(plan, _who, session, roles, _run_plan, SCOPED)
 reports.register(plan, _page, _who, _busy, session, roles)
 strategic.register(plan, _page, _busy)
 capex.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED)
+workflow.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED, SUBMISSIONS)
 
 
 def main() -> None:

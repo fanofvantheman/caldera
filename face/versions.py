@@ -120,18 +120,19 @@ def takes(base: str) -> list[dict]:
 RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_version_act"],
        ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.version_act+", "--auto-apply", "--no-prompts"]]
 
-PAGE = """<h1>Versions<small>named, owned, open or closed — the plan is a stack of entries on a version; a closed version takes no entry and stays readable</small></h1>
+PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its kind{{ '' if owned_kinds|length == 1 else 's' }} ({{ owned_kinds|join(', ') or 'none yet' }}) — named, open or closed; a closed version takes no entry and stays readable</small></h1>
+{% if not owned_kinds %}<p class="lede">{{ process_label }} has no kind of plan of its own yet: it reads the versions below, which other processes administer.</p>{% endif %}
 <p class="hint">{% if may %}You close and reopen versions: each is an act with a receipt; reopening asks why. A version another is read against is not reopened — a changed reference is a new version.{% else %}Versions are closed and reopened by {{ holders|join(', ') or 'nobody yet' }}.{% endif %} The actuals are closed by the period, not here.</p>
 <table><thead><tr><th>Version</th><th>Kind</th><th>Cycle</th><th>Actual to</th><th>Horizon</th><th>Calculated</th><th>Read against</th><th>State</th><th>Last act</th>{% if may %}<th></th>{% endif %}</tr></thead><tbody>
-{% for v in versions %}<tr class="{{ 'off' if v.status == 'closed' }}"><td><b>{{ v.version_id }}</b>{% if v.is_latest_view %} <span class="state">the latest view</span>{% endif %}<div class="small muted">named {{ v.named_on }} · {{ v.owner }}{% if v.base_version %} · from {{ v.base_version }}{% endif %}</div>
-{% if may_promote and v.status == 'open' and v.version_kind == 'latest_view' and not v.is_latest_view %}<form class="inline" method="post" action="{{ url_for('plan.version_promote') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="16" required placeholder="why it becomes the latest view"> <button class="act" onclick="this.textContent='Promoting…'">promote</button></form>{% endif %}</td><td class="small">{{ v.version_kind.replace('_', ' ') }}</td><td class="small">{{ v.cycle or '' }}</td>
+{% for v in versions %}<tr class="{{ 'off' if v.status == 'closed' or not v.owned }}"><td><b>{{ v.version_id }}</b>{% if v.is_latest_view %} <span class="state">the latest view</span>{% endif %}<div class="small muted">named {{ v.named_on }} · {{ v.owner }}{% if v.base_version %} · from {{ v.base_version }}{% endif %}</div>
+{% if may_promote and v.owned and v.status == 'open' and v.version_kind == 'latest_view' and not v.is_latest_view %}<form class="inline" method="post" action="{{ url_for('plan.version_promote') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="16" required placeholder="why it becomes the latest view"> <button class="act" onclick="this.textContent='Promoting…'">promote</button></form>{% endif %}</td><td class="small">{{ v.version_kind.replace('_', ' ') }}</td><td class="small">{{ v.cycle or '' }}</td>
 <td class="small">{% if v.version_kind == 'actual' %}{{ v.from_period }}{% elif v.fiscal_year and v.from_period < v.fiscal_year ~ 'P01' %}<span class="muted">none in FY{{ v.fiscal_year }}</span>{% else %}{{ v.from_period }}{% endif %}</td>
 <td class="small">{% if v.horizon_periods %}{{ v.horizon_periods }} periods, to {{ v.plan_through }}{% if v.horizon_quarters %}; then {{ v.horizon_quarters }} quarters{% endif %}{% else %}<span class="muted">nothing planned</span>{% endif %}{% if v.named_horizon_periods is not none and v.named_horizon_periods != v.horizon_periods %}<div class="muted">named with {{ v.named_horizon_periods }}</div>{% endif %}
-{% if may_horizon and v.status == 'open' and v.version_kind != 'actual' %}<form class="inline horizon" method="post" action="{{ url_for('plan.version_horizon') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="horizon_periods" size="3" inputmode="numeric" value="{{ v.horizon_periods }}" aria-label="periods by month"> <input name="reason" size="14" required placeholder="why it changes"> <button class="act" onclick="this.textContent='Changing…'">change</button></form>{% endif %}</td>
+{% if may_horizon and v.owned and v.status == 'open' and v.version_kind != 'actual' %}<form class="inline horizon" method="post" action="{{ url_for('plan.version_horizon') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="horizon_periods" size="3" inputmode="numeric" value="{{ v.horizon_periods }}" aria-label="periods by month"> <input name="reason" size="14" required placeholder="why it changes"> <button class="act" onclick="this.textContent='Changing…'">change</button></form>{% endif %}</td>
 <td class="small">{{ v.horizon_start }} – {{ v.horizon_end }}</td><td class="small">{{ v.reference_version or '—' }}{% if v.reference_of %}<div class="muted">the reference of {{ v.reference_of }}</div>{% endif %}</td>
 <td><span class="state">{{ v.status }}</span></td>
 <td class="small">{% if v.last_act %}{{ v.last_act }} by {{ v.last_act_by }}, {{ (v.last_act_on or '')[:16].replace('T', ' ') }}{% if v.last_act_reason %} — {{ v.last_act_reason }}{% endif %}{% elif v.version_kind == 'actual' %}closed by the period{% else %}as named{% endif %}</td>
-{% if may %}<td class="acts">{% if v.version_kind == 'actual' %}{% elif v.status == 'open' %}<form class="inline" method="post" action="{{ url_for('plan.version_close') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="18" placeholder="note (optional)"> <button class="act" onclick="this.textContent='Closing…'">close</button></form>
+{% if may %}<td class="acts">{% if not v.owned %}<span class="small muted">{{ v.process_label }}'s — read only here</span>{% elif v.version_kind == 'actual' %}{% elif v.status == 'open' %}<form class="inline" method="post" action="{{ url_for('plan.version_close') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="18" placeholder="note (optional)"> <button class="act" onclick="this.textContent='Closing…'">close</button></form>
 {% elif v.is_reference %}<span class="small muted">not reopened — {{ v.reference_of }} {{ 'is' if ',' not in v.reference_of else 'are' }} read against it</span>
 {% else %}<form class="inline" method="post" action="{{ url_for('plan.version_reopen') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="18" required placeholder="why it reopens"> <button class="act" onclick="this.textContent='Reopening…'">reopen</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>
 {% if last and last.act in ('version.close', 'version.reopen', 'version.horizon', 'version.name', 'version.promote') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
@@ -145,6 +146,10 @@ PAGE = """<h1>Versions<small>named, owned, open or closed — the plan is a stac
 <label class="wide">why<input name="reason" required placeholder="a what-if, or the next cycle"></label>
 <button class="act" onclick="this.textContent='Naming…'">name</button></form>
 <p class="hint">The new version starts as a copy of everything still standing on the one it is named from — the demand plan's entries, Finance's figures, the opex schedule, the assumptions, the promotions typed here and their neighbour lines — each under the name and time of whoever made it, marked with what it was copied from; the forecasting runs and the promotions system's files it reads are the same ones, read, not copied. From then on the two are independent. Keep the period it is actual to for a what-if; take a later one for the next cycle, and anything copied that falls in what is now actual is refused, and counted before it is placed. Not copied: {{ not_copied }}. Naming does not change which version is the latest view; promoting does.</p>{% endif %}
+{% if steps_due %}<h2 id="due">Steps and their due dates<span class="count">what the workflow page reads as late · <a href="{{ url_for('plan.workflow') }}">workflow</a></span></h2>
+<table><thead><tr><th>Step</th>{% for v in due_versions %}<th>{{ v }}</th>{% endfor %}{% if may_due %}<th></th>{% endif %}</tr></thead><tbody>
+{% for s in steps_due %}<tr><td>{{ s.step_label }}{% if not s.built %} <span class="small muted">not built</span>{% endif %}</td>{% for v in due_versions %}<td class="small">{{ due.get((v, s.step)) or '—' }}</td>{% endfor %}
+{% if may_due %}<td>{% if s.built %}<form class="inline" method="post" action="{{ url_for('plan.workflow_due') }}"><input type="hidden" name="step" value="{{ s.step }}"><select name="version">{% for v in due_versions %}<option>{{ v }}</option>{% endfor %}</select> <input name="due_on" type="date" required> <button class="act small">set</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>{% endif %}
 <h2>Horizons<span class="count">what each kind of version is named with, and the shorter window a step plans</span></h2>
 <div class="cards"><div class="card"><table><thead><tr><th>Kind</th><th class="n">Periods by month</th><th class="n">Then quarters</th><th>Reaches</th></tr></thead><tbody>
 {% for k in kinds %}<tr><td>{{ k.kind_label }}</td><td class="n">{{ k.horizon_periods }}</td><td class="n">{{ k.horizon_quarters }}</td><td class="small">{{ k.says }}</td></tr>{% endfor %}</tbody></table>
@@ -190,7 +195,17 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
     def versions():
         try:
             who = who_fn()
-            vs = reads.versions()
+            proc = request.args.get("via") or "ibp"            # the process whose plans these are (DEC-20261115-03 point 2)
+            from .workflow import PROCESS_LABEL
+            kinds_ = reads.version_kinds()
+            process_of = {k["version_kind"]: k.get("process") for k in kinds_}
+            owned_kinds = [k["kind_label"].lower() for k in kinds_ if k.get("process") == proc]
+            vs = [{**v, "owned": process_of.get(v.get("version_kind")) == proc,
+                   "process_label": PROCESS_LABEL.get(process_of.get(v.get("version_kind")), "the close")} for v in reads.versions()]
+            vs.sort(key=lambda v: not v["owned"])
+            steps_due = q("select * from plan.ref_step where process = ? order by ord", proc)
+            due_versions = [v["version_id"] for v in vs if v["owned"] and v.get("status") == "open"]
+            due = {(r["version_id"], r["step"]): str(r["due_on"]) for r in q("select distinct version_id, step, due_on from plan.step_state where due_on is not null")}
             last_closed = (q("select max(period) p from dims.dim_period where period_state = 'CLOSED'") or [{}])[0].get("p")
             latest = next((v for v in vs if v.get("is_latest_view")), None) or next((v for v in vs if v.get("version_kind") != "actual"), {})
             from_points = [r["period"] for r in q("select period from dims.dim_period where period >= ? and period <= ? order by period",
@@ -200,7 +215,9 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
                         waiting=[w for w in _waiting() if w.get("act") != "take"], kinds=reads.version_kinds(), steps=reads.step_horizons(), may=roles.may(who, VERB), holders=reads.holders(VERB),
                         may_horizon=roles.may(who, HORIZON_VERB), may_name=roles.may(who, HORIZON_VERB), may_promote=roles.may(who, PROMOTE_VERB),
                         suggest=suggest_code(latest.get("version_id") or "", latest.get("from_period"), [v["version_id"] for v in vs]) if latest else "",
-                        from_points=from_points, takes=takes_n, not_copied=NOT_COPIED, last=session.last, receipt_acts=("version.",))
+                        from_points=from_points, takes=takes_n, not_copied=NOT_COPIED, last=session.last, receipt_acts=("version.",),
+                        process_label=PROCESS_LABEL.get(proc, proc), owned_kinds=owned_kinds, steps_due=steps_due, due_versions=due_versions, due=due,
+                        may_due=roles.may(who, "cycle.open"))
         except Busy as e:
             return busy("Versions", e)
 

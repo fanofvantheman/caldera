@@ -29,7 +29,7 @@ covered AS (
   SELECT p.version_id, p.subject, p.node, s.acted_by, s.acted_on, s.scope_node AS covered_from
   FROM presence p
   JOIN dims.dim_customer_hierarchy h ON h.descendant_code = p.node
-  JOIN plan.submission s ON s.version_id = p.version_id AND s.subject = p.subject AND s.scope_node = h.ancestor_code AND s.state = 'submitted' AND s.acted_by_holder
+  JOIN plan.submission s ON s.version_id = p.version_id AND s.subject = p.subject AND s.scope_node = h.ancestor_code AND s.state IN ('submitted', 'accepted') AND s.acted_by_holder
   QUALIFY ROW_NUMBER() OVER (PARTITION BY p.version_id, p.subject, p.node ORDER BY h.depth) = 1
 ),
 -- account level: explicit, open, or nothing
@@ -72,7 +72,7 @@ layer_states AS (SELECT * FROM acct UNION ALL SELECT * FROM unit UNION ALL SELEC
 -- the unit's demand: an explicit unit act, else ready when every layer at the unit is in, else open
 unit_demand AS (
   SELECT v.version_id, 'unit' AS subject, n.node, n.level, 'unit' AS submits_at,
-         CASE WHEN s.state = 'submitted' AND s.acted_by_holder THEN 'submitted'
+         CASE WHEN s.state IN ('submitted', 'accepted') AND s.acted_by_holder THEN 'submitted'
               WHEN NOT EXISTS (SELECT 1 FROM layer_states ls WHERE ls.version_id = v.version_id AND ls.node = n.node AND ls.state <> 'nothing' AND ls.state <> 'n/a') THEN 'nothing'
               WHEN NOT EXISTS (SELECT 1 FROM layer_states ls WHERE ls.version_id = v.version_id AND ls.node = n.node AND ls.state = 'open') THEN 'ready'
               ELSE 'open' END AS state, s.acted_by, s.acted_on
@@ -81,7 +81,7 @@ unit_demand AS (
 ),
 plan_demand AS (
   SELECT v.version_id, 'plan' AS subject, 'ALL' AS node, 'all' AS level, 'all' AS submits_at,
-         CASE WHEN s.state = 'submitted' AND s.acted_by_holder THEN 'submitted'
+         CASE WHEN s.state IN ('submitted', 'accepted') AND s.acted_by_holder THEN 'submitted'
               WHEN NOT EXISTS (SELECT 1 FROM unit_demand u WHERE u.version_id = v.version_id AND u.state <> 'nothing') THEN 'nothing'
               WHEN NOT EXISTS (SELECT 1 FROM unit_demand u WHERE u.version_id = v.version_id AND u.state IN ('open', 'ready'))
                    AND NOT EXISTS (SELECT 1 FROM root r WHERE r.version_id = v.version_id AND r.state = 'open') THEN 'ready'

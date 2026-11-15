@@ -197,6 +197,9 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
                    "says": f"{who} holds {said(VERB)} at {cc}" if _may(who, cc, version) else f"{who} does not hold {said(VERB)} at {cc or 'no cost centre'}"},
                   {"check": "version open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"}]
         checks += check_item(row, classes, periods, plan_all)
+        from .workflow import locked
+        why = locked(version, "capital", cc) if cc else None
+        checks.append({"check": "the cost centre's capital plan not handed over", "ok": not why, "says": why or "open"})
         return _place(who, row, checks, "enter")
 
     @bp.post("/capex/withdraw")

@@ -405,6 +405,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
             return f"{version} is {v.get('status', 'unknown')} — nothing is typed on it"
         if not line:
             return "not a line of the schedule"
+        from .workflow import locked
+        why = locked(version, "opex", line[1])
+        if why:
+            return why
         b = base(version)
         if kind in ("m", "k"):
             if period not in b["inp"].periods:

@@ -235,8 +235,23 @@ def submissions(latest_closed: str) -> list[dict]:
         ("layer:4", "WES",    "kam.westbrook@caldera",       "2026-11-05", "825 g fruit salad delisting confirmed from P07"),
         ("layer:6", "WES",    "trade.marketing@caldera",     "2026-11-06", "Two half-price events still provisional with the buyer; submitted as planned"),
     ]
-    return [{"submission_id": f"SB-{i:04d}", "action": "submit", "version_id": v, "subject": subj, "scope_node": node,
-             "submitted_by": by, "submitted_on": on, "note": note} for i, (subj, node, by, on, note) in enumerate(acts, start=1)]
+    rows = [{"submission_id": f"SB-{i:04d}", "action": "submit", "version_id": v, "subject": subj, "scope_node": node,
+             "submitted_by": by, "submitted_on": on, "note": note, "due_on": ""} for i, (subj, node, by, on, note) in enumerate(acts, start=1)]
+    # the financial plan's steps on the same register (DEC-20261115-03): each step's due date on the cycle, set by Commercial
+    # finance; two factory cost centres' opex handed over by the plant manager — the beans hall's, and the fruit hall's, accepted — and Loxton production's
+    # sent back for the energy contract; nothing else in yet
+    fin, plant = "finance.manager@caldera", "plant.manager@caldera"
+    steps = [
+        ("due", "step:revenue", "ALL", fin, "2026-11-03", "", "2026-11-13"), ("due", "step:labour", "ALL", fin, "2026-11-03", "", "2026-11-20"),
+        ("due", "step:opex", "ALL", fin, "2026-11-03", "", "2026-11-20"), ("due", "step:capital", "ALL", fin, "2026-11-03", "", "2026-11-27"),
+        ("submit", "step:opex", "CC_E_BEANS", plant, "2026-11-10", "Beans and spaghetti in; nothing typed over the drivers", ""),
+        ("submit", "step:opex", "CC_E_FRUIT", plant, "2026-11-10", "", ""),
+        ("accept", "step:opex", "CC_E_FRUIT", fin, "2026-11-12", "Agreed at the cost review", ""),
+        ("submit", "step:opex", "CC_L_PROD", plant, "2026-11-11", "", ""),
+        ("send_back", "step:opex", "CC_L_PROD", fin, "2026-11-12", "The electricity rate is still the old contract's", ""),
+    ]
+    return rows + [{"submission_id": f"SB-{len(rows) + i:04d}", "action": a, "version_id": v, "subject": subj, "scope_node": node, "submitted_by": by,
+                    "submitted_on": on, "note": note, "due_on": due} for i, (a, subj, node, by, on, note, due) in enumerate(steps, start=1)]
 
 
 # Finance's figures: one `enter` row per figure typed — a node of each structure, a period, volume or price, the value,

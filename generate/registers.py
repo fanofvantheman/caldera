@@ -10,10 +10,11 @@ from .structures import LINES, COST_CENTRES
 # What each kind of version reaches by default: the periods by month planned after its from point, then quarters. A
 # version's horizon is set from its kind when it is named and is the version's own from then on.
 VERSION_KINDS = [
-    # kind, label, periods, quarters, says
-    ("actual", "Actuals", 0, 0, "what happened, closed by the period; nothing is planned on it"),
-    ("business_plan", "Business plan", 12, 0, "the fiscal year it is named for, every period of it planned"),
-    ("latest_view", "Latest view", 18, 0, "eighteen periods by month from the last actual one, past the year end"),
+    # kind, label, periods, quarters, says, the process that owns plans of this kind (DEC-20261115-03 point 1 — a
+    # deployment's declaration: a finance-only one gives the latest view to financial planning)
+    ("actual", "Actuals", 0, 0, "what happened, closed by the period; nothing is planned on it", "actuals"),
+    ("business_plan", "Business plan", 12, 0, "the fiscal year it is named for, every period of it planned", "finplan"),
+    ("latest_view", "Latest view", 18, 0, "eighteen periods by month from the last actual one, past the year end", "ibp"),
 ]
 # A step may plan a shorter window than the version, never a longer one: the lesser of the two is planned.
 STEP_HORIZONS = [
@@ -23,8 +24,8 @@ STEP_HORIZONS = [
 
 
 def version_kinds() -> list[dict]:
-    return [{"version_kind": k, "kind_label": l, "horizon_periods": p, "horizon_quarters": q, "says": s, "ord": i}
-            for i, (k, l, p, q, s) in enumerate(VERSION_KINDS, start=1)]
+    return [{"version_kind": k, "kind_label": l, "horizon_periods": p, "horizon_quarters": q, "says": s, "ord": i, "process": pr}
+            for i, (k, l, p, q, s, pr) in enumerate(VERSION_KINDS, start=1)]
 
 
 def step_horizons() -> list[dict]:
@@ -38,7 +39,7 @@ def versions(weeks: list[Week], plan_fy: int, latest_closed: str) -> list[dict]:
     The from point is the last period a version treats as actual, fixed when it is named: the business plan has none in
     its year (it was made before the year began), the latest view the period its cycle closed. The horizon — periods by
     month after the from point, then quarters — is set from the version's kind when it is named."""
-    kind = {k: (p, q) for k, _, p, q, _ in VERSION_KINDS}
+    kind = {k: (p, q) for k, _, p, q, _, _ in VERSION_KINDS}
     rows = [
         {"version_id": "ACTUAL", "version_kind": "actual", "cycle": "", "fiscal_year": "", "horizon_start": weeks[0].period,
          "horizon_end": latest_closed, "calendar_variant": "4-4-5", "standard_version": "STD-FY2027", "reference_version": "",
@@ -105,8 +106,9 @@ ROLE_ACTIONS = {
     "PLANT_MANAGER":        ["policy.production.accept", "tier.step.accept", "headcount.enter", "schedule.line.enter", "capex.project.enter", "read.plan", "read.reading", "read.drill", "read.health"],
     "QUALITY":              ["register.yield.maintain", "register.shelf_life.maintain", "read.plan", "read.reading", "read.drill"],
     "PEOPLE":               ["structure.position.maintain", "register.agreement.maintain", "register.unproductive_hours.maintain", "read.plan", "read.reading", "read.pay"],
-    "COMMERCIAL_FINANCE":   ["register.assumptions.maintain", "register.cost_input.maintain", "capex.project.enter", "register.cost_centre_map.maintain", "schedule.line.enter", "register.timing_policy.maintain", "register.customs.maintain", "register.hedge_book.maintain", "register.calendar.maintain", "version.name", "version.freeze", "version.declare_reference", "scenario.create", "standard.derive", "standard.declare", "cycle.open", "cycle.close", "register.roles.maintain", "run.plan", "read.plan", "read.reading", "read.drill", "read.health", "read.proof", "read.pay"],
-    "RECONCILIATION_OWNER": ["delta.allocation.enter", "delta.timing.enter", "shaping.enter", "register.customer_priority.maintain", "scenario.promote", "decision.record", "review.reconciliation.close", "read.plan", "read.reading", "read.drill", "read.health"],
+    "COMMERCIAL_FINANCE":   ["register.assumptions.maintain", "register.cost_input.maintain", "capex.project.enter",
+                             "review.revenue.close", "review.labour.close", "review.opex.close", "review.capital.close", "register.cost_centre_map.maintain", "schedule.line.enter", "register.timing_policy.maintain", "register.customs.maintain", "register.hedge_book.maintain", "register.calendar.maintain", "version.name", "version.freeze", "version.declare_reference", "scenario.create", "standard.derive", "standard.declare", "cycle.open", "cycle.close", "register.roles.maintain", "run.plan", "read.plan", "read.reading", "read.drill", "read.health", "read.proof", "read.pay"],
+    "RECONCILIATION_OWNER": ["delta.allocation.enter", "delta.timing.enter", "shaping.enter", "register.customer_priority.maintain", "scenario.promote", "decision.record", "review.reconciliation.close", "review.demand.close", "read.plan", "read.reading", "read.drill", "read.health"],
     "EXECUTIVE":            ["decision.accept", "review.mbr.close", "read.plan", "read.reading", "read.drill", "read.proof"],
     "PLAN_READER":          ["read.plan", "read.reading"],
     "AUDITOR":              ["read.plan", "read.reading", "read.drill", "read.health", "read.proof"],
