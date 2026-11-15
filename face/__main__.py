@@ -836,12 +836,13 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 <div class="card stat"><span>The demand plan beneath</span><b>{{ fin.tot.src_rev|m if fin.tot.src_rev is not none else '—' }}</b><div class="small muted">{% if fin.tot.src_rev is not none %}{{ fin.tot.src_vol|n }} cases at {{ fin.tot.src_price }} a case · where it feeds{% else %}nothing feeds this node — Finance builds it{% endif %}</div></div>
 <div class="card stat"><span>Variance, where fed</span><b>{{ fin.tot.var_rev|aud if fin.tot.var_rev is not none else '—' }}</b><div class="small delta {{ fin.tot.var_d|dir }}">{% if fin.tot.var_rev is not none %}{{ fin.tot.var_d|pct }} on the demand plan · {{ fin.tot.var_vol|signed }} cases{% else %}no fed figure to differ from{% endif %}</div></div>
 <div class="card stat"><span>Built by Finance</span><b>{{ fin.tot.built_rev|m if fin.tot.built_rev else '—' }}</b><div class="small muted">{{ fin.tot.built_vol|n if fin.tot.built_vol else 'no' }} cases with no demand plan beneath</div></div></div>{% endmacro %}
-{% macro fin_status(fin) %}<div id="fin-status">{% if fin.say %}<p class="flash no">{{ fin.say }}</p>{% endif %}{% if fin.unsaved_n %}<p class="hint unsaved-note"><b>{{ fin.unsaved_n }} figure{{ 's' if fin.unsaved_n != 1 }} typed and not saved</b>{% if fin.unsaved_here != fin.unsaved_n %} ({{ fin.unsaved_here }} at {{ fin.customer_label }}){% endif %} — hatched wherever {{ 'they reach' if fin.unsaved_n != 1 else 'it reaches' }}. They are yours alone until saved: Save writes them to the plan with one reason; Discard drops them.</p>{% elif fin.editable %}<p class="hint">Type a figure and press Enter or Tab: everything in this view recalculates at once — totals above, children beneath by the demand plan's shape, revenue, the variance and the year. A figure typed at a parent is written down to its children as you type it. Every tab shows the same figures. Nothing reaches the rest of the plan until you save.</p>{% elif fin.may and fin.open and fin.reading == 'finance' %}<p class="hint">{{ fin.tab_label }} is calculated, never typed: type a volume or a price on its tab, and this tab shows what it made at once.</p>{% endif %}{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} saved file{{ 's' if fin.n_waiting != 1 }} not yet taken in by a run — shown in the grid already.</p>{% endif %}</div>{% endmacro %}
+{% macro fin_status(fin) %}<div id="fin-status">{% if fin.say %}<p class="flash no">{{ fin.say }}</p>{% endif %}{% if fin.unsaved_n %}<p class="hint unsaved-note"><b>{{ fin.unsaved_n }} figure{{ 's' if fin.unsaved_n != 1 }} typed and not saved</b>{% if fin.unsaved_here != fin.unsaved_n %} ({{ fin.unsaved_here }} at {{ fin.customer_label }}){% endif %} — hatched wherever {{ 'they reach' if fin.unsaved_n != 1 else 'it reaches' }}. They are yours alone until saved: Save writes them to the plan with one reason; Discard drops them; ↶ on a figure takes that one out.</p>{% elif fin.editable %}<p class="hint">Type a figure and press Enter or Tab: everything in this view recalculates at once — totals above, children beneath by the demand plan's shape, revenue, the variance and the year. A figure typed at a parent is written down to its children as you type it. Every tab shows the same figures. Nothing reaches the rest of the plan until you save.</p>{% elif fin.may and fin.open and fin.reading == 'finance' %}<p class="hint">{{ fin.tab_label }} is calculated, never typed: type a volume or a price on its tab, and this tab shows what it made at once.</p>{% endif %}{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} saved file{{ 's' if fin.n_waiting != 1 }} not yet taken in by a run — shown in the grid already.</p>{% endif %}</div>{% endmacro %}
 {% macro fin_row(fin, r) %}<tbody id="fin-r-{{ r.code }}">{% for m in fin.measures %}<tr class="{{ 'first' if loop.first }} {{ 'total' if r.current and loop.first }}">
 {% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node"{% if r.depth == 2 %} style="padding-left:1.4rem"{% endif %}>{% if r.href %}<a href="{{ r.href }}" tabindex="-1">{{ r.label }}</a>{% else %}<b>{{ r.label }}</b>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></td>{% endif %}
 <td class="small muted">{{ m.label }}</td>
-{% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% if x.input %}<input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{% else %}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
+{% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% set mark %}{% if x.undo %}<button class="one" form="fin-one" formaction="{{ url_for('plan.finance_undo') }}" name="figure" value="{{ x.undo }}" tabindex="-1" title="take this figure out — {{ x.title }}; Redo puts it back" aria-label="take this figure out">↶</button>{% elif x.withdraw %}<a class="one" href="{{ x.withdraw }}" tabindex="-1" title="withdraw this figure — shows what will change first" aria-label="withdraw this figure">↶</a>{% endif %}{% endset %}{% if x.input %}<span class="inp"><input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{{ mark }}</span>{% else %}{{ mark }}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
 </tr>{% endfor %}</tbody>{% endmacro %}
+{% macro fin_steps(fin) %}<span id="fin-steps">{% if fin.undo %}<button class="act" formaction="{{ url_for('plan.finance_undo') }}" title="takes out {{ fin.undo }} — the rest stays as typed">Undo</button>{% endif %}{% if fin.redo %}<button class="act" formaction="{{ url_for('plan.finance_redo') }}" title="puts back {{ fin.redo }}">Redo</button>{% endif %} <span class="hint">one reason for every figure not yet saved · Save writes them to {{ fin.post_keep.version }} and carries them into the plan{% if fin.undo or fin.redo %} · Undo takes out the last figure typed and Redo puts it back, until you save{% endif %}</span></span>{% endmacro %}
 {% macro fin_typed(fin) %}<div id="fin-typed">{% if fin.edits %}<h2>Typed here<span class="count">{{ fin.customer_label }} × the rows above · the plan periods shown</span></h2>
 <table><thead><tr><th>Node</th><th>Period</th><th>Figure</th><th class="n">Typed</th><th class="n">At the node now</th><th class="n">Demand plan then</th><th class="n">Demand plan now</th><th>Standing</th><th>Reason</th><th>By</th></tr></thead><tbody>
 {% for e in fin.edits %}<tr class="{{ 'off' if e.state != 'in_force' }}"><td>{{ e.scope_material }}</td><td>{{ e.period }}</td><td>{{ e.measure }}</td><td class="n">{{ e.typed }}</td><td class="n">{{ e.now }}</td><td class="n">{{ e.then }}</td><td class="n">{{ e.src_now }}{% if e.source_moved %} <span class="moved">◆</span>{% endif %}</td>
@@ -855,16 +856,17 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 {% for say in fin.not_built %}<p class="hint notbuilt">{{ say }} Nothing on this tab is estimated: a figure that cannot be calculated yet is left empty.</p>{% endfor %}
 <div class="finlive"{% if fin.editable %} data-live-post="{{ url_for('plan.finance_cell') }}" data-live-context='{{ fin.live_context|tojson }}'{% endif %}>
 {{ fin_status(fin) }}
+{% if fin.editable %}<form method="post" id="fin-one">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}</form>{% endif %}
 <form method="post" action="{{ url_for('plan.finance_cell') }}" id="fin-grid">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
 <div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}{% if p.total %}<th class="n tot"{% if fin.n_actual %} title="actual + plan"{% endif %}>{{ p.label }}{% if fin.n_actual %}<div class="small muted">actual + plan</div>{% endif %}</th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="an actual period of {{ version }} — what was shipped and invoiced; nothing is typed here"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>
 {% for r in fin.rows %}{{ fin_row(fin, r) }}{% else %}<tbody><tr><td colspan="{{ fin.periods|length + 2 }}" class="muted">Nothing in Finance's plan at {{ fin.customer_label }} × {{ fin.path[-1].label }} in FY{{ fy }}.</td></tr></tbody>{% endfor %}
 </table></div>{% if fin.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
-<p class="hint">{% if fin.n_actual %}{{ version }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.reading == 'finance' %}The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
+<p class="hint">{% if fin.n_actual %}{{ version }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.reading == 'finance' %}The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved. ↶ on a boxed figure takes it out: at once if it is not saved, by a withdrawal — shown first — if it is.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
 {% for r in fin.measures %} <b>{{ r.name }}</b>{% if r.formula %} = {{ r.formula }}{% endif %}; at a total, {{ r.rollup_says }}{% if r.typed %}; typed at a total, {{ r.breakback_says }}{% endif %}.{% endfor %} <a href="{{ url_for('plan.rules') }}#finance">How each figure is calculated</a></p>
 {% if fin.may and fin.open and version %}<form method="post" action="{{ url_for('plan.finance_save') }}" class="form-row" id="fin-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
 <label class="small">reason <select name="reason_code">{% for r in fin.reasons %}<option value="{{ r.reason_code }}" {{ 'selected' if r.reason_code == fin.default_reason }}>{{ r.description }}</option>{% endfor %}</select></label>
 <label class="small grow">note <input name="note" placeholder="what Finance knows that the demand plan does not"></label>
-<button class="primary" onclick="this.textContent='Saving…'">Save</button><button class="act" formaction="{{ url_for('plan.finance_discard') }}">Discard</button>{% if fin.undo %}<button class="act" formaction="{{ url_for('plan.finance_undo') }}" title="takes out {{ fin.undo }} — the rest stays as typed">Undo</button>{% endif %}{% if fin.redo %}<button class="act" formaction="{{ url_for('plan.finance_redo') }}" title="puts back {{ fin.redo }}">Redo</button>{% endif %}<span class="hint">one reason for every figure not yet saved · Save writes them to {{ version }} and carries them into the plan{% if fin.undo or fin.redo %} · Undo takes out the last figure typed and Redo puts it back, until you save{% endif %}</span></form>
+<button class="primary" onclick="this.textContent='Saving…'">Save</button><button class="act" formaction="{{ url_for('plan.finance_discard') }}">Discard</button>{{ fin_steps(fin) }}</form>
 {% if fin.can_add %}<form method="post" action="{{ url_for('plan.finance_start') }}" class="form-row">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}<b class="small">Start a material at {{ fin.customer_label }}</b>
 <label class="small">material <select name="add_material"><option value="">—</option>{% for a in fin.add_materials %}<option value="{{ a.code }}">{{ a.code }} · {{ a.label }}</option>{% endfor %}</select></label>
 <label class="small">period <select name="add_period">{% for p in fin.open_in_fy %}<option>{{ p }}</option>{% endfor %}</select></label>
@@ -882,12 +884,29 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 {% else %}<tr><td colspan="11" class="muted">Nothing typed on {{ version }}: Finance's plan is the demand plan valued{% if fin.any_built %}, and the built accounts are empty{% endif %}.</td></tr>{% endfor %}</tbody></table>
 <style>.finwrap{overflow-x:auto;margin-bottom:.6rem}table.fin td.n{vertical-align:top;white-space:nowrap}table.fin td.node{vertical-align:top;min-width:11rem}
 table.fin tr.first td{border-top:1px solid var(--rule)}table.fin .src{display:block;font-size:.72rem;color:var(--muted)}table.fin td.typed{box-shadow:inset 0 0 0 1px var(--ink)}
+table.fin .inp{position:relative;display:inline-block}table.fin .one{padding:0;border:0;background:none;color:var(--muted);font-size:.85rem;line-height:1;text-decoration:none;cursor:pointer;margin-right:.3rem}table.fin .inp .one{position:absolute;left:.35rem;top:50%;transform:translateY(-50%);margin:0}table.fin .one:hover,table.fin .one:focus{color:var(--ink)}
 table.fin td.unsaved{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 14%,transparent) 5px 6px)}table.fin td.unsaved input.cell{font-style:italic}
 .state.unsaved,.unsaved-note b{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 18%,transparent) 5px 6px)}
 table.fin td.actual,table.fin th.actual{color:var(--muted);background:var(--soft)}table.fin td.tot,table.fin th.tot{border-left:1px solid var(--rule);border-right:1px solid var(--rule)}.toolbar .seg{display:inline-flex;gap:.6rem;margin-left:auto}.toolbar .seg b{font-weight:600}.notbuilt{border-left:2px solid var(--rule);padding-left:.6rem}table.fin input.cell{width:5.6rem;text-align:right;font-size:.85rem;padding:.15rem .35rem}.finlive.live-busy table.fin{cursor:progress}
 .moved{font-size:.7rem;margin-left:.15rem}table.fin td.down{color:var(--muted)}.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}
 .form-row label{display:flex;flex-direction:column;gap:.2rem}</style>
-{% if fin.editable %}{{ live_script }}{% endif %}
+{% if fin.editable %}{{ live_script }}<script>
+/* the mark on a typed cell: its form is posted here and the parts that changed are put in place — no reload, the page
+   stays where it is. The live script lets any figure still being sent land first, then hands the form back. */
+(function () {
+  var form = document.getElementById("fin-one");
+  if (!form) return;
+  form.addEventListener("submit", function (e) {
+    if (e.defaultPrevented || !e.submitter) return;
+    e.preventDefault();
+    delete form.dataset.liveFlushed;
+    fetch(e.submitter.formAction, { method: "POST", headers: { "X-Live": "1" }, body: new FormData(form, e.submitter) })
+      .then(function (r) { return r.json(); })
+      .then(function (parts) { Object.keys(parts).forEach(function (id) { var o = document.getElementById(id); if (o) o.outerHTML = parts[id]; }); })
+      .catch(function () { location.reload(); });
+  });
+})();
+</script>{% endif %}
 """
 # the financial forecast's tabs, one per measure of the register — each a view of the same working copy, showing the
 # measure with the lines it is calculated from above it where that makes it readable (caldera ambiguity #20 f)
@@ -1056,13 +1075,15 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
         if e["state"] == "in_force":
             typed.setdefault((e["scope_material"], e["period"], e["measure"]), e)
     mine = {(t.material, t.period, t.measure): t for t in (wc.typed if wc else []) if t.customer == fc}
-    def over(code, period, measure) -> bool:
-        """An unsaved figure typed at a node above this one (or at a customer above this one) in the period and measure."""
+    def over(code, period, measure):
+        """The latest unsaved figure typed at a node above this one (or at a customer above this one) in the period and measure."""
         under_m = grid.materials_under.get(code, {code}) if grid is not None else set()
         under_a = grid.accounts_under.get(fc, set()) if grid is not None else set()
-        return any(t.period == period and t.measure == measure and (t.material, t.customer) != (code, fc)
-                   and under_m <= grid.materials_under.get(t.material, {t.material}) and under_a <= grid.accounts_under.get(t.customer, set())
-                   for t in (wc.typed if wc else []))
+        return next((t for t in reversed(wc.typed if wc else []) if t.period == period and t.measure == measure and (t.material, t.customer) != (code, fc)
+                     and under_m <= grid.materials_under.get(t.material, {t.material}) and under_a <= grid.accounts_under.get(t.customer, set())), None)
+    def came_from(t) -> str:
+        at = _once(reads.node_label)("material", t.material) or t.material
+        return f"from {_show(t.measure, t.value)} typed at {at}" + (f" · {t.customer}" if t.customer != fc else "") + " — not saved; the mark on that cell takes it out"
     touched = wc.touched if wc else {}
     fm_label = _once(reads.node_label)("material", fm)
     levels = {"category": "category", "product": "product", "material": "material", "all": "all materials"}
@@ -1101,17 +1122,21 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                         if F["built"] and _shown_as(k) != "rate":
                             x["built"] = _show(k, F["built"][k])
                         e = typed.get((code, p["period"], k))
-                        if e and over(code, p["period"], k):
+                        above = None if p.get("total") else over(code, p["period"], k)
+                        if e and above:
                             e = None                   # a figure typed since, above it and not yet saved, has written over it
+                        t = mine.get((code, p["period"], k))
                         if e:
                             x["cls"] += " typed"; x["title"] = _edit_title(e); x["moved"] = bool(e["source_moved"])
-                        t = mine.get((code, p["period"], k))
+                            if not t and may and is_open and e.get("edit_id"):      # the mark on a saved figure: its withdrawal, shown first
+                                x["withdraw"] = url_for("plan.withdrawal", grid="finance", id=e["edit_id"], version=version)
                         if t:
                             x["cls"] += " typed"; x["moved"] = False
                             x["title"] = f"typed {_show(k, t.value)} at {t.at[11:16]} — not saved"
+                            x["undo"] = t.edit_id                                   # the mark on an unsaved one: that figure out
                         if touched and any(c in touched.get(k, ()) for c in ks):
                             x["cls"] += " unsaved"
-                            x["title"] = x["title"] or "changed by a figure typed and not saved"
+                            x["title"] = x["title"] or (came_from(above) if above else "changed by a figure typed and not saved")
                         if editable and k == measure and p["period"] in opens:
                             val = F["fin"][k]
                             x["input"] = f"{k[0]}|{code}|{p['period']}"
@@ -1175,6 +1200,8 @@ def _fin_parts(version: str, fy: int, page: dict, who: str, say: str | None = No
     for r in fin["rows"]:
         parts[f"fin-r-{r['code']}"] = str(M.fin_row(fin, r))
     parts["fin-typed"] = str(M.fin_typed(fin))
+    if fin["may"] and fin["open"]:
+        parts["fin-steps"] = str(M.fin_steps(fin))
     return parts
 
 
@@ -1298,12 +1325,23 @@ def finance_discard():
 
 @plan.post("/finance/undo")
 def finance_undo():
-    """Undo before a save: the last step taken out of the working copy, every earlier one still standing as typed.
+    """Undo before a save: the last step taken out of the working copy — or the one figure named — the rest standing as typed.
     Nothing is recorded — nothing was released."""
     who = _who(); page = _page_args(request.form); version = page.get("version") or reads.default_version()
+    one = request.form.get("figure")            # the mark on a typed cell: that figure, wherever it sits in the steps
+    live = bool(one) and working.is_live()      # asked by the page's script: answered with the parts it changed, no reload
     with finance_live.COPIES.lock(who):
+        if live:
+            v = reads.version(version) or {}
+            page["version"] = version; page["fy"] = int(page.get("fy") or v.get("fiscal_year") or 0)
+            before = _fin_parts(version, page["fy"], page, who)
         wc = finance_live.working_copy(who, version, FINANCE)
-        step = finance_live.undo(wc) if wc else None
+        step = (finance_live.take_out(wc, one) if one else finance_live.undo(wc)) if wc else None
+        if live:
+            return working.reply(before, _fin_parts(version, page["fy"], page, who, say=None if step else "that figure is no longer in what you have typed"), always=("fin-status",))
+    if one:
+        session.say(f"taken out: {_step_says(step)} — not saved; Redo puts it back" if step else "that figure is no longer in what you have typed", bool(step))
+        return redirect(_back(page))
     session.say(f"undone: {_step_says(step)} — not saved; Redo puts it back" if step else "nothing typed to undo", bool(step))
     return redirect(_back(page))
 

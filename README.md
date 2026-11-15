@@ -181,7 +181,7 @@ version the latest view — the version every page opens on — whole, nothing m
   material node) in open periods, and the grid recalculates on Enter or Tab with no run — totals above, children beneath,
   revenue, the variance and the year — in a working copy that is Finance's alone until saved (hatched as unsaved, the
   same on every tab, kept while they move about, dropped by Discard, lost on a restart; *Undo* takes the last figure out and
-  puts the rest again as typed — one a later figure had written over comes back — and *Redo* puts it back, until a save); a volume at a node is written
+  puts the rest again as typed — one a later figure had written over comes back — and *Redo* puts it back, until a save; **↶ on the cell a figure was typed at** takes that one figure out from wherever it sits in the steps — the rest put again in the order typed, Redo puts it back — and on a saved figure opens its withdrawal; a cell the figure reached says where it came from); a volume at a node is written
   down to its children by the demand plan's shape at the moment it is typed, a price moves every price beneath by one
   proportion so the node's calculated price is what was typed, and the last figure typed wins at every level. Save asks
   one reason, writes one file — each figure as typed and where, and the cells it wrote — and carries it into the plan

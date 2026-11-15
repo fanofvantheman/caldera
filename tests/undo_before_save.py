@@ -4,7 +4,8 @@
 
 Finance's grid: a leaf figure, then a figure at its category that writes over it, then Undo — the leaf's figure is back
 where the category had overwritten it; Undo again and the copy is the plan as saved, cell for cell; Redo twice and it is
-exactly what was typed; a new figure after an Undo drops what was undone. A material started (its volume and its price)
+exactly what was typed; a new figure after an Undo drops what was undone. The mark on a typed cell
+takes that one figure out from the middle of the steps, and Redo puts it back. A material started (its volume and its price)
 is one step. The schedule: a month, a rate and a confirmed reset of a line, each one step, undone and redone in turn.
 Nothing is saved: every check is on the working copy, which is discarded at the end, and no file reaches the landing.
 """
@@ -100,6 +101,7 @@ def main() -> None:
         assert same(cells_of(grid(), keys), saved) and not copy().typed and not copy().touched.get("volume")
         html = c.get("/revenue?" + "&".join(f"{k}={v}" for k, v in page.items())).data.decode()
         assert "finance/redo" in html and "finance/undo" not in html and "typed and not saved" not in html
+        assert 'id="fin-one"' in html, "the form a mark posts through is on the page before anything is typed — a row repainted finds it"
         r = c.post("/finance/undo", data=page, follow_redirects=True)
         assert "nothing typed to undo" in r.data.decode()
         print(f"undo           and again: all {len(keys):,} cells beneath {cat} are the plan as saved; the page offers Redo and no Undo")
@@ -118,6 +120,38 @@ def main() -> None:
         r = c.post("/finance/redo", data=page, follow_redirects=True)
         assert "nothing undone to redo" in r.data.decode()
         print("new figure     after an Undo: nothing left to redo")
+
+        # 5b · the mark on a typed cell: one figure out from the middle of the steps, the rest as typed; Redo puts it back
+        c.post("/finance/discard", data=page)
+        post(cat, "volume", cat_v)                                  # the category first
+        after_cat_only = cells_of(grid(), keys)
+        price_v = round(at(acct, mat, "price") + 0.25, 2)
+        post(mat, "price", price_v, fc=acct, fm=cat)                # then a price beneath it
+        first = copy().history.done[0][0].edit_id
+        html = c.get("/revenue?" + "&".join(f"{k}={v}" for k, v in page.items())).data.decode()
+        assert f'name="figure" value="{first}"' in html and 'form="fin-one" formaction="/finance/undo' in html, "the category's cell carries its mark"
+        under = c.get("/revenue?" + "&".join(f"{k}={v}" for k, v in {**page, "material": cat}.items())).data.decode()
+        assert "typed at" in under and "the mark on that cell takes it out" in under, "a cell it reached says where it came from"
+        r = c.post("/finance/undo", data={**page, "figure": first})
+        assert r.status_code == 302 and "#" not in r.headers["Location"]
+        g1 = cells_of(grid(), keys)
+        assert all(abs(g1[k][0] - saved[k][0]) < 1e-9 for k in keys), "every volume beneath the category is as saved"
+        assert abs(at(acct, mat, "price") - price_v) < 1e-6 and len(copy().typed) == 1, "the price typed after it stands"
+        c.post("/finance/redo", data=page)
+        g2 = cells_of(grid(), keys)
+        assert all(abs(g2[k][0] - after_cat_only[k][0]) < 1e-9 for k in keys) and abs(at(acct, mat, "price") - price_v) < 1e-6
+        # the same asked by the page's script: answered in place with the parts it changed — no redirect, nothing to scroll
+        again = copy().history.done[-1][0].edit_id
+        r = c.post("/finance/undo", data={**page, "figure": again}, headers={"X-Live": "1"})
+        got = r.get_json()
+        assert r.status_code == 200 and f"fin-r-{cat}" in got and "fin-steps" in got and "finance/redo" in got["fin-steps"], sorted(got)
+        assert all(abs(cells_of(grid(), keys)[k][0] - saved[k][0]) < 1e-9 for k in keys)
+        c.post("/finance/redo", data=page)
+        r = c.post("/finance/undo", data={**page, "figure": "W-9999"}, follow_redirects=True)
+        assert "no longer in what you have typed" in r.data.decode()
+        print(f"mark           {cat} × {P} taken out from under a later price: volumes as saved, the price stands; Redo puts the category back")
+        c.post("/finance/discard", data=page)
+        post(mat, "price", price_v, fc=acct, fm=cat)                # leave a step for 6 to add to, as before
 
         # 6 · a material started is one step: its volume and its price go together
         with app.test_request_context():

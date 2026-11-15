@@ -7,7 +7,7 @@ taken in replayed over it — read once per run and shared; a copy holds only th
 made before a run is rebased onto the new plan by replaying its figures' cells, so the mix stays as it was typed.
 
 Undo and redo before a save: the copy keeps every step its owner took, in order (`chassis.working.History`). Undo drops
-the last step and puts the rest again on the plan as saved — the cells each figure wrote when it was typed, in order, so
+the last step — or the one figure named, from wherever it sits (`take_out`) — and puts the rest again on the plan as saved — the cells each figure wrote when it was typed, in order, so
 an earlier figure a later one had written over comes back; redo puts the step back. Nothing is recorded: nothing was
 released.
 """
@@ -170,6 +170,17 @@ def undo(wc: WorkingCopy) -> list[Typed] | None:
     """The last step taken out of the copy: the plan as saved, with every earlier step put on it again."""
     step = wc.history.undo()
     if step is not None:
+        _rebuild(wc)
+    return step
+
+
+def take_out(wc: WorkingCopy, edit_id: str) -> list[Typed] | None:
+    """One figure taken out wherever it sits in the steps — the mark on the cell it was typed at: its step leaves, the
+    rest are put again in the order typed, and it becomes the step Redo puts back (last, as if typed again now)."""
+    step = next((s for s in wc.history.done if any(t.edit_id == edit_id for t in s)), None)
+    if step is not None:
+        wc.history.done.remove(step)
+        wc.history.undone.append(step)
         _rebuild(wc)
     return step
 
