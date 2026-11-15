@@ -99,8 +99,12 @@ PROCESSES = [
                 Tab("fin_price", "Price", "plan.revenue", {"measure": "price"}, verbs=FIN_READ),
                 Tab("fin_revenue", "Revenue", "plan.revenue", {"measure": "revenue"}, verbs=FIN_READ),
                 Tab("fin_versions", "Versions", "plan.revenue_versions", verbs=FIN_READ)]),
+            # the same page as Demand's, listed here too: the menu stays in Financial planning (via), and whoever holds the
+            # maintain right amends it from either process — nothing says where it lives
+            Section("rev_prices", "Prices and terms", "plan.terms", {"via": "finplan"}, tabs=[
+                Tab("fin_terms", "Terms", "plan.terms", {"via": "finplan"}, verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill", "read.plan"]),
+                Tab("fin_pricelists", "Price lists", "plan.price_lists", {"via": "finplan"}, verbs=["register.price_list.maintain", "read.drill", "read.plan"])]),
             # steps of the chain whose registers live under Demand, where the planners read them: shown here as links, not moved
-            Section("rev_prices", "Prices and terms · in Demand", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill", "read.plan"]),
             Section("rev_promotions", "Promotions · in Demand", "plan.events", verbs=["register.promo_calendar.maintain", "layer.6.enter", "read.drill"]),
         ]),
         Area("cogs", "Cost of goods", [
