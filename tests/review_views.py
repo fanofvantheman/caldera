@@ -8,6 +8,10 @@
    cells for it; Headcount the same, with FTE.
 3. Review at a cost centre: its state, its lines against last year, what was entered on it; accept and send back offered
    on a submitted one, nothing typed. Accepting from the review view is placed and returns to it.
+4. Against the reference (DEC-20261115-07): on the latest view the reference and last year are two columns on compare
+   and review; the reference's figures, period for period, are its own schedule's for the periods it covers; a period it
+   does not cover is empty and left out of its total, which says how many periods it compares; Headcount's reference is
+   the reference's own labour over the same periods; the business plan, which has no reference, shows last year only.
 Everything it writes is removed afterwards and the workflow's part of the plan is run again.
 """
 from __future__ import annotations
@@ -72,6 +76,49 @@ def main() -> None:
         hc = c.get(f"/headcount/compare?version={V}&cc=OPS").data.decode()
         assert "Echuca beans and spaghetti" in hc and "FTE" in hc
         print(f"compare         {len(got)} cost centres beneath OPS side by side, the beans hall's {want:,.0f} as the page writes it; states as handed over; Headcount with FTE")
+
+        # 4 · against the reference, beside last year
+        R = q("select reference_version r from dims.ctl_version where version_id = ?", V)[0]["r"]
+        assert R and R != V, R
+        sched = lambda v, cc: {r["period"]: r["a"] for r in q("select period, sum(amount) a from plan.opex_schedule where version_id = ? and cost_centre_code = ? group by 1", v, cc)}
+        mine, theirs = sched(V, "CC_E_BEANS"), sched(R, "CC_E_BEANS")
+        covered = sorted(p for p in mine if p in theirs)
+        assert covered and len(covered) < len(mine), (covered, sorted(mine))      # the plan runs past the reference's year
+        html = c.get(f"/schedule/compare?version={V}&cc=OPS").data.decode()
+        head = html.split("<thead>")[1].split("</thead>")[0]
+        assert "Same periods last year" in head and f"{R}<span" in head and f"{len(covered)} of {len(mine)} periods" in head, head
+        html = c.get(f"/schedule/review?version={V}&cc=CC_E_BEANS").data.decode()
+        lines_head = html.split("<h2>Lines")[1].split("</thead>")[0]
+        assert R in lines_head and "Last year" in lines_head
+        by = html.split("<h2>By period")[1].split("</table>")[0]
+        cells = {p: re.findall(r'<td class="n">([^<]*)', row) for p, row in re.findall(r"<tr><td>(\d{4}P\d\d)</td>(.*?)</tr>", by, re.S)}
+        assert sorted(cells) == sorted(mine), sorted(cells)
+        for p, (plan, ref, rdiff, prior, pdiff) in cells.items():
+            assert abs(amount(plan) - mine[p]) <= 500, (p, plan, mine[p])
+            if p in theirs:
+                assert abs(amount(ref) - theirs[p]) <= 500, (p, ref, theirs[p])                 # the reference's own figure
+            else:
+                assert ref == "" and rdiff == "", (p, ref, rdiff)                              # not covered: empty, not filled
+        total = re.search(r'<tr class="total"><td>\d+ periods</td><td class="n">[^<]*</td><td class="n">([^<]*) <span class="small muted">(\d+) of (\d+)</span></td><td class="n">([^<]*)</td>', by)
+        ref_tot = sum(theirs[p] for p in covered)
+        assert total and abs(amount(total.group(1)) - ref_tot) <= 0.005 * ref_tot, (total and total.group(1), ref_tot)
+        assert (int(total.group(2)), int(total.group(3))) == (len(covered), len(mine))
+        want_diff = sum(mine[p] for p in covered) - ref_tot                                    # the plan less the reference, same periods
+        assert abs(amount(total.group(4)) - want_diff) <= 1_000, (total.group(4), want_diff)
+        hc = c.get(f"/headcount/compare?version={V}&cc=OPS").data.decode()
+        fy = int(q("select fiscal_year f from dims.ctl_version where version_id = ?", V)[0]["f"])
+        lab = q("""select sum(r.wages + r.on_costs) a from plan.labour_line r where r.version_id = ? and r.cost_centre_code = 'CC_E_BEANS'
+                   and r.period in (select distinct period from plan.labour_line where version_id = ? and fiscal_year = ?)""", R, V, fy)[0]["a"]
+        row = re.search(r'cc=CC_E_BEANS[^"]*">Echuca beans and spaghetti</a>.*?</tr>', hc, re.S).group(0)
+        nums = re.findall(r'<td class="n[^"]*">([^<]*)</td>', row)
+        assert f"{R} wages and on-costs" in hc and abs(amount(nums[3]) - lab) <= 0.005 * lab, (nums, lab)
+        bp = c.get(f"/schedule/review?version={R}&cc=CC_E_BEANS").data.decode()
+        assert "Last year" in bp.split("<h2>Lines")[1].split("</thead>")[0] and "periods covered" not in bp and "8 of 12" not in bp
+        bpc = c.get(f"/schedule/compare?version={R}&cc=OPS").data.decode().split("<thead>")[1].split("</thead>")[0]
+        assert "Same periods last year" in bpc and "over the same periods" not in bpc, bpc
+        assert f"{R} wages and on-costs" not in c.get(f"/headcount/compare?version={R}&cc=OPS").data.decode()
+        print(f"reference       {V} against {R} and last year, two columns; the beans hall's {len(covered)} covered periods read {R}'s own schedule "
+              f"({ref_tot:,.0f}), the other {len(mine) - len(covered)} empty and out of its total; Headcount against {R}'s labour ({lab:,.0f}); {R} itself last year only")
 
         # 3 · review, and an accept taken from it
         html = c.get(f"/schedule/review?version={V}&cc=CC_E_BEANS").data.decode()
