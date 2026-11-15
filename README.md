@@ -32,7 +32,7 @@ what it wrote); `uv run python -m tests.version_fork` names a what-if from the l
 cell with every copy naming its original and the arrivals read, not copied, promotes it and back, and names a version from
 the business plan at the last close (it removes what it wrote); `uv run python -m tests.agreement_door` takes the renegotiated
 agreement in through the door with the model replaced by a stub, and checks the quotation check, the refusals, the no-key
-path and that only accepted rows reach the labour model (it removes what it wrote). `uv run python -m tests.capex_plan` checks that the capital plan opens on the register as loaded and walks, the units-of-production charge, that the schedule's depreciation and lease lines are the capital plan's charge, and enters and withdraws a project through the page (it removes what it wrote); `uv run python -m tests.schedule_lock` checks a schedule month adjusted, locked and unlocked, and that every month typed before reads locked at its figure (it removes what it wrote).
+path and that only accepted rows reach the labour model (it removes what it wrote). `uv run python -m tests.capex_plan` checks that the capital plan opens on the register as loaded and walks, the units-of-production charge, that the schedule's depreciation and lease lines are the capital plan's charge, and enters and withdraws a project through the page (it removes what it wrote); `uv run python -m tests.schedule_lock` checks a schedule month adjusted, locked and unlocked, and that every month typed before reads locked at its figure (it removes what it wrote). `uv run python -m tests.context_scope` checks that each screen's context block shows only the selections it applies and carries the rest, that a person reaching one cost centre lands in it, the schedule and Headcount one node at a time, and Revenue's detail under a category (read only).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -251,10 +251,11 @@ without an API key the document waits for a person;
   tabs — the demand area's entries are *Demand plan* (plan · entries · new entry), *Submissions*, *Baseline*
   (statistical forecast · forecast accuracy), *Promotions* (events · calendar · mapping review · their structure to
   ours), *Prices and terms* (terms · price lists) and *Revenue bridge*; a person sees the tabs their roles reach.
-  Above the menu, the **context**: version, year, customer (all, a unit or an account) and material (all, a category, a
-  product or a material), chosen once and held in the page's address, so every link carries it and a link sent opens on
-  the same context. A person whose assignments name customers or materials is offered those; a page that does not use a
-  selection says so beside it. The demand plan opens its cells when the customer is an account; Revenue,
+  Above the menu, the **context**: version, year, customer (all, a unit or an account), material (all, a category, a
+  product or a material), entity, cost centre and location, chosen once and held in the page's address — each screen shows
+  the ones it applies and carries the rest, so every link carries it and a link sent opens on
+  the same context. A person whose assignments name customers, materials or cost centres is offered those; a cost-side screen is
+  one cost centre at a time, and at a node above one reads its total by account, read only. The demand plan opens its cells when the customer is an account; Revenue,
   its versions chart, submissions (a unit by account) and the promotions calendar read it too.
   **Every door decides the same way.** The promotions system and the forecasting system are taken in by an act whose
   declarations are checked as data; each disagreement between what arrived and the plan's own structures is an item of

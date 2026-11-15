@@ -44,6 +44,29 @@ def entities() -> list[dict]:
     return q("select * from dims.dim_entity order by entity_code")
 
 
+def under(cc: str | None) -> set[str]:
+    """The plan's cost centres at or beneath a node — every one when no node is named."""
+    tree = planning_cost_centres()
+    parent = {c["code"]: c["parent"] for c in tree}
+    if not cc or cc not in parent:
+        return set(parent)
+    out = set()
+    for c in parent:
+        n = c
+        while n:
+            if n == cc:
+                out.add(c); break
+            n = parent.get(n)
+    return out
+
+
+def node_of(ctx: dict) -> tuple[str, str, set[str]]:
+    """The context's cost centre, its entity ('' for both) and the cost centres it covers (DEC-20261115-02)."""
+    cc = ctx.get("cc") or ""
+    e = ctx.get("entity")
+    return cc, "" if e in (None, "", "ALL") else e, under(cc)
+
+
 def planning_cost_centres() -> list[dict]:
     """The plan's cost centres in tree order — function, then its cost centres — with their kind."""
     rows = q("""select c.cost_centre_code code, c.cost_centre_name "name", c.parent_code parent, c.kind, c.provisional,
@@ -94,7 +117,7 @@ ENTITIES = """<h1>Entities and ledgers<small>each legal entity, the ledger it ke
 <p class="hint">One chart of accounts for both: Riverbend moved onto Caldera's accounts when it was bought and kept its own cost centres. The mapping is effective-dated, so a ledger that re-cuts its cost centres is read through the mapping in force at each period's start.</p>"""
 
 ACTUALS = """<h1>Actuals<small>FY{{ fy }} · the ledgers' actuals by {{ "each ledger's own cost centre" if at == 'ledger' else "the plan's cost centre" }} × account · closed periods · {{ entity_label }}</small></h1>
-<form class="toolbar" method="get">{{ context_fields() }}<label>year<select name="year" onchange="this.form.submit()">{% for y in years %}<option value="{{ y }}" {{ 'selected' if y == fy }}>FY{{ y }}</option>{% endfor %}</select></label><label>entity<select name="entity" onchange="this.form.submit()"><option value="">both</option>{% for e in entities %}<option value="{{ e.entity_code }}" {{ 'selected' if e.entity_code == entity }}>{{ e.entity_name }}</option>{% endfor %}</select></label>
+<form class="toolbar" method="get">{{ context_fields() }}<label>year<select name="year" onchange="this.form.submit()">{% for y in years %}<option value="{{ y }}" {{ 'selected' if y == fy }}>FY{{ y }}</option>{% endfor %}</select></label>
 <label>read at<select name="at" onchange="this.form.submit()"><option value="">the plan's cost centres</option><option value="ledger" {{ 'selected' if at == 'ledger' }}>each ledger's own</option></select></label></form>
 """ + TABS_NOTE + """
 {% if not periods %}<p class="muted">No closed period in FY{{ fy }}.</p>{% else %}
@@ -132,7 +155,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles=None) -> None:
     def cost_centres():
         try:
             year = rolling_year()
-            ents = entities()
+            node, entity, mine = node_of(ctx_fn())
+            ents = [e for e in entities() if entity in ("", e["entity_code"])]
             cond, paid = pay(who_fn())
             amounts, totals = {}, {}
             for r in q(f"""select cost_centre_code cc, entity_code e, sum(amount) a from plan.cost_actual
@@ -142,6 +166,13 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles=None) -> None:
                 totals[r["e"]] = totals.get(r["e"], 0) + r["a"]
                 totals[None] = totals.get(None, 0) + r["a"]
             centres = planning_cost_centres()
+            keep_e = {e["entity_code"] for e in ents}
+            amounts = {k: a for k, a in amounts.items() if k[0] in mine and k[1] in keep_e}      # the context's node and entity
+            totals = {}
+            for (c_, e), a in list(amounts.items()):
+                amounts[(c_, None)] = amounts.get((c_, None), 0) + a
+                totals[e] = totals.get(e, 0) + a; totals[None] = totals.get(None, 0) + a
+            centres = [c for c in centres if c["code"] in mine]
             # roll the leaves up to their functions and the company
             parent = {c["code"]: c["parent"] for c in centres}
             for c in centres:
@@ -179,8 +210,9 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles=None) -> None:
                             left join plan.cost_centre_map m on m.entity_code = l.entity_code and m.ledger_cost_centre = l.ledger_cost_centre
                             left join plan.planning_cost_centre c on c.cost_centre_code = m.cost_centre_code
                             order by l.entity_code, l.ledger_cost_centre""", *year)
+            _, entity, _ = node_of(ctx_fn())
             ents = [{**e, "n": sum(1 for l in ledgers if l["entity_code"] == e["entity_code"]),
-                     "year": sum(l["year"] or 0 for l in ledgers if l["entity_code"] == e["entity_code"])} for e in entities()]
+                     "year": sum(l["year"] or 0 for l in ledgers if l["entity_code"] == e["entity_code"])} for e in entities() if entity in ("", e["entity_code"])]
             return page(ENTITIES, title="Entities and ledgers", active="cc_entities", entities=ents, ledgers=ledgers, entity_note=ENTITY_NOTE, **paid)
         except Busy as e:
             return busy("Entities and ledgers", e)
@@ -190,7 +222,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles=None) -> None:
         try:
             years = [int(r["fiscal_year"]) for r in q("select distinct fiscal_year from plan.cost_actual order by 1 desc")]
             fy = int(request.args.get("year") or (years[0] if years else 0))
-            entity = request.args.get("entity") or ""
+            node, entity, mine = node_of(ctx_fn())
             at = "ledger" if request.args.get("at") == "ledger" else ""
             ents = entities()
             periods = [r["period"] for r in q("select period from dims.dim_period where fiscal_year = ? and period_state = 'CLOSED' order by period", fy)]
@@ -201,6 +233,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles=None) -> None:
             outside: dict = {}
             total: dict = {}
             for r in rows:
+                if r["state"] == "mapped" and r["cost_centre_code"] not in mine:
+                    continue
+                if r["state"] != "mapped" and node and len(mine) < len(under(None)):
+                    continue                       # a ledger cost centre outside the plan's belongs to no node beneath the company
                 if r["state"] != "mapped":
                     g = outside.setdefault((r["entity_code"], r["ledger_cost_centre"]), {"code": r["ledger_cost_centre"], "label": r["ledger_name"],
                                            "state": "not mapped" if r["state"] == "unmapped" else "left out", "beneath": r["entity_code"], "by": {}, "total": 0})

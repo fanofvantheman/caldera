@@ -19,7 +19,7 @@ ROLE = """<h1>Headcount by role<small>FY{{ fy }} · {{ version }} · the factory
 <p class="hint">FTE are positions at 38 paid hours a week; the casual pool is a position for the campaign periods at a 25% loading. Wages land on the schedule's 6100 line and the employer's on-costs on 6150, for every period of the schedule. Penalties, allowances and leave are not yet planned.</p>
 {% for g in groups %}<h2>{{ g.name }}<span class="count">{{ g.code }} · {{ g.entity }}</span></h2>
 <table><thead><tr><th>Position</th><th>Classification</th><th>Employment</th><th class="n">FTE</th><th class="n">Rate now</th><th class="n">From {{ step }}</th><th class="n">FY{{ fy }} wages</th><th class="n">On-costs</th></tr></thead><tbody>
-{% for r in g.rows %}<tr><td><code>{{ r.position_id }}</code>{% if r.shown_name %} <span class="small muted">{{ r.shown_name }}</span>{% endif %}</td><td>{{ r.classification_name }}</td><td class="small">{{ r.employment_type }}{% if r.to_period %} · {{ r.from_period }}–{{ r.to_period }}{% endif %}</td>
+{% for r in g.rows %}<tr><td><code>{{ r.position_id }}</code>{% if r.shown_name %} <span class="small muted">{{ r.shown_name }}</span>{% endif %}{% if g.node %}<div class="small muted">{{ r.cc_name }} · {{ r.entity_code }}</div>{% endif %}</td><td>{{ r.classification_name }}</td><td class="small">{{ r.employment_type }}{% if r.to_period %} · {{ r.from_period }}–{{ r.to_period }}{% endif %}</td>
 <td class="n">{{ r.fte|n(1) }}</td><td class="n">{{ '%.2f'|format(r.rate_now) if r.rate_now else '' }}</td><td class="n">{{ '%.2f'|format(r.rate_step) if r.rate_step else '' }}</td><td class="n">{{ r.wages|aud }}</td><td class="n">{{ r.on_costs|aud }}</td></tr>{% endfor %}
 <tr class="total"><td colspan="3">{{ g.name }}</td><td class="n">{{ g.fte|n(1) }}</td><td></td><td></td><td class="n">{{ g.wages|aud }}</td><td class="n">{{ g.on_costs|aud }}</td></tr></tbody></table>{% endfor %}
 <h2>The agreements<span class="count">classification × hourly rate, effective from a period</span></h2>
@@ -32,7 +32,7 @@ NAME = """<h1>Headcount by name<small>FY{{ fy }} · {{ version }} · the overhea
 {% else %}<p class="hint">Individual pay, read by the holders of {{ pay_said }}. Salary × (1 + the incentive at target) for the weeks each person is employed in a period; a named vacancy is planned at a typed figure from its start; the employer's on-costs at the entity's rates. Wages land on the schedule's 6100 line, on-costs on 6150.</p>
 {% for g in groups %}<h2>{{ g.name }}<span class="count">{{ g.code }} · {{ g.entity }}</span></h2>
 <table><thead><tr><th>Person</th><th>Title</th><th class="n">Salary</th><th class="n">Incentive</th><th>From</th><th>To</th><th class="n">FTE in FY{{ fy }}</th><th class="n">FY{{ fy }} wages</th><th class="n">On-costs</th></tr></thead><tbody>
-{% for r in g.rows %}<tr class="{{ 'off' if r.vacancy }}"><td>{{ r.person_name }}{% if r.vacancy %} <span class="state">vacancy</span>{% endif %}</td><td class="small">{{ r.title }}</td><td class="n">{{ '{:,.0f}'.format(r.annual_salary) }}</td><td class="n">{{ r.incentive_pct|pct1 }}</td>
+{% for r in g.rows %}<tr class="{{ 'off' if r.vacancy }}"><td>{{ r.person_name }}{% if r.vacancy %} <span class="state">vacancy</span>{% endif %}{% if g.node %}<div class="small muted">{{ r.cc_name }} · {{ r.entity_code }}</div>{% endif %}</td><td class="small">{{ r.title }}</td><td class="n">{{ '{:,.0f}'.format(r.annual_salary) }}</td><td class="n">{{ r.incentive_pct|pct1 }}</td>
 <td class="small">{{ r.start_date }}</td><td class="small">{{ r.end_date or '' }}</td><td class="n">{{ r.fte|n(2) }}</td><td class="n">{{ r.wages|aud }}</td><td class="n">{{ r.on_costs|aud }}</td></tr>{% endfor %}
 <tr class="total"><td colspan="6">{{ g.name }}</td><td class="n">{{ g.fte|n(2) }}</td><td class="n">{{ g.wages|aud }}</td><td class="n">{{ g.on_costs|aud }}</td></tr></tbody></table>{% endfor %}{% endif %}"""
 
@@ -53,10 +53,15 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         return out, mine
 
     def _groups(rows: list[dict], key_rows, mine) -> list[dict]:
+        """The rows of the context's cost centre (and entity), within the person's reach — one table at a cost centre and at
+        a node above it alike (DEC-20261115-02 point 4): the cost centres beneath a node are a column, not a stack."""
         centres = {c["code"]: c for c in costs.planning_cost_centres()}
+        node, entity, here = costs.node_of(ctx_fn())
         groups: dict = {}
         for r in rows:
             if mine is not None and r["cost_centre_code"] not in mine:
+                continue
+            if r["cost_centre_code"] not in here or (entity and r["entity_code"] != entity):
                 continue
             g = groups.setdefault((r["cost_centre_code"], r["entity_code"]), {"code": r["cost_centre_code"], "name": centres.get(r["cost_centre_code"], {}).get("name", r["cost_centre_code"]),
                                                                               "entity": r["entity_code"], "rows": [], "fte": 0.0, "wages": 0.0, "on_costs": 0.0})
@@ -64,7 +69,15 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             for k in ("fte", "wages", "on_costs"):
                 g[k] += r.get(k) or 0
         order = {c: i for i, c in enumerate(centres)}
-        return [groups[k] for k in sorted(groups, key=lambda k: (order.get(k[0], 999), k[1]))]
+        out = [groups[k] for k in sorted(groups, key=lambda k: (order.get(k[0], 999), k[1]))]
+        if node in centres and centres[node]["kind"] in ("company", "function") and out:
+            one = {"code": node, "name": centres[node]["name"], "entity": entity or "both entities", "node": True, "rows": [], "fte": 0.0, "wages": 0.0, "on_costs": 0.0}
+            for g in out:
+                one["rows"] += [{**r, "cc_name": g["name"]} for r in g["rows"]]
+                for k in ("fte", "wages", "on_costs"):
+                    one[k] += g[k]
+            return [one]
+        return out
 
     def _where():
         c = ctx_fn()

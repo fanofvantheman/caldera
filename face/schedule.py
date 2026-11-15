@@ -189,17 +189,18 @@ MACROS = """{% macro money(x) %}{{ '' if x is none else '{:,.0f}'.format(x) }}{%
 {% for col in s.cols %}{% if col.kind == 'total' %}<td class="n tot"><b>{{ money(g.fy) }}</b></td>{% else %}<td class="n {{ 'closed' if col.kind == 'actual' }}"><b>{{ money(g.by.get(col.period)) }}</b></td>{% endif %}{% endfor %}</tr>{% endmacro %}
 {% macro sch_total(s) %}<tr id="sch-t" class="total"><td class="sticky">Total shown</td><td></td><td></td>{% for col in s.cols %}{% if col.kind == 'total' %}<td class="n tot">{{ money(s.tot_fy) }}</td>{% else %}<td class="n {{ 'closed' if col.kind == 'actual' }}">{{ money(s.tot.get(col.period)) }}</td>{% endif %}{% endfor %}</tr>{% endmacro %}"""
 
-PAGE = MACROS + """<h1>Opex schedule<small>FY{{ fy }} · {{ version }} · {{ s.where }} · every line a driver and a rate; every month driver × rate until it is typed</small></h1>
-<form class="toolbar" method="get">{{ context_fields() }}<label>entity<select name="entity" onchange="this.form.submit()"><option value="">both</option>{% for e in s.entities %}<option value="{{ e.entity_code }}" {{ 'selected' if e.entity_code == s.entity }}>{{ e.entity_name }}</option>{% endfor %}</select></label>
-<label>cost centre<select name="cc" onchange="this.form.submit()">{% for c in s.centres %}<option value="{{ c.code }}" {{ 'selected' if c.code == s.cc }}>{{ '· ' * c.depth }}{{ c.name }}</option>{% endfor %}</select></label></form>
+PAGE = MACROS + """<h1>Opex schedule<small>FY{{ fy }} · {{ version }} · {{ s.where }} · every line a driver and a rate; every month driver × rate, adjusted or locked where someone has said so</small></h1>
 <p class="hint">{{ entity_note }}</p>
+{% if not s.leaf %}<p class="hint"><b>{{ s.cc_name }}</b> is {{ s.n_beneath }} cost centres: each line here is the sum of its account across them, read only. Lines are typed at a cost centre — choose one in the context{% if s.beneath %}: {% for b in s.beneath %}<a href="{{ url_for('plan.schedule', cc=b.code) }}">{{ b.name }}</a>{{ ', ' if not loop.last }}{% endfor %}{% endif %}.</p>{% endif %}
 {% if s.withheld %}<p class="hint">The labour lines of {{ s.withheld|length }} cost centres planned by name are individual pay, read by {{ s.pay_holders|join(', ') or 'nobody yet' }}: they are left out here and out of every total shown.</p>{% endif %}
 {% if not s.open %}<p class="hint">{{ version }} is {{ s.status }}{% if s.planned %} — read only: nothing is typed on a closed version{% else %}: the schedule is kept on an open version, for the {{ s.step_n }} periods after its last actual one{% endif %}.</p>{% endif %}
 <div class="schlive"{% if s.editable %} data-live-post="{{ url_for('plan.schedule_cell') }}" data-live-context='{{ s.live_context|tojson }}'{% endif %}>
 {{ sch_status(s) }}
 <form method="post" action="{{ url_for('plan.schedule_cell') }}" id="sch-grid">{% for k, v in s.keep.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
 <div class="schwrap"><table class="sch"><thead><tr><th class="sticky">Line</th><th>Driver</th><th class="n">Rate</th>{% for col in s.cols %}{% set p = col.period %}{% if col.kind == 'total' %}<th class="n tot">FY{{ s.fy }}{% if s.closed %}<div class="small muted">actual + plan</div>{% endif %}</th>{% elif col.kind == 'actual' %}<th class="n closed" title="an actual period of {{ version }} — nothing is typed here">{{ p[2:4] }}·{{ p[5:] }}<div class="small muted">actual</div></th>{% else %}<th class="n">{{ p[2:4] }}·{{ p[5:] }}</th>{% endif %}{% endfor %}</tr></thead>
-{% for g in s.groups %}<tbody>{{ sch_group(s, g) }}{% for l in g.lines %}{{ sch_row(s, l) }}{% endfor %}</tbody>{% else %}<tbody><tr><td colspan="{{ 3 + s.cols|length }}" class="muted">No line in this selection.</td></tr></tbody>{% endfor %}
+{% if s.leaf %}{% for g in s.groups %}<tbody>{% for l in g.lines %}{{ sch_row(s, l) }}{% endfor %}</tbody>{% else %}<tbody><tr><td colspan="{{ 3 + s.cols|length }}" class="muted">No line in this selection.</td></tr></tbody>{% endfor %}
+{% else %}<tbody>{% for r in s.node_rows %}<tr class="line"><td class="sticky"><span>{{ r.account_code }} {{ r.account_name }}</span> <span class="small muted">{{ r.n }} cost centre{{ '' if r.n == 1 else 's' }}</span></td><td class="small">{{ r.drivers }}</td><td></td>
+{% for col in s.cols %}{% if col.kind == 'total' %}<td class="n tot">{{ money(r.fy) }}</td>{% else %}<td class="n {{ 'closed' if col.kind == 'actual' }}">{{ money(r.by.get(col.period)) }}</td>{% endif %}{% endfor %}</tr>{% else %}<tr><td colspan="{{ 3 + s.cols|length }}" class="muted">No line in this selection.</td></tr>{% endfor %}</tbody>{% endif %}
 <tbody>{{ sch_total(s) }}</tbody></table></div>
 {% if s.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
 <p class="hint">{% if s.closed %}Shaded periods are {{ version }}'s actual periods, to {{ s.from }}: the ledgers' actuals through the mapping, never typed. {% endif %}The rest is the plan: the schedule plans {{ s.planned|length }} periods after them — its own rolling year of {{ s.step_n }}, never more than the version's horizon of {{ s.horizon }}, both shown on <a href="{{ url_for('plan.versions') }}">Versions</a>{% if s.past_fy %} — so it runs past the year end, and FY{{ s.fy }} is its actual periods and its plan periods together{% endif %}. Under each rate, the rate calculated from the twelve periods to {{ s.from }} ({{ s.window[0] }}–{{ s.window[-1] }}); a rate typed over it is boxed. A month typed is adjusted: the figure less driver × rate is kept as its adjustment, and the month goes on following its driver with the adjustment on top (dotted). Tick a month's lock to hold it as it stands (boxed): the driver no longer moves it, the calculated amount beneath it with the difference; ◆ marks one whose calculated amount has moved since it was locked. Unticking returns it to its driver, keeping its adjustment. Hatched: typed and not yet saved.
@@ -271,6 +272,8 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
     roots = [c for c in tree if c["code"] in visible and (parent.get(c["code"]) not in visible)]
     cc = page.get("cc") if page.get("cc") in visible else (roots[0]["code"] if roots else "")
     entity = page.get("entity") or ""
+    kind_of = {c["code"]: c["kind"] for c in tree}
+    leaf = kind_of.get(cc) not in ("company", "function")          # entry is at a cost centre; a node above one is read only
     shown = under.get(cc, set()) & visible
     may_method = bool(_verb("rate")) and roles.may(who, _verb("rate"), kind=v.get("version_kind"))
     accounts = {a["account_code"]: a["account_name"] for a in q("select account_code, account_name from dims.dim_gl_account")}
@@ -317,7 +320,7 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
              "driver": first["driver"] if first else "last_year", "rate": first["rate"] if first else None, "rate_calc": first["rate_calc"] if first else None,
              "rate_typed": bool(first and first["rate_typed"]), "rate_unsaved": bool(first and s0 and (s0.get("rate") != first["rate"] or s0.get("driver") != first["driver"])),
              "cells": {p: cs[p] for p in planned if p in cs}, "actual": actual[line], "fy": fy_amt,
-             "n_typed": sum(1 for c in cs.values() if c["state"] in ("adjusted", "locked")), "may_month": may_at(line[1]) and v.get("status") == "open"}
+             "n_typed": sum(1 for c in cs.values() if c["state"] in ("adjusted", "locked")), "may_month": leaf and may_at(line[1]) and v.get("status") == "open"}
         g = groups.setdefault(line[1], {"code": line[1], "name": next((c["name"] for c in tree if c["code"] == line[1]), line[1]), "lines": [], "by": defaultdict(float), "fy": 0.0})
         g["lines"].append(l)
         for p in closed:
@@ -330,13 +333,29 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
     for g in groups.values():
         for p, x in g["by"].items():
             tot[p] += x
+    node_rows: dict = {}
+    if not leaf:                       # the node's total by line: each account summed over the cost centres beneath, read only
+        for g in groups.values():
+            for l in g["lines"]:
+                r = node_rows.setdefault(l["account_code"], {"account_code": l["account_code"], "account_name": l["account_name"], "by": defaultdict(float),
+                                                             "fy": 0.0, "ccs": set(), "drv": set()})
+                for p in closed:
+                    r["by"][p] += l["actual"].get(p) or 0
+                for p, c in l["cells"].items():
+                    r["by"][p] += c["amount"] or 0
+                r["fy"] += l["fy"]; r["ccs"].add(l["cost_centre_code"]); r["drv"].add(l["driver"])
+    labels = {d["driver"]: d["driver_label"] for d in q("select * from dims.ref_cost_driver")} | {"labour_model": "the labour model", "capex_model": "the capital plan"}
     ents = costs.entities()
     keep = {"version": version, "fy": fy, "cc": cc, "entity": entity}
     from . import reads as R
     drivers = q("select * from dims.ref_cost_driver order by ord")
     open_ = v.get("status") == "open" and bool(inp.periods)
     editable = open_ and (may_method or any(l["may_month"] for g in groups.values() for l in g["lines"]))
-    return {"entities": ents, "entity": entity, "cc": cc, "centres": [c for c in tree if c["code"] in visible],
+    rows_ = [{**r, "n": len(r["ccs"]), "drivers": ", ".join(sorted(labels.get(d, d) for d in r["drv"]))} for _, r in sorted(node_rows.items())]
+    beneath = [c for c in tree if parent.get(c["code"]) == cc and c["code"] in visible]
+    return {"entities": ents, "entity": entity, "cc": cc, "centres": [c for c in tree if c["code"] in visible], "leaf": leaf, "node_rows": rows_,
+            "cc_name": next((c["name"] for c in tree if c["code"] == cc), cc), "n_beneath": len([c for c in shown if kind_of.get(c) not in ("company", "function")]),
+            "beneath": beneath,
             "where": " · ".join(x for x in [next((c["name"] for c in tree if c["code"] == cc), ""), next((e["entity_name"] for e in ents if e["entity_code"] == entity), "both entities")] if x),
             "open": open_, "status": v.get("status"), "closed": closed, "planned": planned, "cols": cols, "fy": fy, "from": vp["from"],
             "step_n": step.get("horizon_periods"), "horizon": vp["horizon"], "past_fy": len(planned) - len(in_fy),
@@ -366,12 +385,15 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
                           "says": "run completed — the opex schedule reads what was saved"}
 
     def _page_args(src) -> dict:
+        """Where the page stands: the version, its year, and the cost centre and entity from the context (DEC-20261115-02) —
+        or from what a form or a live post carries."""
         c = ctx_fn()
         version = src.get("version") or c.get("version")
         from . import reads
         v = reads.version(version) or {}
         fy = int(v.get("fiscal_year") or src.get("fy") or c.get("fy") or 0)       # the version's year and its window, whatever the context names
-        return {"version": version, "fy": fy, "cc": src.get("cc") or "", "entity": src.get("entity") or ""}
+        entity = src.get("entity") if src.get("entity") is not None else c.get("entity")
+        return {"version": version, "fy": fy, "cc": src.get("cc") or c.get("cc") or "", "entity": "" if entity in (None, "ALL") else entity}
 
     def _back(pg: dict) -> str:
         return url_for("plan.schedule", **pg)
@@ -482,6 +504,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         version, fy = pg["version"], pg["fy"]
         if live:
             fields = [(str(data.get("cell") or ""), data.get("value"))]
+            bits = fields[0][0].split("|")
+            ln = line_of(bits[1]) if len(bits) > 1 else None
+            if ln:
+                pg = {**pg, "cc": ln[1]}
         else:
             cells, _, _ = cells_for(who, version)
             fields = []

@@ -51,7 +51,7 @@ def main() -> None:
     with app.test_request_context():
         assert roles.may(HOLDER, "read.pay") and not any(roles.may(w, "read.pay") for w in WITHOUT)
     session.become(HOLDER)
-    sch = c.get("/schedule?cc=CAL").data.decode()
+    sch = c.get("/schedule?cc=CC_EXEC").data.decode() + c.get("/schedule?cc=CC_E_TOM").data.decode()
     check(exec_line in sch and hall_line in sch, f"{HOLDER} (read.pay) sees the executive's labour line and the tomato hall's on the schedule")
     hn = c.get("/headcount/name").data.decode()
     check(person["person_name"] in hn and salary in hn, f"{HOLDER} reads {person['person_name']}'s salary on Headcount by name")
@@ -59,7 +59,7 @@ def main() -> None:
     check("6100 Wages" in exec_group(act), f"{HOLDER} sees the executive office's wages in the actuals")
     for who in WITHOUT:
         session.become(who)
-        sch = c.get("/schedule").data.decode()
+        sch = c.get("/schedule?cc=CC_EXEC").data.decode() + c.get("/schedule?cc=CC_E_TOM").data.decode()
         hn = c.get("/headcount/name").data.decode()
         act = c.get("/costs/actuals?at=ledger").data.decode()
         cc = c.get("/costs/centres").data.decode()
@@ -69,7 +69,7 @@ def main() -> None:
         check("6100 Wages" not in exec_group(act), f"{who}: the executive office's wages are not in the actuals")
         check(("planned by name" in act and "planned by name" in cc) or who == "plant.manager@caldera", f"{who}: the actuals and cost centre pages say labour is withheld")
         if who != "plant.manager@caldera":
-            check(hall_line in c.get("/schedule?cc=CAL").data.decode(), f"{who} still sees a role-based labour line (the tomato hall's)")
+            check(hall_line in c.get("/schedule?cc=CC_E_TOM").data.decode(), f"{who} still sees a role-based labour line (the tomato hall's)")
         else:
             check(hall_line in sch, f"{who} sees the tomato hall's labour line in their own cost centres")
     if failures:

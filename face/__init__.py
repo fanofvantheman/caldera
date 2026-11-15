@@ -42,6 +42,7 @@ FIN_READ = ["register.assumptions.maintain", "overlay.finance.enter", "read.proo
 VERSION_VERBS = ["version.name", "version.freeze", "version.declare_reference", "decision.accept", "decision.record", "read.proof"]
 COST_READ = ["register.cost_centre_map.maintain", "register.cost_input.maintain", "schedule.line.enter", "headcount.enter", "read.proof"]
 CONTEXT_ALL = ("version", "fy", "customer", "material")          # the context keys a page applies (DEC-20261113-07)
+COST_SIDE = ("version", "fy", "entity", "cc")                    # a cost-side screen: one cost centre at a time (DEC-20261115-02)
 
 # ---- the processes in play: a register, not a menu ----
 PROCESSES = [
@@ -112,14 +113,14 @@ PROCESSES = [
         ]),
         # the cost side: the entities' ledgers read through the plan's own cost centres (DEC-20261113-03)
         Area("labour", "Labour", [
-            Section("headcount", "Headcount", "plan.headcount_role", uses=("version", "fy"), tabs=[
+            Section("headcount", "Headcount", "plan.headcount_role", uses=COST_SIDE, tabs=[
                 Tab("hc_role", "By role", "plan.headcount_role", verbs=COST_READ),
                 Tab("hc_name", "By name", "plan.headcount_name", verbs=["read.pay"]),
                 # what the labour model prices: the kinds, and each agreement's entitlements with their clauses (DEC-20261114-03)
-                Tab("hc_entitlements", "Entitlements", "plan.entitlements", verbs=COST_READ + ["register.agreement.maintain"])]),
+                Tab("hc_entitlements", "Entitlements", "plan.entitlements", verbs=COST_READ + ["register.agreement.maintain"], uses=("entity",))]),
         ]),
         Area("opex", "Opex", [
-            Section("schedule", "Opex schedule", "plan.schedule", uses=("version", "fy"), tabs=[
+            Section("schedule", "Opex schedule", "plan.schedule", uses=COST_SIDE, tabs=[
                 Tab("sch_schedule", "Schedule", "plan.schedule", verbs=COST_READ)]),
         ]),
         Area("capital", "Capital", [
@@ -139,11 +140,11 @@ PROCESSES = [
         Area("setup", "Set-up", [
             Section("slots", "Where each number comes from", "plan.slots", verbs=FIN_READ),
             Section("rules", "How each figure is calculated", "plan.rules", verbs=FIN_READ),
-            Section("costcentres", "Cost centres", "plan.cost_centres", tabs=[
+            Section("costcentres", "Cost centres", "plan.cost_centres", uses=("entity", "cc"), tabs=[
                 Tab("cc_tree", "Cost centres", "plan.cost_centres", verbs=COST_READ),
-                Tab("cc_entities", "Entities and ledgers", "plan.cost_entities", verbs=COST_READ),
+                Tab("cc_entities", "Entities and ledgers", "plan.cost_entities", verbs=COST_READ, uses=("entity",)),
                 Tab("cc_actuals", "Actuals", "plan.cost_actuals", verbs=COST_READ),
-                Tab("cc_mapping", "Mapping review", "plan.cost_mapping", verbs=["register.cost_centre_map.maintain", "read.proof"])]),
+                Tab("cc_mapping", "Mapping review", "plan.cost_mapping", verbs=["register.cost_centre_map.maintain", "read.proof"], uses=())]),
             # the one set every plan is valued with — everyone who plans reads it; Finance amends it (DEC-20261113-10)
             Section("assumptions", "Assumptions", "plan.assumptions", uses=("version", "fy"), verbs=sorted(set(READ + FIN_READ + COST_READ))),
         ]),
@@ -310,11 +311,55 @@ def _materials(who, chosen) -> list[dict]:
     return [o for o in out if mine is None or o["value"] in mine]
 
 
+def _entities(who, chosen) -> list[dict]:
+    return [{"value": "ALL", "label": "Both entities", "depth": 0}] + \
+        [{"value": e["entity_code"], "label": e["entity_name"], "depth": 1} for e in q("select entity_code, entity_name from dims.dim_entity order by entity_code")]
+
+
+def _centres(who, chosen) -> list[dict]:
+    """The plan's cost centres in tree order — the company, its functions, their cost centres — bounded by the nodes the
+    person's organisation assignments reach (DEC-20261115-02 point 4)."""
+    rows = q('select cost_centre_code code, cost_centre_name "name", parent_code parent, kind from plan.planning_cost_centre order by cost_centre_code')
+    kids: dict = {}
+    for r in rows:
+        kids.setdefault(r["parent"], []).append(r)
+    mine = _scope(who, "organisation")
+    out: list[dict] = []
+    def walk(parent, depth, inside):
+        for r in sorted(kids.get(parent, []), key=lambda r: (r["kind"] == "function", r["code"]) if depth > 1 else (0, r["code"])):
+            here = inside or mine is None or r["code"] in mine
+            if here:
+                out.append({"value": r["code"], "label": r["name"], "depth": depth, "leaf": r["kind"] not in ("company", "function")})
+            walk(r["code"], depth + 1, here)
+    walk(None, 0, False)
+    return out
+
+
+def _centre_default(who, chosen, opts) -> str | None:
+    """With nothing chosen: the one cost centre, when a person's assignments reach exactly one — they land in it with
+    nothing to choose; otherwise the top of what they reach."""
+    leaves = [o for o in opts if o.get("leaf")]
+    return leaves[0]["value"] if len(leaves) == 1 else (opts[0]["value"] if opts else None)
+
+
+def _locations(who, chosen) -> list[dict]:
+    """All, then the plants and the stocking DCs — the nodes of the location structure."""
+    rows = q("""select h.descendant_code code, coalesce(n.node_name, h.descendant_code) "name" from dims.dim_location_hierarchy h
+                left join dims.dim_node n on n.node_code = h.descendant_code
+                where h.ancestor_code = 'ALL' and h.descendant_level = 'node' order by h.descendant_code""")
+    return [{"value": "ALL", "label": "All locations", "depth": 0}] + [{"value": r["code"], "label": r["name"], "depth": 1} for r in rows]
+
+
 CONTEXT = [
     Choice("version", "Version", _versions, default=lambda who, chosen, opts: reads.default_version() or (opts[0]["value"] if opts else None), strict=True),
     Choice("fy", "Year", _years, default=_year_default, strict=True),
     Choice("customer", "Customer", _customers, default=_customer_default, note=lambda who, opts: _bounded(who, "customer", opts), known=_known_customer),
     Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts), known=_known_material),
+    # the cost side and supply (DEC-20261115-02 point 2): shown only on the screens that apply them, held once in the address
+    Choice("entity", "Entity", _entities, strict=True),
+    Choice("cc", "Cost centre", _centres, default=_centre_default,
+           note=lambda who, opts: None if "CAL" in (_scope(who, "organisation") or {"CAL"}) else "the cost centres your assignments reach"),
+    Choice("location", "Location", _locations, strict=True),
 ]
 
 SHELL = Shell(brand="Caldera", strapline="integrated business planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map"), ("Reports", "plan.reports")],

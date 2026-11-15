@@ -835,7 +835,7 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 <div class="card stat"><span>Built by Finance</span><b>{{ fin.tot.built_rev|m if fin.tot.built_rev else '—' }}</b><div class="small muted">{{ fin.tot.built_vol|n if fin.tot.built_vol else 'no' }} cases with no demand plan beneath</div></div></div>{% endmacro %}
 {% macro fin_status(fin) %}<div id="fin-status">{% if fin.say %}<p class="flash no">{{ fin.say }}</p>{% endif %}{% if fin.unsaved_n %}<p class="hint unsaved-note"><b>{{ fin.unsaved_n }} figure{{ 's' if fin.unsaved_n != 1 }} typed and not saved</b>{% if fin.unsaved_here != fin.unsaved_n %} ({{ fin.unsaved_here }} at {{ fin.customer_label }}){% endif %} — hatched wherever {{ 'they reach' if fin.unsaved_n != 1 else 'it reaches' }}. They are yours alone until saved: Save writes them to the plan with one reason; Discard drops them.</p>{% elif fin.editable %}<p class="hint">Type a figure and press Enter or Tab: everything in this view recalculates at once — totals above, children beneath by the demand plan's shape, revenue, the variance and the year. A figure typed at a parent is written down to its children as you type it. Every tab shows the same figures. Nothing reaches the rest of the plan until you save.</p>{% elif fin.may and fin.open and fin.reading == 'finance' %}<p class="hint">{{ fin.tab_label }} is calculated, never typed: type a volume or a price on its tab, and this tab shows what it made at once.</p>{% endif %}{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} saved file{{ 's' if fin.n_waiting != 1 }} not yet taken in by a run — shown in the grid already.</p>{% endif %}</div>{% endmacro %}
 {% macro fin_row(fin, r) %}<tbody id="fin-r-{{ r.code }}">{% for m in fin.measures %}<tr class="{{ 'first' if loop.first }} {{ 'total' if r.current and loop.first }}">
-{% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node">{% if r.href %}<a href="{{ r.href }}" tabindex="-1">{{ r.label }}</a>{% else %}<b>{{ r.label }}</b>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></td>{% endif %}
+{% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node"{% if r.depth == 2 %} style="padding-left:1.4rem"{% endif %}>{% if r.href %}<a href="{{ r.href }}" tabindex="-1">{{ r.label }}</a>{% else %}<b>{{ r.label }}</b>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></td>{% endif %}
 <td class="small muted">{{ m.label }}</td>
 {% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% if x.input %}<input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{% else %}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
 </tr>{% endfor %}</tbody>{% endmacro %}
@@ -1001,8 +1001,16 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
     may, is_open = roles.may(who, "overlay.finance.enter", kind=kind), v.get("status") == "open"
     may_type = {m: bool(rules[m]["verb"]) and roles.may(who, rules[m]["verb"], kind=kind) for m in lines}
     editable = bool(version) and may and is_open and reading == "finance" and may_type[measure] and bool(rules[measure]["breakback"])     # a tab takes input in its own measure only
-    kids = _once(reads.material_tree_under)(fm)
-    nodes = [fm] + list(kids)
+    kids = dict(_once(reads.material_tree_under)(fm))
+    # a category's detail on screen: each product followed by its materials, so the selection is the node and what is
+    # beneath it is the rows — two levels, not a drill per product
+    grand: dict = {}
+    if kids and all(k["lvl"] == "product" for k in kids.values()):
+        for prod in list(kids):
+            for m, k in _once(reads.material_tree_under)(prod).items():
+                grand[m] = {**k, "parent": prod}
+    nodes = [fm] + [n for prod in kids for n in [prod] + [m for m, g in grand.items() if g["parent"] == prod]]
+    kids.update(grand)
     wc = finance_live.working_copy(who, version, FINANCE) if version else None
     grid = wc.grid if wc else (finance_live.base(version, FINANCE)[1] if version else None)
     # the periods are the version's, not the calendar's: its actual periods of the year it is named for, marked and never
@@ -1018,7 +1026,8 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
     actual_at: dict[tuple, list] = defaultdict(list)        # (node, period) → what happened beneath it, in an actual period
     if grid is not None:
         A, M = grid.accounts_under.get(fc, set()), grid.materials_under.get(fm, set())
-        child_of = {m: ch for ch in kids for m in grid.materials_under.get(ch, ())}
+        child_of = {m: ch for ch in kids if ch not in grand for m in grid.materials_under.get(ch, ())}
+        grand_of = {m: g for g in grand for m in grid.materials_under.get(g, (g,))}
         for p in periods:
             if p["actual"]:
                 continue
@@ -1027,6 +1036,8 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                     buckets[(fm, p["period"])].append(k)
                     if k[2] in child_of:
                         buckets[(child_of[k[2]], p["period"])].append(k)
+                    if k[2] in grand_of:
+                        buckets[(grand_of[k[2]], p["period"])].append(k)
         for r in _once(reads.finance_actuals)(vp["actual"]):
             if r["account_code"] in A and r["material_code"] in M:
                 c = {"source": "actual", "cases": r["cases"], "net_sales": r["net_sales"], "source_cases": r["cases"], "source_net_sales": r["net_sales"],
@@ -1034,6 +1045,8 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                 actual_at[(fm, r["period"])].append(c)
                 if r["material_code"] in child_of:
                     actual_at[(child_of[r["material_code"]], r["period"])].append(c)
+                if r["material_code"] in grand_of:
+                    actual_at[(grand_of[r["material_code"]], r["period"])].append(c)
     edits = _once(reads.finance_edits_at)(version, list(vp["plan"]), fc, nodes) if version else []
     typed: dict[tuple, dict] = {}
     for e in edits:                       # latest first: the first in force is the one standing at the cell
@@ -1062,6 +1075,7 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
         lvl = kids[code]["lvl"] if code != fm else None
         has_kids = code != fm and kids[code]["has_kids"]
         row = {"code": code, "label": kids[code]["label"] if code != fm else fm_label, "current": code == fm, "href": L(material=code) if has_kids else None,
+               "depth": 2 if code in grand else (1 if code != fm else 0),
                "level": ("this node" if code == fm else levels.get(lvl, lvl or "")), "built": ("built by Finance" if nb and nb == len(all_keys) else "part built" if nb else ""),
                "cells": {m["key"]: [] for m in MEASURES}}
         for p in cols:
