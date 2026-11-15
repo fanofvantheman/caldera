@@ -32,6 +32,7 @@ from . import headcount
 from . import capex
 from . import workflow
 from . import views
+from . import standard
 from . import assumptions
 from . import versions as versions_page
 from . import strategic
@@ -2514,6 +2515,7 @@ strategic.register(plan, _page, _busy)
 capex.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED)
 workflow.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED, SUBMISSIONS)
 views.register(plan, _page, _who, _ctx, _busy, session, roles)
+standard.register(plan, _page, _who, _ctx, _busy)
 
 
 def main() -> None:

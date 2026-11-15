@@ -117,6 +117,7 @@ def main() -> None:
                                                      [p["period"] for p in periods if p["period"] <= LATEST_CLOSED][-12:])   # the opex schedule's acts; draws nothing
     plan["reg_schedule_edit"] = [{**r, "copied_from": ""} for r in plan["reg_schedule_edit"]]
     tables.update(costs.capex_reference())              # the asset classes and the fixed-asset register as loaded
+    tables.update(costs.standard_inputs(INPUT_MATERIALS))   # each input's price and index; each line's crew
     plan["reg_capex"] = costs.capex_items(PLAN_FY, LATEST_CLOSED)      # the capital plan's items on each version; draws nothing
     history["cost_actual"] += costs.capex_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, plan["reg_capex"])   # draws nothing
     tables.update(loads.structure_loads(tables))        # the load before, and one member the client has not finished; draws nothing

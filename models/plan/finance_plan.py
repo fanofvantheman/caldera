@@ -1,5 +1,5 @@
 """Finance's plan at its grain — account × material × period: volume, price and revenue, with the demand plan beneath;
-cost of goods and margin where a standard cost per case is known (none yet in Caldera).
+cost of goods and margin from the standard cost per case by plant (plan.standard_cost).
 
 Fed cells start as the demand plan valued; built cells exist only where Finance has typed at the grain and have no
 source. Every figure in force is then replayed in the order it was typed: the cells it wrote when it was typed are put
@@ -29,7 +29,7 @@ TYPES = {"version_id": "TEXT", "account_code": "TEXT", "material_code": "TEXT", 
     "plan.finance_plan",
     kind="FULL",
     grain=["version_id", "account_code", "material_code", "period"],
-    depends_on=["plan.demand_financialised", "plan.finance_edit", "plan.finance_edit_cell", "plan.finance_source", "plan.ref_grid_measure",
+    depends_on=["plan.demand_financialised", "plan.standard_cost", "plan.finance_edit", "plan.finance_edit_cell", "plan.finance_source", "plan.ref_grid_measure",
                 "dims.dim_customer_hierarchy", "dims.dim_material_hierarchy", "dims.dim_period", "dims.ctl_version"],
     columns={c: TYPES[c] for c in COLUMNS},
     description="Finance's plan: volume × price = revenue at account × material × period, fed by the demand plan or built by Finance.",
@@ -64,6 +64,9 @@ def execute(context: ExecutionContext, start: datetime, end: datetime, execution
     for typed, a, m, x in written.itertuples(index=False, name=None):
         on_record[typed].append((a, m, float(x)))
 
-    grid = Grid(dict(accounts_under), dict(materials_under), source_of, fy_of, rules, actual_through).from_source(demand.itertuples(index=False, name=None))
+    # the standard cost per case of each material in each period, from the standard by plant (DEC-20261115-04)
+    standard = {(v, m, p): float(s) for v, m, p, s in context.fetchdf(
+        f"select version_id, material_code, period, std_cost from {T('plan.standard_cost')} where complete").itertuples(index=False, name=None)}
+    grid = Grid(dict(accounts_under), dict(materials_under), source_of, fy_of, rules, actual_through, standard).from_source(demand.itertuples(index=False, name=None))
     grid.replay(edits.to_dict("records"), on_record)
     return pd.DataFrame(list(grid.cells.values()), columns=COLUMNS)

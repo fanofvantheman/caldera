@@ -114,7 +114,9 @@ PROCESSES = [
             Section("cogs", "Cost of goods", "plan.revenue", {"measure": "cogs"}, uses=CONTEXT_ALL, tabs=[
                 Tab("fin_cogs", "Cost of goods", "plan.revenue", {"measure": "cogs"}, verbs=FIN_READ),
                 Tab("fin_margin", "Margin", "plan.revenue", {"measure": "margin"}, verbs=FIN_READ)]),
-            Section("standard", "Standard by plant", RUNG, {"slug": "standard"}, verbs=["standard.derive", "standard.declare", "register.cost_input.maintain", "read.proof"]),
+            # the standard: a unit cost in four components, each read from the model that holds it (DEC-20261115-04)
+            Section("standard", "Standard by plant", "plan.standard", uses=("version", "fy", "location", "material"),
+                    verbs=["standard.derive", "standard.declare", "register.cost_input.maintain", *FIN_READ]),
             Section("landed", "Landed cost", RUNG, {"slug": "landed"}, verbs=["register.supplier_price_list.maintain", "register.freight_contract.maintain", "register.hedge_book.maintain", "register.customs.maintain"]),
         ]),
         # the cost side: the entities' ledgers read through the plan's own cost centres (DEC-20261113-03)

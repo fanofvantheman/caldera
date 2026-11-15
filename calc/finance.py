@@ -73,9 +73,10 @@ class Grid:
     from until it writes one — a person's working copy costs only the cells they have changed."""
 
     def __init__(self, accounts_under: dict[str, set], materials_under: dict[str, set], source_of: Callable[[str, str], str],
-                 fy_of: dict[str, int], rules: Rules, actual_through: dict[str, str] | None = None):
+                 fy_of: dict[str, int], rules: Rules, actual_through: dict[str, str] | None = None, standard: dict | None = None):
         self.accounts_under, self.materials_under, self.source_of, self.fy_of = accounts_under, materials_under, source_of, fy_of
         self.rules = rules
+        self.standard = dict(standard or {})                            # (version, material, period) → the standard cost per case
         self.actual_through = dict(actual_through or {})                # version → its from point: the last actual period
         self.cells: dict[Key, dict] = {}
         self.by_period: dict[tuple, list[Key]] = defaultdict(list)    # (version, period) → its cells, for scope matching
@@ -84,12 +85,13 @@ class Grid:
     # ---- building ----
     def start(self, key: Key, src: str, source_cases: float | None, source_net_sales: float | None, **now) -> dict:
         """A cell. Fed: the source is the demand plan valued and the cell starts as it. Built: no source. The standard cost
-        per case comes from the cost of goods step's source, which Caldera has not built: none, unless given."""
+        per case comes from the cost of goods step's source — the standard by plant (plan.standard_cost) — none where it
+        has none."""
         price = source_net_sales / source_cases if source_cases not in (None, 0) and source_net_sales is not None else None
         c = {"version_id": key[0], "account_code": key[1], "material_code": key[2], "period": key[3], "fiscal_year": self.fy_of.get(key[3]),
              "source": src, "source_cases": source_cases, "source_net_sales": source_net_sales, "source_price": price,
              "cases": source_cases if source_cases is not None else 0.0, "price": price, "net_sales": source_net_sales,
-             "std_cost": None, "cogs": None, "margin": None, "volume_edit_id": None, "price_edit_id": None}
+             "std_cost": self.standard.get((key[0], key[2], key[3])), "cogs": None, "margin": None, "volume_edit_id": None, "price_edit_id": None}
         c.update(now)
         self.cells[key] = c
         if self._owned is None:
@@ -117,7 +119,7 @@ class Grid:
         return self
 
     def copy(self) -> "Grid":
-        g = Grid(self.accounts_under, self.materials_under, self.source_of, self.fy_of, self.rules, self.actual_through)
+        g = Grid(self.accounts_under, self.materials_under, self.source_of, self.fy_of, self.rules, self.actual_through, self.standard)
         g.cells, g.by_period, g._owned = dict(self.cells), dict(self.by_period), set()
         return g
 

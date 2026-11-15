@@ -69,6 +69,12 @@ def _pending_rows(landing, version: str) -> tuple[list[dict], dict[str, list]]:
     return figures, cells
 
 
+def standard_of(version: str) -> dict:
+    """The standard cost per case by material and period on a version — what the run's grid is made with."""
+    return {(r["version_id"], r["material_code"], r["period"]): r["std_cost"]
+            for r in q("select version_id, material_code, period, std_cost from plan.standard_cost where version_id = ? and complete", version)}
+
+
 def base(version: str, landing) -> tuple[tuple, Grid]:
     """Finance's plan as the last run left it, plus what is saved and waiting for the run. Shared; never written."""
     stamp = (CONFIG.db.stat().st_mtime if CONFIG.db.exists() else 0, tuple(p.name for p in landing.pending()))
@@ -81,7 +87,7 @@ def base(version: str, landing) -> tuple[tuple, Grid]:
             return declared.get((a, m)) or declared.get((a, "ALL")) or "fed"
         # the version's from point: the grid writes nothing into an actual period, at whatever node a figure is typed
         upto = {r["version_id"]: r["from_period"] for r in q("select version_id, from_period from dims.ctl_version where version_id = ? and from_period is not null", version)}
-        g = Grid(acc, mat, source_of, fy_of, rules(), upto).from_plan(q("select * from plan.finance_plan where version_id = ?", version))
+        g = Grid(acc, mat, source_of, fy_of, rules(), upto, standard_of(version)).from_plan(q("select * from plan.finance_plan where version_id = ?", version))
         figures, cells = _pending_rows(landing, version)
         g.replay(figures, cells)
         _BASE[version] = (stamp, g)
@@ -274,7 +280,7 @@ def without(version: str, named: str) -> list[dict]:
         return declared.get((a, m)) or declared.get((a, "ALL")) or "fed"
     upto = {r["version_id"]: r["from_period"] for r in q("select version_id, from_period from dims.ctl_version where version_id = ? and from_period is not null", version)}
     now = {(r["version_id"], r["account_code"], r["material_code"], r["period"]): r for r in q("select * from plan.finance_plan where version_id = ?", version)}
-    g = Grid(acc, mat, source_of, fy_of, rules(), upto).from_source(
+    g = Grid(acc, mat, source_of, fy_of, rules(), upto, standard_of(version)).from_source(
         (k[0], k[1], k[2], k[3], r["source_cases"], r["source_net_sales"]) for k, r in now.items() if r["source"] == "fed")
     figures = [f for f in q("""select edit_id, save_id, version_id, scope_customer, scope_material, period, measure, value from plan.finance_edit
                                where version_id = ? and state = 'in_force' order by entered_on, edit_id""", version)

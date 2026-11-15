@@ -52,6 +52,9 @@ REFERENCE = {
     # the capital plan: the asset classes and the fixed-asset register as loaded
     "ref_asset_class": ("life_years", "residual_pct", "ord"),
     "reg_asset": ("cost", "accumulated", "lifetime_units"),
+    # the standard: each input's price and the index it moves with; each line's crew
+    "reg_input_price": ("price",),
+    "ref_line_crew": ("crew",),
     # labour: each entity's agreement, the on-costs, the positions (by role) and the people (by name)
     "ref_entitlement_kind": ("ord",),
     "ref_on_cost": ("rate",),

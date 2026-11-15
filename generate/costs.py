@@ -456,3 +456,28 @@ def capex_actuals(shipments: list[dict], routes: list[dict], periods: list[dict]
     first = {e[0]: e[4] for e in ENTITIES}
     return [{"entity_code": r["entity_code"], "ledger_cost_centre": ledger[(r["entity_code"], r["cost_centre_code"])], "account_code": r["account_code"],
              "period": r["period"], "amount": r["amount"]} for r in actuals(classes, assets, leases, closed, units, first)]
+
+
+# ---- the standard (DEC-20261115-04): what the material and labour components are read from ---------------------------
+# Each input's price per its base unit, in force from FY2027 P01, and the index it moves with (the assumptions register):
+# the price in a period is this × the index then ÷ 100. Imported inputs are priced landed. The utility in the bill of
+# materials (energy, GJ) is the consumption basis of the schedule's energy lines and is not priced here — it is variable
+# overhead, read from the schedule, never counted twice.
+INPUT_PRICES = {
+    "PEACH": 650, "PEAR": 600, "APRICOT": 900, "TOMATO": 180, "SUGAR": 900, "BEANS_DRY": 1_400, "PASTA_DRY": 1_300, "STRAW_FROZ": 2_600,
+    "BERRY_FROZ": 3_000, "CITRUS": 1_100, "TROP_PULP": 1_800, "FRUIT_PULP": 900, "SAUSAGE": 6_000, "SEASONING": 8_000, "OLIVE_OIL": 9_000,
+    "TINPLATE": 1_700, "CAN_130_E": 0.035, "CAN_220_E": 0.040, "CAN_400_E": 0.050, "CAN_410_E": 0.050, "CAN_800_E": 0.080, "CAN_825_E": 0.080,
+    "CAN_3KG_E": 0.120, "MP_SLEEVE": 0.050, "CUP_120": 0.060, "CUP_170": 0.080, "JAR_250_U": 0.350, "JAR_500_U": 0.500, "BTL_700_U": 0.550,
+    "TUBE_140_U": 0.250, "PORTION_U": 0.030, "POUCH_2KG_U": 0.400, "LABEL": 0.010, "CARTON": 0.250,
+}
+LANDED = {"TROP_PULP": "imported, priced landed: the supplier's price in USD at the plan's AUD/USD, freight and duty in"}
+# the crew a line runs with — direct labour: its hours per case are the crew over the route's cases an hour
+LINE_CREW = {"L_ECH_FRUIT": 14, "L_ECH_TOM": 12, "L_ECH_PASTE": 6, "L_ECH_SAUCE": 10, "L_ECH_BEANS": 12, "L_ECH_JAR": 8, "L_ECH_PORTION": 6,
+             "L_LOX_FRUIT": 14, "L_LOX_CUP_1": 10, "L_LOX_CUP_2": 8}
+
+
+def standard_inputs(input_materials: list) -> dict[str, list[dict]]:
+    link = {r[0]: r[5] for r in input_materials}
+    return {"reg_input_price": [{"material_code": m, "price": p, "price_from": "2027P01", "index_code": link.get(m) or "", "note": LANDED.get(m, "")}
+                                for m, p in INPUT_PRICES.items()],
+            "ref_line_crew": [{"line_code": l, "crew": n} for l, n in LINE_CREW.items()]}
