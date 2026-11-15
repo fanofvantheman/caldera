@@ -776,10 +776,11 @@ def is_account(code: str) -> bool:
 
 
 def material_tree_under(node: str) -> dict:
-    """The material nodes beneath a node in one read: each child's label, level and whether it has children of its own."""
+    """The material nodes beneath a node in one read: each child's label, level, whether it has children of its own and how many."""
     rows = q("""with k as (select descendant_code code, descendant_level lvl from dims.dim_material_hierarchy where ancestor_code = ? and depth = 1 and descendant_code <> ancestor_code)
                 select k.code, k.lvl, coalesce(c.category_name, p.product_name, m.material_name, k.code) as "label",
-                       exists (select 1 from dims.dim_material_hierarchy h where h.ancestor_code = k.code and h.depth = 1 and h.descendant_code <> h.ancestor_code) has_kids
+                       exists (select 1 from dims.dim_material_hierarchy h where h.ancestor_code = k.code and h.depth = 1 and h.descendant_code <> h.ancestor_code) has_kids,
+                       (select count(*) from dims.dim_material_hierarchy h where h.ancestor_code = k.code and h.depth = 1 and h.descendant_code <> h.ancestor_code) n_kids
                 from k left join (select distinct category_code, category_name from dims.dim_material) c on c.category_code = k.code
                 left join (select distinct product_code, product_name from dims.dim_material) p on p.product_code = k.code
                 left join dims.dim_material m on m.material_code = k.code order by k.code""", node)

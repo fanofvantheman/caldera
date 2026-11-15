@@ -1,12 +1,14 @@
-"""Undo and redo before a save — Finance's grid and the opex schedule, checked through the routes.
+"""Undo before a save — Finance's grid (no redo) and the opex schedule (undo and redo), checked through the routes.
 
     uv run python -m tests.undo_before_save            # from build/, with the warehouse built; writes nothing
 
 Finance's grid: a leaf figure, then a figure at its category that writes over it, then Undo — the leaf's figure is back
-where the category had overwritten it; Undo again and the copy is the plan as saved, cell for cell; Redo twice and it is
-exactly what was typed; a new figure after an Undo drops what was undone. The mark on a typed cell
-takes that one figure out from the middle of the steps, and Redo puts it back. A material started (its volume and its price)
-is one step. The schedule: a month, a rate and a confirmed reset of a line, each one step, undone and redone in turn.
+where the category had overwritten it; Undo again and the copy is the plan as saved, cell for cell. Nothing is kept to put
+back: the page offers no Redo and there is no route for one. What an undo took out is said as a toast, never at the top
+of the page — on the page the redirect lands on, or in the parts the page script gets back (Undo at the foot is answered
+in place too). The mark on a typed cell takes that one figure out from the middle of the steps. A material started (its
+volume and its price) is one step. The schedule: a month, a rate and a confirmed reset of a line, each one step, undone
+and redone in turn.
 Nothing is saved: every check is on the working copy, which is discarded at the end, and no file reaches the landing.
 """
 from __future__ import annotations
@@ -94,34 +96,41 @@ def main() -> None:
         assert r.status_code == 302
         assert abs(at(acct, mat) - leaf_v) < 1e-6 and same(cells_of(grid(), keys), after_leaf)
         assert [t.material for t in copy().typed] == [mat], "the leaf figure stands again and is the one to save"
-        print(f"undo           {cat} × {P} out: {acct} × {mat} back at {leaf_v:,} cases, every cell beneath the category as after the leaf was typed")
+        landed = c.get(r.headers["Location"]).data.decode()
+        toast = landed[landed.index('id="fin-toast"'):][:400]
+        assert 'class="toast"' in toast and "taken out:" in toast and "type it again" in toast, toast
+        assert "taken out" not in landed[:landed.index("id=\"fin-toast\"")], "what the undo took out is not said at the top of the page"
+        again = c.get(r.headers["Location"]).data.decode()
+        assert 'class="toast"' not in again, "the toast is said once"
+        print(f"undo           {cat} × {P} out: {acct} × {mat} back at {leaf_v:,} cases, every cell beneath the category as after the leaf was typed; said as a toast, once")
 
         # 3 · Undo again: the plan as saved, cell for cell; nothing to undo after that
         c.post("/finance/undo", data=page)
         assert same(cells_of(grid(), keys), saved) and not copy().typed and not copy().touched.get("volume")
         html = c.get("/revenue?" + "&".join(f"{k}={v}" for k, v in page.items())).data.decode()
-        assert "finance/redo" in html and "finance/undo" not in html and "typed and not saved" not in html
+        assert "finance/redo" not in html and "Redo" not in html and "finance/undo" not in html and "typed and not saved" not in html
         assert 'id="fin-one"' in html, "the form a mark posts through is on the page before anything is typed — a row repainted finds it"
         r = c.post("/finance/undo", data=page, follow_redirects=True)
         assert "nothing typed to undo" in r.data.decode()
-        print(f"undo           and again: all {len(keys):,} cells beneath {cat} are the plan as saved; the page offers Redo and no Undo")
+        print(f"undo           and again: all {len(keys):,} cells beneath {cat} are the plan as saved; the page offers no Undo and no Redo")
 
-        # 4 · Redo twice: exactly what was typed
-        c.post("/finance/redo", data=page)
-        assert same(cells_of(grid(), keys), after_leaf)
-        c.post("/finance/redo", data=page)
-        assert same(cells_of(grid(), keys), after_cat) and abs(at("ALL", cat) - cat_v) < 1e-6
-        print(f"redo           twice: the leaf, then {cat} at {cat_v:,} — every cell as typed")
+        # 4 · nothing is kept to put back: no undone steps, no route for a redo
+        assert not copy().history.can_redo(), "an undo keeps nothing to put back"
+        assert c.post("/finance/redo", data=page).status_code == 404, "Revenue has no redo"
+        print("no redo        an undo keeps nothing; /finance/redo is not a route")
 
-        # 5 · a new figure after an Undo drops what was undone
-        c.post("/finance/undo", data=page)
-        post(mat, "price", round(at(acct, mat, "price") + 0.25, 2), fc=acct, fm=cat)
-        assert not copy().history.can_redo()
-        r = c.post("/finance/redo", data=page, follow_redirects=True)
-        assert "nothing undone to redo" in r.data.decode()
-        print("new figure     after an Undo: nothing left to redo")
+        # 5 · Undo at the foot, asked by the page's script: answered in place — the parts it changed and the toast
+        post(cat, "volume", cat_v)
+        html = c.get("/revenue?" + "&".join(f"{k}={v}" for k, v in page.items())).data.decode()
+        steps = html[html.index('id="fin-steps"'):][:600]
+        assert 'form="fin-one"' in steps and "Redo" not in steps, steps
+        r = c.post("/finance/undo", data=page, headers={"X-Live": "1"})
+        got = r.get_json()
+        assert r.status_code == 200 and "fin-toast" in got and "taken out:" in got["fin-toast"] and "fin-steps" in got, sorted(got or {})
+        assert same(cells_of(grid(), keys), saved)
+        print("foot undo      answered in place: the rows, the steps and a toast saying what left")
 
-        # 5b · the mark on a typed cell: one figure out from the middle of the steps, the rest as typed; Redo puts it back
+        # 5b · the mark on a typed cell: one figure out from the middle of the steps, the rest as typed
         c.post("/finance/discard", data=page)
         post(cat, "volume", cat_v)                                  # the category first
         after_cat_only = cells_of(grid(), keys)
@@ -137,19 +146,21 @@ def main() -> None:
         g1 = cells_of(grid(), keys)
         assert all(abs(g1[k][0] - saved[k][0]) < 1e-9 for k in keys), "every volume beneath the category is as saved"
         assert abs(at(acct, mat, "price") - price_v) < 1e-6 and len(copy().typed) == 1, "the price typed after it stands"
-        c.post("/finance/redo", data=page)
-        g2 = cells_of(grid(), keys)
-        assert all(abs(g2[k][0] - after_cat_only[k][0]) < 1e-9 for k in keys) and abs(at(acct, mat, "price") - price_v) < 1e-6
+        assert not copy().history.can_redo(), "the figure taken out is not kept"
+        c.get(r.headers["Location"])                               # the toast said
         # the same asked by the page's script: answered in place with the parts it changed — no redirect, nothing to scroll
+        post(cat, "volume", cat_v)
+        assert all(abs(cells_of(grid(), keys)[k][0] - after_cat_only[k][0]) < 1e-9 for k in keys), "typed again, it is back"
         again = copy().history.done[-1][0].edit_id
         r = c.post("/finance/undo", data={**page, "figure": again}, headers={"X-Live": "1"})
         got = r.get_json()
-        assert r.status_code == 200 and f"fin-r-{cat}" in got and "fin-steps" in got and "finance/redo" in got["fin-steps"], sorted(got)
+        assert r.status_code == 200 and f"fin-r-{cat}" in got and "fin-steps" in got and "Redo" not in got["fin-steps"], sorted(got)
+        assert "taken out:" in got.get("fin-toast", ""), "the toast in the reply"
         assert all(abs(cells_of(grid(), keys)[k][0] - saved[k][0]) < 1e-9 for k in keys)
-        c.post("/finance/redo", data=page)
         r = c.post("/finance/undo", data={**page, "figure": "W-9999"}, follow_redirects=True)
-        assert "no longer in what you have typed" in r.data.decode()
-        print(f"mark           {cat} × {P} taken out from under a later price: volumes as saved, the price stands; Redo puts the category back")
+        body = r.data.decode()
+        assert "no longer in what you have typed" in body and 'class="flash bad"' in body, "a refusal stays at the top"
+        print(f"mark           {cat} × {P} taken out from under a later price: volumes as saved, the price stands; typed again to bring it back")
         c.post("/finance/discard", data=page)
         post(mat, "price", price_v, fc=acct, fm=cat)                # leave a step for 6 to add to, as before
 

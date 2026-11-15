@@ -6,10 +6,15 @@ The base every copy starts from is Finance's plan as the last run left it, with 
 taken in replayed over it — read once per run and shared; a copy holds only the cells its owner has changed. A copy
 made before a run is rebased onto the new plan by replaying its figures' cells, so the mix stays as it was typed.
 
-Undo and redo before a save: the copy keeps every step its owner took, in order (`chassis.working.History`). Undo drops
-the last step — or the one figure named, from wherever it sits (`take_out`) — and puts the rest again on the plan as saved — the cells each figure wrote when it was typed, in order, so
-an earlier figure a later one had written over comes back; redo puts the step back. Nothing is recorded: nothing was
-released.
+Undo before a save: the copy keeps every step its owner took, in order (`chassis.working.History`). Undo drops the
+last step — or the one figure named, from wherever it sits (`take_out`) — and puts the rest again on the plan as saved —
+the cells each figure wrote when it was typed, in order, so an earlier figure a later one had written over comes back.
+What leaves is not kept: there is no redo, and a figure taken out comes back by typing it again. Nothing is recorded:
+nothing was released.
+
+A figure typed for the year (`type_year`) is the year as the grid reads it, actual and plan together: the year's forecast
+periods take the difference by the measure's own spread over all their cells at once, and it is put as one figure per
+period — one step, saved as those period figures.
 """
 from __future__ import annotations
 
@@ -108,6 +113,8 @@ class Typed:
     source_at_entry: float | None
     at: str
     cells: list[tuple] = field(default_factory=list)      # (account, material, value, source at the cell then)
+    year: int | None = None                                # typed for the year: this period's share of it
+    year_value: float | None = None                        # the year figure as typed
 
     @property
     def edit_id(self) -> str:
@@ -167,8 +174,10 @@ def _rebuild(wc: WorkingCopy) -> None:
 
 
 def undo(wc: WorkingCopy) -> list[Typed] | None:
-    """The last step taken out of the copy: the plan as saved, with every earlier step put on it again."""
+    """The last step taken out of the copy: the plan as saved, with every earlier step put on it again. Nothing is kept to
+    put back."""
     step = wc.history.undo()
+    wc.history.undone.clear()
     if step is not None:
         _rebuild(wc)
     return step
@@ -176,20 +185,11 @@ def undo(wc: WorkingCopy) -> list[Typed] | None:
 
 def take_out(wc: WorkingCopy, edit_id: str) -> list[Typed] | None:
     """One figure taken out wherever it sits in the steps — the mark on the cell it was typed at: its step leaves, the
-    rest are put again in the order typed, and it becomes the step Redo puts back (last, as if typed again now)."""
+    rest are put again in the order typed. Nothing is kept to put back."""
     step = next((s for s in wc.history.done if any(t.edit_id == edit_id for t in s)), None)
     if step is not None:
         wc.history.done.remove(step)
-        wc.history.undone.append(step)
         _rebuild(wc)
-    return step
-
-
-def redo(wc: WorkingCopy) -> list[Typed] | None:
-    """The last step undone, put back as it was typed."""
-    step = wc.history.redo()
-    for t in step or []:
-        _put_again(wc, t)
     return step
 
 
@@ -215,6 +215,55 @@ def node_value(grid: Grid, version: str, customer: str, material: str, period: s
         if not cells:
             return None
     return aggregate(cells, measure, grid.rules, source)
+
+
+def type_year(wc: WorkingCopy, customer: str, material: str, year: int, periods: list[str], measure: str, value: float,
+              actual: list[dict]) -> list[Typed] | str | None:
+    """A figure typed for the year at a node: the year as the grid reads it — `actual` (what happened beneath the node in
+    the year's actual periods, as cells) and the plan together. Only the forecast `periods` move: their part is what the
+    figure leaves once the actual is taken off, spread by the measure's breakback over every cell beneath the node in
+    those periods at once, then put as one figure per period — which spreads within the period to the same cells. One
+    step. Returns the figures, None when nothing changes, or why it cannot be done."""
+    g, v, rules = wc.grid, wc.version, wc.grid.rules
+    r = rules[measure]
+    keys = [k for p in periods for k in g.scope(v, customer, material, p)]
+    if not keys:
+        return f"nothing beneath {material} at {customer} in the year's forecast periods to spread to"
+    cells = [g.cells[k] for k in keys]
+    now = aggregate(cells + list(actual), measure, rules)
+    if now is not None and abs(now - value) < NEGLIGIBLE[r["shown_as"]]:
+        return None                             # the year already reads the figure: nothing moves
+    if r["rollup"] == "sum":
+        plan = value - (aggregate(actual, measure, rules) or 0.0) if actual else value
+        if plan < -NEGLIGIBLE[r["shown_as"]]:
+            return f"the actual periods already hold {aggregate(actual, measure, rules):,.0f} — the year cannot be less"
+        plan = max(plan, 0.0)
+    else:                                       # a ratio: its denominator stands; the forecast's numerator makes the year's figure
+        num, den = r["rollup_num"], r["rollup_den"]
+        a_num, a_den = (aggregate(actual, num, rules) or 0.0, aggregate(actual, den, rules) or 0.0) if actual else (0.0, 0.0)
+        p_den = aggregate(cells, den, rules) or 0.0
+        if p_den <= 0:
+            return f"nothing in the year's forecast periods to carry a {r['label'].lower()}"
+        plan = (value * (a_den + p_den) - a_num) / p_den
+        if plan <= 0:
+            return f"the actual periods already make the year's {r['label'].lower()} — the forecast cannot bring it to {value:,.2f} with one above zero"
+    shares = dict(zip(keys, g.breakback(keys, measure, plan)))
+    out, started = [], False
+    for p in periods:
+        ks = [k for k in keys if k[3] == p]
+        if not ks:
+            continue
+        if r["rollup"] == "sum":
+            x = sum(shares[k] for k in ks)
+        else:                                   # the period's figure is the ratio its cells would read with their new values
+            dfield = rules[r["rollup_den"]]["field"]
+            w = sum(g.cells[k][dfield] or 0.0 for k in ks)
+            x = sum((g.cells[k][dfield] or 0.0) * shares[k] for k in ks) / w if w > 0 else plan
+        t = type_figure(wc, customer, material, p, measure, x, join=started)
+        if t is not None:
+            t.year, t.year_value, started = year, value, True
+            out.append(t)
+    return out or None
 
 
 def type_figure(wc: WorkingCopy, customer: str, material: str, period: str, measure: str, value: float, join: bool = False) -> Typed | None:

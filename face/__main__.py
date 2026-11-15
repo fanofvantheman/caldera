@@ -766,7 +766,7 @@ def revenue():
         measure = page.get("measure") if page.get("measure") in FIN_TABS else "volume"
         page["measure"] = measure
         with finance_live.COPIES.lock(_who()):
-            fin = _finance_ctx(version, fy, page)
+            fin = _finance_ctx(version, fy, page, toast=_TOASTS.pop(_who(), None))
         fin["entry"] = "Cost of goods" if measure in ("cogs", "margin") else "Revenue"
         return _page(FINANCE_PAGE, title=f"{fin['entry']} · {fin['tab_label']}", active=f"fin_{measure}", width="none", version=version,
                      fy=fy, fin=fin, last=session.last, receipt_acts=("finance",), live_script=working.script())
@@ -836,13 +836,14 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}<div id="fin-tiles" class="cards tiles
 <div class="card stat"><span>The demand plan beneath</span><b>{{ fin.tot.src_rev|m if fin.tot.src_rev is not none else '—' }}</b><div class="small muted">{% if fin.tot.src_rev is not none %}{{ fin.tot.src_vol|n }} cases at {{ fin.tot.src_price }} a case · where it feeds{% else %}nothing feeds this node — Finance builds it{% endif %}</div></div>
 <div class="card stat"><span>Variance, where fed</span><b>{{ fin.tot.var_rev|aud if fin.tot.var_rev is not none else '—' }}</b><div class="small delta {{ fin.tot.var_d|dir }}">{% if fin.tot.var_rev is not none %}{{ fin.tot.var_d|pct }} on the demand plan · {{ fin.tot.var_vol|signed }} cases{% else %}no fed figure to differ from{% endif %}</div></div>
 <div class="card stat"><span>Built by Finance</span><b>{{ fin.tot.built_rev|m if fin.tot.built_rev else '—' }}</b><div class="small muted">{{ fin.tot.built_vol|n if fin.tot.built_vol else 'no' }} cases with no demand plan beneath</div></div></div>{% endmacro %}
-{% macro fin_status(fin) %}<div id="fin-status">{% if fin.say %}<p class="flash no">{{ fin.say }}</p>{% endif %}{% if fin.unsaved_n %}<p class="hint unsaved-note"><b>{{ fin.unsaved_n }} figure{{ 's' if fin.unsaved_n != 1 }} typed and not saved</b>{% if fin.unsaved_here != fin.unsaved_n %} ({{ fin.unsaved_here }} at {{ fin.customer_label }}){% endif %} — hatched wherever {{ 'they reach' if fin.unsaved_n != 1 else 'it reaches' }}. They are yours alone until saved: Save writes them to the plan with one reason; Discard drops them; ↶ on a figure takes that one out.</p>{% elif fin.editable %}<p class="hint">Type a figure and press Enter or Tab: everything in this view recalculates at once — totals above, children beneath by the demand plan's shape, revenue, the variance and the year. A figure typed at a parent is written down to its children as you type it. Every tab shows the same figures. Nothing reaches the rest of the plan until you save.</p>{% elif fin.may and fin.open and fin.reading == 'finance' %}<p class="hint">{{ fin.tab_label }} is calculated, never typed: type a volume or a price on its tab, and this tab shows what it made at once.</p>{% endif %}{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} saved file{{ 's' if fin.n_waiting != 1 }} not yet taken in by a run — shown in the grid already.</p>{% endif %}</div>{% endmacro %}
+{% macro fin_status(fin) %}<div id="fin-status">{% if fin.say %}<p class="flash no">{{ fin.say }}</p>{% endif %}{% if fin.unsaved_n %}<p class="hint unsaved-note"><b>{{ fin.unsaved_n }} figure{{ 's' if fin.unsaved_n != 1 }} typed and not saved</b>{% if fin.unsaved_here != fin.unsaved_n %} ({{ fin.unsaved_here }} at {{ fin.customer_label }}){% endif %} — hatched wherever {{ 'they reach' if fin.unsaved_n != 1 else 'it reaches' }}. They are yours alone until saved: Save writes them to the plan with one reason; Discard drops them; ↶ on a figure takes that one out.</p>{% elif fin.editable %}<p class="hint">Type a figure and press Enter or Tab: everything in this view recalculates at once — totals above, children beneath by the demand plan's shape, revenue, the variance and the year. A figure typed at a parent is written down to its children as you type it; one typed in the year column is the year, actual and plan together, and only the year's forecast periods move to make it. Every tab shows the same figures. Nothing reaches the rest of the plan until you save.</p>{% elif fin.may and fin.open and fin.reading == 'finance' %}<p class="hint">{{ fin.tab_label }} is calculated, never typed: type a volume or a price on its tab, and this tab shows what it made at once.</p>{% endif %}{% if fin.n_waiting %}<p class="hint">{{ fin.n_waiting }} saved file{{ 's' if fin.n_waiting != 1 }} not yet taken in by a run — shown in the grid already.</p>{% endif %}</div>{% endmacro %}
 {% macro fin_row(fin, r) %}<tbody id="fin-r-{{ r.code }}">{% for m in fin.measures %}<tr class="{{ 'first' if loop.first }} {{ 'total' if r.current and loop.first }}">
-{% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node"{% if r.depth == 2 %} style="padding-left:1.4rem"{% endif %}>{% if r.href %}<a href="{{ r.href }}" tabindex="-1">{{ r.label }}</a>{% else %}<b>{{ r.label }}</b>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></td>{% endif %}
+{% if loop.first %}<td rowspan="{{ fin.measures|length }}" class="node d{{ r.depth }}{% if r.lvl %} lv-{{ r.lvl }}{% endif %}"><div class="nm">{% if r.href %}<a href="{{ r.href }}" tabindex="-1" title="open {{ r.label }}: what is beneath it becomes the rows">{{ r.label }}&nbsp;<span class="opens" aria-hidden="true">▸</span></a>{% else %}<span>{{ r.label }}</span>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div></div></td>{% endif %}
 <td class="small muted">{{ m.label }}</td>
-{% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% set mark %}{% if x.undo %}<button class="one" form="fin-one" formaction="{{ url_for('plan.finance_undo') }}" name="figure" value="{{ x.undo }}" tabindex="-1" title="take this figure out — {{ x.title }}; Redo puts it back" aria-label="take this figure out">↶</button>{% elif x.withdraw %}<a class="one" href="{{ x.withdraw }}" tabindex="-1" title="withdraw this figure — shows what will change first" aria-label="withdraw this figure">↶</a>{% endif %}{% endset %}{% if x.input %}<span class="inp"><input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{{ mark }}</span>{% else %}{{ mark }}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
+{% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% set mark %}{% if x.undo %}<button class="one" form="fin-one" formaction="{{ url_for('plan.finance_undo') }}" name="figure" value="{{ x.undo }}" tabindex="-1" title="take this figure out — {{ x.title }}" aria-label="take this figure out">↶</button>{% elif x.withdraw %}<a class="one" href="{{ x.withdraw }}" tabindex="-1" title="withdraw this figure — shows what will change first" aria-label="withdraw this figure">↶</a>{% endif %}{% endset %}{% if x.input %}<span class="inp"><input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{{ mark }}</span>{% else %}{{ mark }}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
 </tr>{% endfor %}</tbody>{% endmacro %}
-{% macro fin_steps(fin) %}<span id="fin-steps">{% if fin.undo %}<button class="act" formaction="{{ url_for('plan.finance_undo') }}" title="takes out {{ fin.undo }} — the rest stays as typed">Undo</button>{% endif %}{% if fin.redo %}<button class="act" formaction="{{ url_for('plan.finance_redo') }}" title="puts back {{ fin.redo }}">Redo</button>{% endif %} <span class="hint">one reason for every figure not yet saved · Save writes them to {{ fin.post_keep.version }} and carries them into the plan{% if fin.undo or fin.redo %} · Undo takes out the last figure typed and Redo puts it back, until you save{% endif %}</span></span>{% endmacro %}
+{% macro fin_steps(fin) %}<span id="fin-steps">{% if fin.undo %}<button class="act"{% if fin.editable %} form="fin-one"{% endif %} formaction="{{ url_for('plan.finance_undo') }}" title="takes out {{ fin.undo }} — the rest stays as typed">Undo</button>{% endif %} <span class="hint">one reason for every figure not yet saved · Save writes them to {{ fin.post_keep.version }} and carries them into the plan{% if fin.undo %} · Undo takes out the last figure typed, until you save — to bring it back, type it again{% endif %}</span></span>{% endmacro %}
+{% macro fin_toast(fin) %}<div id="fin-toast">{% if fin.toast %}<p class="toast" role="status">{{ fin.toast }}</p>{% endif %}</div>{% endmacro %}
 {% macro fin_typed(fin) %}<div id="fin-typed">{% if fin.edits %}<h2>Typed here<span class="count">{{ fin.customer_label }} × the rows above · the plan periods shown</span></h2>
 <table><thead><tr><th>Node</th><th>Period</th><th>Figure</th><th class="n">Typed</th><th class="n">At the node now</th><th class="n">Demand plan then</th><th class="n">Demand plan now</th><th>Standing</th><th>Reason</th><th>By</th></tr></thead><tbody>
 {% for e in fin.edits %}<tr class="{{ 'off' if e.state != 'in_force' }}"><td>{{ e.scope_material }}</td><td>{{ e.period }}</td><td>{{ e.measure }}</td><td class="n">{{ e.typed }}</td><td class="n">{{ e.now }}</td><td class="n">{{ e.then }}</td><td class="n">{{ e.src_now }}{% if e.source_moved %} <span class="moved">◆</span>{% endif %}</td>
@@ -861,7 +862,7 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 <div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}{% if p.total %}<th class="n tot"{% if fin.n_actual %} title="actual + plan"{% endif %}>{{ p.label }}{% if fin.n_actual %}<div class="small muted">actual + plan</div>{% endif %}</th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="an actual period of {{ version }} — what was shipped and invoiced; nothing is typed here"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>
 {% for r in fin.rows %}{{ fin_row(fin, r) }}{% else %}<tbody><tr><td colspan="{{ fin.periods|length + 2 }}" class="muted">Nothing in Finance's plan at {{ fin.customer_label }} × {{ fin.path[-1].label }} in FY{{ fy }}.</td></tr></tbody>{% endfor %}
 </table></div>{% if fin.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
-<p class="hint">{% if fin.n_actual %}{{ version }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.reading == 'finance' %}The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved. ↶ on a boxed figure takes it out: at once if it is not saved, by a withdrawal — shown first — if it is.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
+<p class="hint">{% if fin.n_actual %}{{ version }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.reading == 'finance' %}Each row beneath {{ fin.row_head }} is indented one level — product, then material; a name with ▸ opens one level down and its rows become the grid, a name without has nothing beneath it. The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved. ↶ on a boxed figure takes it out: at once if it is not saved, by a withdrawal — shown first — if it is.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
 {% for r in fin.measures %} <b>{{ r.name }}</b>{% if r.formula %} = {{ r.formula }}{% endif %}; at a total, {{ r.rollup_says }}{% if r.typed %}; typed at a total, {{ r.breakback_says }}{% endif %}.{% endfor %} <a href="{{ url_for('plan.rules') }}#finance">How each figure is calculated</a></p>
 {% if fin.may and fin.open and version %}<form method="post" action="{{ url_for('plan.finance_save') }}" class="form-row" id="fin-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
 <label class="small">reason <select name="reason_code">{% for r in fin.reasons %}<option value="{{ r.reason_code }}" {{ 'selected' if r.reason_code == fin.default_reason }}>{{ r.description }}</option>{% endfor %}</select></label>
@@ -875,7 +876,7 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 </div>
 {% if last and last.act and last.act.startswith('finance') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
-{{ fin_typed(fin) }}
+{{ fin_typed(fin) }}{{ fin_toast(fin) }}
 <h2>Saves<span class="count">{{ version }} · each save is one reason; withdrawing it returns its figures to the demand plan — or withdraw one figure from the list above · <a href="{{ url_for('plan.change_history', version=version, record="Finance's plan") }}">change history</a></span></h2>
 <table><thead><tr><th>Save</th><th>When</th><th>By</th><th>Reason</th><th>Customers</th><th>Periods</th><th class="n">Figures</th><th class="n">Held</th><th class="n">◆ moved</th><th>Note</th><th></th></tr></thead><tbody>
 {% for s in fin.saves %}<tr class="{{ 'off' if s.released }}"><td><code>{{ s.save_id }}</code></td><td class="small">{{ s.entered_on[:16].replace('T', ' ') }}</td><td class="small">{{ s.entered_by }}</td><td class="small">{{ s.reason or s.reason_code }}</td><td>{{ s.customers }}</td><td class="small">{{ s.period_from }}{% if s.period_to != s.period_from %} – {{ s.period_to }}{% endif %}</td>
@@ -883,7 +884,10 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 <td class="acts">{% if s.released %}<span class="state">released</span>{% elif fin.may and fin.open %}<a class="small" href="{{ url_for('plan.withdrawal', grid='finance', id=s.save_id, version=version) }}">withdraw…</a>{% endif %}</td></tr>
 {% else %}<tr><td colspan="11" class="muted">Nothing typed on {{ version }}: Finance's plan is the demand plan valued{% if fin.any_built %}, and the built accounts are empty{% endif %}.</td></tr>{% endfor %}</tbody></table>
 <style>.finwrap{overflow-x:auto;margin-bottom:.6rem}table.fin td.n{vertical-align:top;white-space:nowrap}table.fin td.node{vertical-align:top;min-width:11rem}
-table.fin tr.first td{border-top:1px solid var(--rule)}table.fin .src{display:block;font-size:.72rem;color:var(--muted)}table.fin td.typed{box-shadow:inset 0 0 0 1px var(--ink)}
+table.fin tr.first td{border-top:1px solid var(--rule)}table.fin td.node .nm{font-weight:400}table.fin td.node.d0 .nm{font-weight:700}table.fin td.node.lv-product .nm,table.fin td.node.lv-category .nm{font-weight:600}
+table.fin td.node.d1 .nm{margin-left:.2rem;padding-left:.7rem;border-left:1px solid var(--rule)}table.fin td.node.d2 .nm{margin-left:1.4rem;padding-left:.7rem;border-left:1px solid var(--rule)}table.fin td.node .opens{color:var(--muted)}table.fin td.node .small{font-weight:400}
+#fin-toast .toast{position:fixed;right:1.2rem;bottom:1.2rem;max-width:30rem;margin:0;padding:.6rem .9rem;background:var(--panel);color:var(--ink);border:1px solid var(--ink);border-left:4px solid var(--edge);border-radius:var(--radius-s);box-shadow:var(--shadow);font-size:.85rem;z-index:20;animation:fin-toast 6s ease forwards}
+@keyframes fin-toast{0%,80%{opacity:1;visibility:visible}100%{opacity:0;visibility:hidden}}table.fin .src{display:block;font-size:.72rem;color:var(--muted)}table.fin td.typed{box-shadow:inset 0 0 0 1px var(--ink)}
 table.fin .inp{position:relative;display:inline-block}table.fin .one{padding:0;border:0;background:none;color:var(--muted);font-size:.85rem;line-height:1;text-decoration:none;cursor:pointer;margin-right:.3rem}table.fin .inp .one{position:absolute;left:.35rem;top:50%;transform:translateY(-50%);margin:0}table.fin .one:hover,table.fin .one:focus{color:var(--ink)}
 table.fin td.unsaved{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 14%,transparent) 5px 6px)}table.fin td.unsaved input.cell{font-style:italic}
 .state.unsaved,.unsaved-note b{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 18%,transparent) 5px 6px)}
@@ -912,6 +916,8 @@ table.fin td.actual,table.fin th.actual{color:var(--muted);background:var(--soft
 # measure with the lines it is calculated from above it where that makes it readable (caldera ambiguity #20 f)
 FIN_TABS = {"volume": ["volume"], "price": ["price"], "revenue": ["revenue"], "cogs": ["volume", "std_material", "std_labour", "std_variable", "std_fixed", "std_cost", "cogs"], "margin": ["revenue", "cogs", "margin"]}
 READINGS = [("finance", "Finance plan"), ("source", "Demand plan"), ("variance", "Variance")]
+OPENS_TO = {"category": "product", "product": "material"}        # what a node opens to, said on its row; a material opens to the materials beneath it
+_TOASTS: dict[str, str] = {}                                      # what an undo took out, said once on the next page the person sees (caldera ambiguity #57)
 PAGE_KEYS = ("version", "fy", "customer", "material", "reading", "measure")      # where the financial forecast stands
 _FIN_MODULE: dict = {}
 
@@ -1001,7 +1007,7 @@ def _once(fn):
     return call
 
 
-def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = None, say: str | None = None) -> dict:
+def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = None, say: str | None = None, toast: str | None = None) -> dict:
     """The grid of one tab: the material node shown and the level beneath it, at one customer node, periods across, the
     tab's lines a row — read from the person's working copy if they have one, else from Finance's plan as the last run
     left it. Every tab reads the same copy; what a line may do is read from the measure register."""
@@ -1074,7 +1080,16 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
     for e in edits:                       # latest first: the first in force is the one standing at the cell
         if e["state"] == "in_force":
             typed.setdefault((e["scope_material"], e["period"], e["measure"]), e)
-    mine = {(t.material, t.period, t.measure): t for t in (wc.typed if wc else []) if t.customer == fc}
+    mine, year_at = {}, {}                 # a figure typed at a period cell; a year figure's share of a period, and its mark on the year
+    first_of = {id(t): s[0] for s in (wc.history.done if wc else []) for t in s}
+    for t in (wc.typed if wc else []):
+        if t.customer == fc:
+            if t.year:
+                year_at[(t.material, t.period, t.measure)] = t
+                mine[(t.material, "FY", t.measure)] = first_of.get(id(t), t)    # the year step's first figure: its mark takes the step out
+            else:
+                mine[(t.material, t.period, t.measure)] = t
+    fy_open = [p["period"] for p in in_fy if p["period"] in opens]          # the year's forecast periods: what a year figure moves
     def over(code, period, measure):
         """The latest unsaved figure typed at a node above this one (or at a customer above this one) in the period and measure."""
         under_m = grid.materials_under.get(code, {code}) if grid is not None else set()
@@ -1083,7 +1098,8 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                      and under_m <= grid.materials_under.get(t.material, {t.material}) and under_a <= grid.accounts_under.get(t.customer, set())), None)
     def came_from(t) -> str:
         at = _once(reads.node_label)("material", t.material) or t.material
-        return f"from {_show(t.measure, t.value)} typed at {at}" + (f" · {t.customer}" if t.customer != fc else "") + " — not saved; the mark on that cell takes it out"
+        what = f"{_show(t.measure, t.year_value)} typed for FY{t.year}" if t.year else f"{_show(t.measure, t.value)} typed"
+        return f"from {what} at {at}" + (f" · {t.customer}" if t.customer != fc else "") + " — not saved; the mark on that cell takes it out"
     touched = wc.touched if wc else {}
     fm_label = _once(reads.node_label)("material", fm)
     levels = {"category": "category", "product": "product", "material": "material", "all": "all materials"}
@@ -1098,9 +1114,12 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
         nb = sum(1 for k in all_keys if grid.cells[k]["source"] != "fed")
         lvl = kids[code]["lvl"] if code != fm else None
         has_kids = code != fm and kids[code]["has_kids"]
+        n_kids = kids[code].get("n_kids") or 0 if code != fm else 0
+        opens_to = f"{n_kids} {OPENS_TO.get(lvl, 'beneath')}{'s' if n_kids != 1 and lvl in OPENS_TO else ''}" if has_kids else ""
         row = {"code": code, "label": kids[code]["label"] if code != fm else fm_label, "current": code == fm, "href": L(material=code) if has_kids else None,
-               "depth": 2 if code in grand else (1 if code != fm else 0),
-               "level": ("this node" if code == fm else levels.get(lvl, lvl or "")), "built": ("built by Finance" if nb and nb == len(all_keys) else "part built" if nb else ""),
+               "depth": 2 if code in grand else (1 if code != fm else 0), "lvl": lvl, "opens": opens_to,
+               "level": ("the total of the rows beneath" if code == fm else levels.get(lvl, lvl or "") + (f" · {opens_to}" if opens_to else "")),
+               "built": ("built by Finance" if nb and nb == len(all_keys) else "part built" if nb else ""),
                "cells": {m["key"]: [] for m in MEASURES}}
         for p in cols:
             if p.get("actual"):              # what happened: shown in Finance's plan and the demand plan alike, never typed
@@ -1132,12 +1151,15 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                                 x["withdraw"] = url_for("plan.withdrawal", grid="finance", id=e["edit_id"], version=version)
                         if t:
                             x["cls"] += " typed"; x["moved"] = False
-                            x["title"] = f"typed {_show(k, t.value)} at {t.at[11:16]} — not saved"
+                            x["title"] = (f"typed {_show(k, t.year_value)} for FY{t.year} at {t.at[11:16]} — not saved; the year's forecast periods took the difference from the actual"
+                                          if t.year else f"typed {_show(k, t.value)} at {t.at[11:16]} — not saved")
                             x["undo"] = t.edit_id                                   # the mark on an unsaved one: that figure out
+                        yt = None if p.get("total") else year_at.get((code, p["period"], k))
                         if touched and any(c in touched.get(k, ()) for c in ks):
                             x["cls"] += " unsaved"
-                            x["title"] = x["title"] or (came_from(above) if above else "changed by a figure typed and not saved")
-                        if editable and k == measure and p["period"] in opens:
+                            x["title"] = x["title"] or (f"from {_show(k, yt.year_value)} typed for FY{yt.year} at this node — not saved; the mark on the year takes it out" if yt
+                                                        else came_from(above) if above else "changed by a figure typed and not saved")
+                        if editable and k == measure and (p["period"] in opens or (p.get("total") and fy_open)):
                             val = F["fin"][k]
                             x["input"] = f"{k[0]}|{code}|{p['period']}"
                             x["value"] = "" if val is None else (f"{val:.0f}" if k == "volume" else f"{val:.2f}")
@@ -1176,8 +1198,7 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
             "any_built": any(r["built"] for r in rows) or any(s == "built" for s in decl.values()),
             "editable": editable, "may": may, "open": is_open, "status": v.get("status", "unknown"), "holders": _once(reads.holders)("overlay.finance.enter"),
             "post_keep": {**page, "version": version or "", "fy": fy}, "live_context": {"page": {**page, "version": version or "", "fy": fy}},
-            "undo": _step_says(wc.history.done[-1]) if wc and wc.history.can_undo() else None,
-            "redo": _step_says(wc.history.undone[-1]) if wc and wc.history.can_redo() else None,
+            "undo": _step_says(wc.history.done[-1]) if wc and wc.history.can_undo() else None, "toast": toast,
             "unsaved_n": len(wc.typed) if wc else 0, "unsaved_here": sum(1 for t in (wc.typed if wc else []) if grid is not None and grid.accounts_under.get(t.customer, set()) <= grid.accounts_under.get(fc, set())), "say": say,
             "can_add": editable and _once(reads.is_account)(fc), "add_materials": _once(reads.account_materials)(fc) if editable and _once(reads.is_account)(fc) else [],
             "open_in_fy": [p["period"] for p in periods if p["period"] in opens],      # every plan period, past the year end too
@@ -1188,18 +1209,22 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
 
 
 def _step_says(step: list) -> str:
-    """One step of the working copy in words: the figure (or figures) typed, where, and when."""
+    """One step of the working copy in words: the figure (or figures) typed, where, and when — a year figure once, for its year."""
+    if step and step[0].year:
+        t = step[0]
+        return f"{_show(t.measure, t.year_value)} {finance_live.rules()[t.measure]['label'].lower()} at {t.customer} × {t.material} for FY{t.year}"
     return "; ".join(f"{_show(t.measure, t.value)} {finance_live.rules()[t.measure]['label'].lower()} at {t.customer} × {t.material} in {t.period}" for t in step)
 
 
-def _fin_parts(version: str, fy: int, page: dict, who: str, say: str | None = None) -> dict[str, str]:
-    """The view as its swappable parts, by element id: the tiles, the status line, one part per row, the typed list."""
-    fin = _finance_ctx(version, fy, page, who=who, say=say)
+def _fin_parts(version: str, fy: int, page: dict, who: str, say: str | None = None, toast: str | None = None) -> dict[str, str]:
+    """The view as its swappable parts, by element id: the tiles, the status line, one part per row, the typed list, the toast."""
+    fin = _finance_ctx(version, fy, page, who=who, say=say, toast=toast)
     M = _fin_macros()
     parts = {"fin-tiles": str(M.fin_tiles(fin)), "fin-status": str(M.fin_status(fin))}
     for r in fin["rows"]:
         parts[f"fin-r-{r['code']}"] = str(M.fin_row(fin, r))
     parts["fin-typed"] = str(M.fin_typed(fin))
+    parts["fin-toast"] = str(M.fin_toast(fin))
     if fin["may"] and fin["open"]:
         parts["fin-steps"] = str(M.fin_steps(fin))
     return parts
@@ -1259,18 +1284,28 @@ def finance_cell():
     else:
         figures = [(k.split("|")[1], k.split("|")[2], "volume" if k[0] == "v" else "price", val)
                    for k, val in data.items() if k[:2] in ("v|", "p|") and k.count("|") == 2 and str(val).strip()]
+        # the year column first: every input comes back on a plain post, so a year read before any period moves is
+        # unchanged unless the person typed it, and a period typed in the same post then stands as typed
+        figures.sort(key=lambda f: f[1] != "FY")
     with finance_live.COPIES.lock(who):
         before = _fin_parts(version, fy, page, who) if live else {}
         refused, force, applied = [], [], 0
         for node, period, measure, raw in figures:
             value = _num(raw)
+            if period == "FY":                  # the year column: the year, actual and plan together; only its forecast periods move
+                why = _year_figure(who, version, v, fy, fc, node, measure, value, raw)
+                if why is None:
+                    applied += 1
+                    continue
+                refused.append(why); force.append(f"fin-r-{node}")
+                continue
             why = _cell_refusal(who, version, v, fc, node, period, measure, value, raw)
             if why is None:
                 wc = finance_live.working_copy(who, version, FINANCE, create=True)
                 if finance_live.type_figure(wc, fc, node, period, measure, value) is not None:
                     applied += 1
                     continue
-                if not wc.typed and not wc.history.can_undo() and not wc.history.can_redo():
+                if not wc.typed and not wc.history.can_undo():
                     finance_live.discard(who, version)
                 at_node = finance_live.node_value(wc.grid, version, fc, node, period, measure) if wc else None
                 why = None if at_node is not None else f"nothing at {node} for {fc} in {period} to spread to — start a material at an account first"
@@ -1284,6 +1319,28 @@ def finance_cell():
     elif applied:
         session.say(f"{applied} figure{'s' if applied != 1 else ''} applied — not yet saved", True)
     return redirect(_back(page))
+
+
+def _year_figure(who: str, version: str, v: dict, fy: int, fc: str, node: str, measure: str, value: float | None, raw) -> str | None:
+    """A figure typed in the year column, into the working copy: the same rules a period figure is held to, then the year's
+    forecast periods take what the actual periods leave of it (finance_live.type_year). None when applied or nothing changed;
+    otherwise why not."""
+    vp = reads.version_periods(version)
+    fy_plan = [p["period"] for p in vp["periods"] if p["fiscal_year"] == fy and not p["actual"] and p["period"] in set(vp["plan"])]
+    if not fy_plan:
+        return f"FY{fy} has no forecast period in {version} — nothing in the year can move"
+    why = _cell_refusal(who, version, v, fc, node, fy_plan[0], measure, value, raw)
+    if why:
+        return why
+    wc = finance_live.working_copy(who, version, FINANCE, create=True)
+    A, M_ = wc.grid.accounts_under.get(fc, set()), wc.grid.materials_under.get(node, set())
+    actual = [{"source": "actual", "cases": r["cases"], "net_sales": r["net_sales"], "price": None, "std_cost": None, "cogs": None, "margin": None}
+              for r in reads.finance_actuals(vp["actual"]) if r["account_code"] in A and r["material_code"] in M_
+              and int(next((p["fiscal_year"] for p in vp["periods"] if p["period"] == r["period"]), 0)) == fy]
+    got = finance_live.type_year(wc, fc, node, fy, fy_plan, measure, value, actual)
+    if not wc.typed and not wc.history.can_undo():
+        finance_live.discard(who, version)
+    return got if isinstance(got, str) else None
 
 
 @plan.post("/finance/start")
@@ -1326,10 +1383,10 @@ def finance_discard():
 @plan.post("/finance/undo")
 def finance_undo():
     """Undo before a save: the last step taken out of the working copy — or the one figure named — the rest standing as typed.
-    Nothing is recorded — nothing was released."""
+    Nothing is recorded — nothing was released — and nothing is kept to put back."""
     who = _who(); page = _page_args(request.form); version = page.get("version") or reads.default_version()
     one = request.form.get("figure")            # the mark on a typed cell: that figure, wherever it sits in the steps
-    live = bool(one) and working.is_live()      # asked by the page's script: answered with the parts it changed, no reload
+    live = working.is_live()                    # asked by the page's script: answered with the parts it changed, no reload
     with finance_live.COPIES.lock(who):
         if live:
             v = reads.version(version) or {}
@@ -1337,23 +1394,14 @@ def finance_undo():
             before = _fin_parts(version, page["fy"], page, who)
         wc = finance_live.working_copy(who, version, FINANCE)
         step = (finance_live.take_out(wc, one) if one else finance_live.undo(wc)) if wc else None
+        gone = f"taken out: {_step_says(step)} — not saved; to bring it back, type it again" if step else None
+        missing = None if step else ("that figure is no longer in what you have typed" if one else "nothing typed to undo")
         if live:
-            return working.reply(before, _fin_parts(version, page["fy"], page, who, say=None if step else "that figure is no longer in what you have typed"), always=("fin-status",))
-    if one:
-        session.say(f"taken out: {_step_says(step)} — not saved; Redo puts it back" if step else "that figure is no longer in what you have typed", bool(step))
-        return redirect(_back(page))
-    session.say(f"undone: {_step_says(step)} — not saved; Redo puts it back" if step else "nothing typed to undo", bool(step))
-    return redirect(_back(page))
-
-
-@plan.post("/finance/redo")
-def finance_redo():
-    """Redo: the last step undone put back as it was typed."""
-    who = _who(); page = _page_args(request.form); version = page.get("version") or reads.default_version()
-    with finance_live.COPIES.lock(who):
-        wc = finance_live.working_copy(who, version, FINANCE)
-        step = finance_live.redo(wc) if wc else None
-    session.say(f"redone: {_step_says(step)} — not saved" if step else "nothing undone to redo", bool(step))
+            return working.reply(before, _fin_parts(version, page["fy"], page, who, say=missing, toast=gone), always=("fin-status", "fin-toast"))
+    if step:
+        _TOASTS[who] = gone                     # said once, as a toast, on the page the redirect lands on
+    else:
+        session.say(missing, False)
     return redirect(_back(page))
 
 
