@@ -123,7 +123,8 @@ PROCESSES = [
                 Tab("sch_schedule", "Schedule", "plan.schedule", verbs=COST_READ)]),
         ]),
         Area("capital", "Capital", [
-            Section("capex", "Projects and depreciation", RUNG, {"slug": "capex"}, verbs=["capex.project.enter", "capex.approve", *FIN_READ]),
+            # the capital plan: planned, not approved — projects, sustaining rates, leases, the register walked (DEC-20261115-01)
+            Section("capex", "Projects and depreciation", "plan.capex", uses=("version", "fy"), verbs=["capex.project.enter", *COST_READ, *FIN_READ]),
         ]),
         Area("nonop", "Non-operating", [
             Section("nonop", "Interest, tax and other", RUNG, {"slug": "nonop"}, verbs=FIN_READ),
@@ -219,6 +220,7 @@ MAP_NODES = [
     Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),
     Node("schedule", "made", "Opex schedule", "driver × rate, by cost centre", "plan.schedule"),
     Node("labour", "plan", "Headcount", "by role through the agreement; by name", "plan.headcount_role"),
+    Node("capital", "plan", "Capital plan", "projects, sustaining, leases; depreciation", "plan.capex"),
     Node("accuracy", "read", "Forecast accuracy", "the plan judged as a forecast", "plan.accuracy"),
     Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
     Node("revenue", "read", "Versions in net sales", "the versions over one another", "plan.revenue_versions"),
@@ -233,7 +235,7 @@ MAP_FLOWS = [
     ("people", "layers", "entries"), ("people", "calendar", "typed events"), ("people", "submissions", "acts"), ("people", "finance", "Finance's figures"),
     ("structures", "stack", ""), ("baseline", "stack", ""), ("calendar", "stack", ""), ("layers", "stack", ""), ("submissions", "stack", ""),
     ("versions", "stack", ""), ("rates", "valued", ""), ("assumptions", "valued", "FX, returns, claims"), ("assumptions", "schedule", "CPI"),
-    ("stack", "valued", ""), ("costcentres", "schedule", ""), ("labour", "schedule", "labour lines"), ("people", "labour", "positions, people"), ("stack", "schedule", "drivers"), ("schedule", "statements", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
+    ("stack", "valued", ""), ("costcentres", "schedule", ""), ("labour", "schedule", "labour lines"), ("capital", "schedule", "depreciation, leases"), ("people", "capital", "projects"), ("people", "labour", "positions, people"), ("stack", "schedule", "drivers"), ("schedule", "statements", ""), ("stack", "supply", ""), ("stack", "accuracy", ""),
     ("valued", "gap", ""), ("valued", "revenue", ""), ("valued", "finance", "feeds"), ("valued", "statements", ""), ("supply", "statements", ""), ("valued", "strategic", "the latest view, rolled up"),
 ]
 

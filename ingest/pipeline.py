@@ -49,6 +49,9 @@ REFERENCE = {
     "reg_cost_centre_map": (),
     "dim_gl_account": (),
     "ref_cost_driver": ("ord",),
+    # the capital plan: the asset classes and the fixed-asset register as loaded
+    "ref_asset_class": ("life_years", "residual_pct", "ord"),
+    "reg_asset": ("cost", "accumulated", "lifetime_units"),
     # labour: each entity's agreement, the on-costs, the positions (by role) and the people (by name)
     "ref_entitlement_kind": ("ord",),
     "ref_on_cost": ("rate",),
@@ -98,6 +101,7 @@ PLAN = {
     "reg_entitlement": ("value",),
     "reg_report": (),
     "reg_entitlement_proposal": ("value",),
+    "reg_capex": ("spend", "life_years", "lifetime_units", "rate", "lease_charge"),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})

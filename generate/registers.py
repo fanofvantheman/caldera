@@ -105,9 +105,9 @@ ROLE_ACTIONS = {
     "PLANT_MANAGER":        ["policy.production.accept", "tier.step.accept", "headcount.enter", "schedule.line.enter", "capex.project.enter", "read.plan", "read.reading", "read.drill", "read.health"],
     "QUALITY":              ["register.yield.maintain", "register.shelf_life.maintain", "read.plan", "read.reading", "read.drill"],
     "PEOPLE":               ["structure.position.maintain", "register.agreement.maintain", "register.unproductive_hours.maintain", "read.plan", "read.reading", "read.pay"],
-    "COMMERCIAL_FINANCE":   ["register.assumptions.maintain", "register.cost_input.maintain", "register.cost_centre_map.maintain", "schedule.line.enter", "register.timing_policy.maintain", "register.customs.maintain", "register.hedge_book.maintain", "register.calendar.maintain", "version.name", "version.freeze", "version.declare_reference", "scenario.create", "standard.derive", "standard.declare", "cycle.open", "cycle.close", "register.roles.maintain", "run.plan", "read.plan", "read.reading", "read.drill", "read.health", "read.proof", "read.pay"],
+    "COMMERCIAL_FINANCE":   ["register.assumptions.maintain", "register.cost_input.maintain", "capex.project.enter", "register.cost_centre_map.maintain", "schedule.line.enter", "register.timing_policy.maintain", "register.customs.maintain", "register.hedge_book.maintain", "register.calendar.maintain", "version.name", "version.freeze", "version.declare_reference", "scenario.create", "standard.derive", "standard.declare", "cycle.open", "cycle.close", "register.roles.maintain", "run.plan", "read.plan", "read.reading", "read.drill", "read.health", "read.proof", "read.pay"],
     "RECONCILIATION_OWNER": ["delta.allocation.enter", "delta.timing.enter", "shaping.enter", "register.customer_priority.maintain", "scenario.promote", "decision.record", "review.reconciliation.close", "read.plan", "read.reading", "read.drill", "read.health"],
-    "EXECUTIVE":            ["decision.accept", "capex.approve", "review.mbr.close", "read.plan", "read.reading", "read.drill", "read.proof"],
+    "EXECUTIVE":            ["decision.accept", "review.mbr.close", "read.plan", "read.reading", "read.drill", "read.proof"],
     "PLAN_READER":          ["read.plan", "read.reading"],
     "AUDITOR":              ["read.plan", "read.reading", "read.drill", "read.health", "read.proof"],
 }
@@ -151,7 +151,7 @@ ROLE_ASSIGNMENTS = [
 
 # The rights the plan has: every verb a role may grant, closed — a role, shipped or composed, grants only these. Each
 # carries its group (where in the plan it acts) and its class of right, read off its last word by one rule.
-EXTRA_VERBS = ["mapping.propose"]            # held by no person: the mapping tool's first pass
+EXTRA_VERBS = ["mapping.propose", "capex.approve"]   # held by no person: the mapping tool's first pass; a capex gate the plan does not have yet (DEC-20261115-01)
 GROUPS = [("layer.", "Layers"), ("demand.", "Submissions"), ("delta.", "Constrained plan"), ("shaping.", "Constrained plan"),
           ("overlay.finance.", "Finance's plan"), ("register.", "Registers"), ("structure.", "Structures"), ("bom.", "Structures"),
           ("mapping.", "Structures"), ("version.", "Versions"), ("scenario.", "Versions"), ("headcount.", "Budget"), ("schedule.", "Budget"),

@@ -74,7 +74,7 @@ def _line(c: dict) -> tuple:
 
 def schedule_formulas(inp) -> dict:
     def rate_calc(c: dict) -> bool:
-        if c["driver"] == "labour_model":
+        if c["driver"] in sch.MODELS:
             return c["rate_calc"] is None
         if c["driver"] == "last_year":
             return close(c["rate_calc"], inp.index)
@@ -83,8 +83,8 @@ def schedule_formulas(inp) -> dict:
         return close(c["rate_calc"], want)
 
     def amount_calc(c: dict) -> bool:
-        if c["driver"] == "labour_model":
-            return close(c["amount_calc"], inp.labour.get((_line(c), c["period"]), 0.0))
+        if c["driver"] in sch.MODELS:
+            return close(c["amount_calc"], (inp.labour if c["driver"] == "labour_model" else inp.capex).get((_line(c), c["period"]), 0.0))
         return close(c["amount_calc"], c["driver_qty"] * c["rate"])
 
     def amount(c: dict) -> bool:

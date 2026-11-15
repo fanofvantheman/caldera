@@ -67,6 +67,7 @@ GL_ACCOUNTS = [
     ("6600", "Storage and handling",          "freight and warehousing",  False),
     ("6700", "Rent and leases",               "occupancy",                False),
     ("6720", "Insurance",                     "occupancy",                False),
+    ("6750", "Depreciation",                  "depreciation",             False),
     ("6800", "IT and software",               "other overhead",           False),
     ("6900", "Marketing and advertising",     "other overhead",           False),
     ("6950", "Travel",                        "other overhead",           False),
@@ -358,3 +359,100 @@ def labour_registers(periods: list[dict]) -> dict[str, list[dict]]:
     people.append({"person_id": f"PER-{i:03d}", "entity_code": "CF", "cost_centre_code": "CC_MKT", "name": "Vacant — category manager", "title": "Category manager",
                    "annual_salary": 145_000.0, "incentive_pct": 0.05, "start_date": str(start["2027P08"]), "end_date": "", "vacancy": "Y"})
     return {"reg_entitlement": agreement, "ref_on_cost": on_cost, "reg_position": positions, "reg_person": people}
+
+
+# ---- the capital plan (DEC-20261115-01): the asset register as loaded, the projects, the sustaining rate, the leases ------
+# Planned, not approved: no gate. Plant depreciation is fixed factory overhead (its cost centre is a factory one); the rest
+# is a period cost on the schedule. A lease is a fixed charge per period over its term — no cash at the start, no asset.
+ASSET_CLASSES = [
+    # class, name, method, life in years, residual share
+    ("BLDG",   "Buildings and site works",        "straight_line",       40, 0.00),
+    ("PLANT",  "Plant and machinery",             "straight_line",       15, 0.05),
+    ("LINE",   "Filling and retort lines",        "units_of_production", 15, 0.05),
+    ("MOBILE", "Forklifts and mobile plant",      "straight_line",        7, 0.10),
+    ("IT",     "IT hardware and software",        "straight_line",        4, 0.00),
+    ("FITOUT", "Office fit-out and furniture",    "straight_line",       10, 0.00),
+]
+REGISTER_DATE = "2027P04"          # the fixed-asset ledger as loaded: cost and accumulated depreciation at this close
+# asset, name, class, entity, plan's cost centre, plant, cost, accumulated, in service, lifetime cases (units of production)
+ASSETS = [
+    ("A-E-BLDG",  "Echuca site buildings",             "BLDG",   "CF",  "CC_E_MAINT", "ECH", 38_000_000, 27_400_000, "1998P01", None),
+    ("A-E-TOM1",  "Echuca tomato line 1 — filler and retort", "LINE", "CF", "CC_E_TOM", "ECH", 14_000_000, 8_200_000, "2012P01", 130_000_000),
+    ("A-E-FRUIT", "Echuca fruit hall plant",           "PLANT",  "CF",  "CC_E_FRUIT", "ECH",  9_000_000,  5_000_000, "2018P01", None),
+    ("A-E-BEANS", "Echuca beans and spaghetti plant",  "PLANT",  "CF",  "CC_E_BEANS", "ECH",  7_000_000,  3_460_000, "2019P01", None),
+    ("A-E-SPRD",  "Echuca spreads plant",              "PLANT",  "CF",  "CC_E_SPRD",  "ECH",  4_000_000,  3_000_000, "2015P01", None),
+    ("A-E-MOB",   "Echuca forklifts and yard plant",   "MOBILE", "CF",  "CC_E_WHSE",  "ECH",  1_600_000,    990_000, "2022P01", None),
+    ("A-L-BLDG",  "Loxton site buildings (at acquisition)", "BLDG", "RBF", "CC_L_MAINT", "LOX", 22_000_000, 700_000, "2026P01", None),
+    ("A-L-CUP",   "Loxton cup line (at acquisition)",  "LINE",   "RBF", "CC_L_PROD",  "LOX", 11_000_000,  1_100_000, "2026P01", 70_000_000),
+    ("A-L-PLANT", "Loxton fruit plant (at acquisition)", "PLANT", "RBF", "CC_L_PROD", "LOX",  8_000_000,    680_000, "2026P01", None),
+    ("A-IT",      "Ledger, payroll and IT hardware",   "IT",     "CF",  "CC_IT",      "",     3_200_000,  3_040_000, "2023P01", None),
+    ("A-FIT",     "Head office fit-out",               "FITOUT", "CF",  "CC_EXEC",    "",     1_500_000,    570_000, "2023P01", None),
+]
+CAPEX_COLUMNS = ["act_id", "action", "withdraws", "version_id", "kind", "item_id", "item_name", "project_kind", "asset_class", "entity_code",
+                 "cost_centre_code", "plant_code", "spend", "spend_from", "spend_to", "in_service_period", "life_years", "lifetime_units", "rate",
+                 "lease_charge", "lease_to_period", "tier", "note", "entered_by", "entered_on"]
+# the items people entered: (versions it is on, kind, item, name, project kind, class, entity, cost centre, plant, spend, spend
+# from, to, in service, life, lifetime cases, rate, charge a period, lease to, the tier it steps, note, who, when)
+_FIN, _PLANT = "finance.manager@caldera", "plant.manager@caldera"
+CAPEX_ITEMS = [
+    (("BP", "LV"), "lease", "L-E-FORK", "Echuca forklift fleet", "", "", "CF", "CC_E_WHSE", "ECH", "", "", "", "2025P01", "", "", "", 14_000, "2029P12", "",
+     "five-year fleet lease, signed before FY2025", _FIN, "2026-06-01T09:00:00"),
+    (("BP", "LV"), "lease", "L-SALES-CARS", "Sales car fleet", "", "", "CF", "CC_SALES", "", "", "", "", "2025P01", "", "", "", 9_500, "2028P06", "",
+     "novated fleet, renewed to June 2028", _FIN, "2026-06-01T09:05:00"),
+    (("BP", "LV"), "sustaining", "S-E-TOM", "Echuca tomato hall — sustaining", "sustaining", "PLANT", "CF", "CC_E_TOM", "ECH", "", "", "", "", "", "", 0.03, "", "", "",
+     "like-for-like replacement at 3% of the hall's gross cost a year", _FIN, "2026-06-01T09:10:00"),
+    (("BP", "LV"), "sustaining", "S-L-PROD", "Loxton production — sustaining", "sustaining", "PLANT", "RBF", "CC_L_PROD", "LOX", "", "", "", "", "", "", 0.03, "", "", "",
+     "like-for-like replacement at 3% of production's gross cost a year", _FIN, "2026-06-01T09:15:00"),
+    (("BP", "LV"), "project", "P-IT-ERP", "One ledger for both entities", "growth", "IT", "CF", "CC_IT", "", 2_000_000, "2027P07", "2027P12", "2028P01", "", "", "", "", "", "",
+     "Riverbend off its own ledger", _FIN, "2026-06-01T09:20:00"),
+    (("BP", "LV"), "project", "P-L-COLD", "Loxton cold store refrigeration", "sustaining", "PLANT", "RBF", "CC_L_WHSE", "LOX", 1_200_000, "2027P05", "2027P07", "2027P08", "", "", "", "", "", "",
+     "the plant is at end of life", _PLANT, "2026-06-01T09:25:00"),
+    (("LV",), "project", "P-E-TOM2", "Echuca tomato hall — second filler line", "growth", "LINE", "CF", "CC_E_TOM", "ECH", 4_800_000, "2027P06", "2027P09", "2027P10", "", 120_000_000, "", "", "",
+     "machine · Echuca tomato line: a second filler lifts the campaign window's tier", "the campaign window's tomato volume exceeds one filler", _PLANT, "2026-11-03T10:00:00"),
+    (("LV",), "lease", "L-L-COLD2", "Loxton cold store — leased second chamber", "", "", "RBF", "CC_L_WHSE", "LOX", "", "", "", "2027P07", "", "", "", 22_000, "2032P06",
+     "storage · Loxton: a second chamber for the snack-cup build ahead of Christmas", "five years from January", _PLANT, "2026-11-04T15:00:00"),
+]
+
+
+def capex_reference() -> dict[str, list[dict]]:
+    return {"ref_asset_class": [{"asset_class": c, "class_name": n, "method": m, "life_years": l, "residual_pct": r, "ord": i}
+                                for i, (c, n, m, l, r) in enumerate(ASSET_CLASSES, start=1)],
+            "reg_asset": [{"asset_id": a, "asset_name": n, "asset_class": c, "entity_code": e, "cost_centre_code": cc, "plant_code": pl, "cost": cost,
+                           "accumulated": acc, "in_service_period": ins, "lifetime_units": lu or "", "life_years": "", "as_at_period": REGISTER_DATE}
+                          for a, n, c, e, cc, pl, cost, acc, ins, lu in ASSETS]}
+
+
+def capex_items(plan_fy: int, latest_closed: str) -> list[dict]:
+    """The capital plan's items on each version, as entered. Draws nothing."""
+    vid = {"BP": f"BP-FY{plan_fy}", "LV": f"LV-{latest_closed}"}
+    rows, n = [], 0
+    for vs, kind, item, name, pk, cls, ent, cc, pl, spend, sf, st, ins, life, lu, rate, charge, to, tier, note, by, on in CAPEX_ITEMS:
+        for v in vs:
+            n += 1
+            rows.append({"act_id": f"CX-{n:05d}", "action": "enter", "withdraws": "", "version_id": vid[v], "kind": kind, "item_id": item, "item_name": name,
+                         "project_kind": pk, "asset_class": cls, "entity_code": ent, "cost_centre_code": cc, "plant_code": pl, "spend": spend,
+                         "spend_from": sf, "spend_to": st, "in_service_period": ins, "life_years": life, "lifetime_units": lu, "rate": rate,
+                         "lease_charge": charge, "lease_to_period": to, "tier": tier, "note": note, "entered_by": by, "entered_on": on, "copied_from": ""})
+    return rows
+
+
+def capex_actuals(shipments: list[dict], routes: list[dict], periods: list[dict], latest_closed: str, items: list[dict]) -> list[dict]:
+    """The ledgers' depreciation and lease charges over the closed periods — the assets as loaded and the leases running,
+    by the same charge the plan walks forward (calc.capex). At each entity's ledger cost centre. Draws nothing."""
+    from calc.capex import actuals
+    plant = plant_of(routes)
+    units: dict = defaultdict(float)
+    for s in shipments:
+        if plant.get(s["material_code"]):
+            units[(plant[s["material_code"]], s["period"])] += float(s["cases"])
+    classes = {c: {"method": m, "life_years": l, "residual_pct": r} for c, _, m, l, r in ASSET_CLASSES}
+    assets = capex_reference()["reg_asset"]
+    leases = [i for i in items if i["kind"] == "lease" and i["version_id"].startswith("LV-") and i["in_service_period"] <= latest_closed]
+    closed = [p["period"] for p in periods if p["period"] <= latest_closed]
+    ledger = {}
+    for e, cc, _, to in LEDGER_COST_CENTRES:
+        if to:
+            ledger.setdefault((e, to), cc)
+    first = {e[0]: e[4] for e in ENTITIES}
+    return [{"entity_code": r["entity_code"], "ledger_cost_centre": ledger[(r["entity_code"], r["cost_centre_code"])], "account_code": r["account_code"],
+             "period": r["period"], "amount": r["amount"]} for r in actuals(classes, assets, leases, closed, units, first)]

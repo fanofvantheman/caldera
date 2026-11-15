@@ -116,6 +116,9 @@ def main() -> None:
     plan["reg_schedule_edit"] = costs.schedule_edits(f"LV-{LATEST_CLOSED}", history["cost_actual"],
                                                      [p["period"] for p in periods if p["period"] <= LATEST_CLOSED][-12:])   # the opex schedule's acts; draws nothing
     plan["reg_schedule_edit"] = [{**r, "copied_from": ""} for r in plan["reg_schedule_edit"]]
+    tables.update(costs.capex_reference())              # the asset classes and the fixed-asset register as loaded
+    plan["reg_capex"] = costs.capex_items(PLAN_FY, LATEST_CLOSED)      # the capital plan's items on each version; draws nothing
+    history["cost_actual"] += costs.capex_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, plan["reg_capex"])   # draws nothing
     tables.update(loads.structure_loads(tables))        # the load before, and one member the client has not finished; draws nothing
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
     documents.write(Path(args.out))                     # the renegotiated agreement, waiting as text to be taken in; draws nothing

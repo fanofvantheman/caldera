@@ -57,6 +57,8 @@ COPIES = [
     ("reg_schedule_edit", "schedule acts", ["edit_id", "save_id"],
      """select b.* from bronze.reg_schedule_edit b join plan.change_record r on r.record = 'opex schedule' and r.act_id = b.edit_id
         where b.version_id = ? and b.action <> 'withdraw' and r.standing in ('stands', 'overwritten')"""),
+    ("reg_capex", "capital plan items", ["act_id"],
+     """select b.* from bronze.reg_capex b join plan.capex_item i on i.act_id = b.act_id where b.version_id = ? and i.standing = 'stands'"""),
     ("reg_assumption_amend", "assumption amendments", ["amend_id"],
      """select b.* from bronze.reg_assumption_amend b join plan.change_record r on r.record = 'assumptions' and r.act_id = b.amend_id
         where b.version_id = ? and b.valid_from <> 'ALL' and r.standing = 'stands'"""),

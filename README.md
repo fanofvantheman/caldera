@@ -32,7 +32,7 @@ what it wrote); `uv run python -m tests.version_fork` names a what-if from the l
 cell with every copy naming its original and the arrivals read, not copied, promotes it and back, and names a version from
 the business plan at the last close (it removes what it wrote); `uv run python -m tests.agreement_door` takes the renegotiated
 agreement in through the door with the model replaced by a stub, and checks the quotation check, the refusals, the no-key
-path and that only accepted rows reach the labour model (it removes what it wrote).
+path and that only accepted rows reach the labour model (it removes what it wrote). `uv run python -m tests.capex_plan` checks that the capital plan opens on the register as loaded and walks, the units-of-production charge, that the schedule's depreciation and lease lines are the capital plan's charge, and enters and withdraws a project through the page (it removes what it wrote).
 
 Rerunning locally after the inputs change: a model whose logic is unchanged is not re-evaluated inside its interval,
 so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --no-prompts`) or start clean
@@ -59,6 +59,8 @@ so either restate (`uv run sqlmesh plan prod --restate-model "*" --auto-apply --
   period (a random stream of its own, so nothing else moves);
   the opex schedule's acts as seeded (each line's driver; a typed rate and two typed months), and labour's registers —
   each entity's agreement, on-costs, positions by role, people by name;
+  the capital plan — the asset classes and their methods, the fixed-asset register as loaded, the projects, sustaining
+  rates and leases on each version, and the ledgers' depreciation and lease charges made from them by `calc/capex.py`;
   `history.py` three years of shipments by material × ship-to × week — each row with what it invoiced, gross at list and net
   sales, because history is revenue and units and price is the derived figure — the price lists, and what each earlier cycle's
   latest view said (the forecast snapshots accuracy is read from); `registers.py` the
@@ -168,7 +170,7 @@ version the latest view — the version every page opens on — whole, nothing m
   (FY2027–FY2031) by category × channel — the latest view rolled up where it covers a whole year, grown by Finance's rates by
   category beyond — and the five capacities it declares by year with their tiers: production computed (line hours by plant,
   from the machine register and the routes; first break, or none), working capital as receivables at terms with no limit
-  declared, and storage, material and logistics saying they have no data behind them. **Financial planning** is laid out as the chain Finance builds a plan along, one area per step in order —
+  declared, and storage, material and logistics saying they have no data behind them. **Projects and depreciation** under Capital: the asset register as loaded walked forward with the projects (spend even over its periods, capitalised when it goes into service), the sustaining rates and the leases (a fixed charge a period, no cash at the start) — cash out, additions, depreciation by straight-line or units of production, book value — each charge a line of the opex schedule at its cost centre filled by the capital plan, fixed factory overhead where the cost centre is a factory one; planned, not approved: a holder of the project right enters or withdraws an item and it is in the plan after the run. **Financial planning** is laid out as the chain Finance builds a plan along, one area per step in order —
   *Revenue · Cost of goods · Labour · Opex · Capital · Non-operating · Balance sheet and cash · Statements · Set-up* — a
   step not yet built shown in its place and saying so. **Revenue** is one entry with a tab per measure, *Volume · Price ·
   Revenue*, then *Versions*, with prices and terms and promotions linked from it to where they live under Demand; the

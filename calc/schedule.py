@@ -30,7 +30,8 @@ from typing import Callable, Iterable
 
 ROLLUPS = ("sum", "months", "line")
 QUANTITY = ("cases_made_ech", "cases_made_lox", "cases_shipped", "net_sales")
-DRIVERS = QUANTITY + ("none", "last_year", "labour_model")
+MODELS = ("labour_model", "capex_model")          # lines another model fills: the labour model, the capital plan
+DRIVERS = QUANTITY + ("none", "last_year") + MODELS
 MOVED = 0.5                    # half a dollar: a calculated amount that has moved since a month was typed
 WINDOW = 12                    # the rolling year a rate is calculated over
 STEP = "opex_schedule"         # the schedule's row of dims.ref_step_horizon: how many periods it plans
@@ -77,16 +78,19 @@ class Inputs:
       driver_plan   (driver, period) → the version's plan quantity
       driver_actual driver → its actual over the window
       index         last year's index: 1 + CPI on the version
-      labour        (line, period) → the labour model's amount; labour_lines the lines it fills"""
+      labour        (line, period) → the labour model's amount; labour_lines the lines it fills
+      capex         (line, period) → the capital plan's depreciation or lease charge; capex_lines the lines it fills"""
 
     def __init__(self, version, open_, periods, window, fy_of, prior, lines, actual, driver_plan, driver_actual, index):
         self.version, self.open, self.periods, self.window, self.fy_of, self.prior = version, open_, periods, window, fy_of, prior
         self.lines, self.actual, self.driver_plan, self.driver_actual, self.index = lines, actual, driver_plan, driver_actual, index
         self.labour: dict = {}
         self.labour_lines: set = set()
+        self.capex: dict = {}                     # (line, period) → the capital plan's charge (plan.capex_charge)
+        self.capex_lines: set = set()
 
 
-def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], version: str, labour: bool = True) -> Inputs:
+def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], version: str, labour: bool = True, capex: bool = True) -> Inputs:
     """The schedule's inputs, read the same way by the run and by the face. `fetch(sql)` → rows as dicts; `T(name)` the
     table a model name resolves to. `version` is a version id (no quotes in ids)."""
     v = version.replace("'", "")
@@ -133,6 +137,13 @@ def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], ver
             line = (r["entity_code"], r["cost_centre_code"], r["account_code"])
             inp.labour[(line, r["period"])] = float(r["amount"])
             inp.labour_lines.add(line)
+    if capex:
+        pin = ",".join(f"'{p}'" for p in periods) or "''"
+        for r in fetch(f"""select entity_code, cost_centre_code, account_code, period, sum(amount) amount from {T('plan.capex_charge')}
+                           where version_id = '{v}' and period in ({pin}) group by all"""):
+            line = (r["entity_code"], r["cost_centre_code"], r["account_code"])
+            inp.capex[(line, r["period"])] = float(r["amount"] or 0)
+            inp.capex_lines.add(line)
     return inp
 
 
@@ -141,7 +152,7 @@ def calculated_rate(inp: Inputs, line: Line, driver: str) -> float | None:
     rate is the index on it."""
     if driver == "last_year":
         return inp.index
-    if driver == "labour_model":
+    if driver in MODELS:
         return None
     act = sum(inp.actual.get((line, p), 0.0) for p in inp.window)
     if driver == "none":
@@ -155,7 +166,7 @@ def driver_quantity(inp: Inputs, line: Line, driver: str, period: str) -> float 
         return 1.0
     if driver == "last_year":
         return inp.actual.get((line, inp.prior.get(period)), 0.0)
-    if driver == "labour_model":
+    if driver in MODELS:
         return None
     return inp.driver_plan.get((driver, period), 0.0)
 
@@ -194,26 +205,28 @@ def compute(inp: Inputs, acts: Iterable[dict], rules: Rules | None = None) -> di
                 typed.pop(k)
     for line in inp.labour_lines:
         driver[line] = "labour_model"
+    for line in inp.capex_lines:
+        driver[line] = "capex_model"
     out: dict[tuple, dict] = {}
     for line, d in driver.items():
         if d not in DRIVERS:
             raise ValueError(f"{line}: driver {d!r} is not one the schedule knows")
         rc = calculated_rate(inp, line, d)
-        rt = rate_typed.get(line) if d != "labour_model" else None
+        rt = rate_typed.get(line) if d not in MODELS else None
         rate = rt[0] if rt else rc
         for p in inp.periods:
             q = driver_quantity(inp, line, d, p)
-            if d == "labour_model":
-                calc = inp.labour.get((line, p), 0.0)               # the labour model's amount: not typed here
+            if d in MODELS:                                          # another model's amount: not typed here
+                calc = (inp.labour if d == "labour_model" else inp.capex).get((line, p), 0.0)
             else:
                 calc = q * rate if q is not None and rate is not None else None
-            t = typed.get((line, p)) if d != "labour_model" else None
+            t = typed.get((line, p)) if d not in MODELS else None
             amount = t[0] if t else calc
             moved = bool(t and t[1] is not None and calc is not None and abs(calc - t[1]) > MOVED)
             out[(*line, p)] = {"version_id": inp.version, "entity_code": line[0], "cost_centre_code": line[1], "account_code": line[2],
                                "period": p, "fiscal_year": inp.fy_of.get(p), "driver": d, "driver_qty": q, "rate_calc": rc, "rate": rate,
                                "rate_typed": bool(rt), "amount_calc": calc, "amount": amount,
-                               "state": "model" if d == "labour_model" else ("typed" if t else "calculated"),
+                               "state": "model" if d in MODELS else ("typed" if t else "calculated"),
                                "typed_calc": t[1] if t else None, "moved": moved, "rate_edit_id": rt[1] if rt else None,
                                "month_edit_id": t[2] if t else None}
     return out
