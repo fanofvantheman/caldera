@@ -2,7 +2,28 @@
 shows is what the last run said."""
 from __future__ import annotations
 
+import copy
+import functools
+
+from chassis import CONFIG
 from chassis.warehouse import one, q
+
+# The structures change only when a run rewrites the warehouse, and every page asks for them: a read marked `_since_run`
+# is asked once per run and answered from memory after, each caller given its own copy.
+_KEPT: dict = {"stamp": None, "answers": {}}
+
+
+def _since_run(fn):
+    @functools.wraps(fn)
+    def call(*args):
+        stamp = CONFIG.db.stat().st_mtime if CONFIG.db.exists() else 0
+        if _KEPT["stamp"] != stamp:
+            _KEPT["stamp"], _KEPT["answers"] = stamp, {}
+        key = (fn.__name__, args)
+        if key not in _KEPT["answers"]:
+            _KEPT["answers"][key] = fn(*args)
+        return copy.deepcopy(_KEPT["answers"][key])
+    return call
 
 
 # a version as the face reads it: its status is its state — open or closed — read from the acts (plan.version_state);
@@ -542,6 +563,7 @@ def demand_series(version_id: str, fy: int, customer: str | None = None, materia
             "ref_id": ref_id, "total": sum(x["total"] for x in view.values()), "n_actual": len(actual_p)}
 
 
+@_since_run
 def node_label(dimension: str, node: str) -> str:
     if node == "ALL":
         return "All customers" if dimension == "customer" else "All materials"
@@ -553,6 +575,7 @@ def node_label(dimension: str, node: str) -> str:
     return r["label"] if r else node
 
 
+@_since_run
 def node_path(dimension: str, node: str) -> list[dict]:
     """Root to node, each with its label — the breadcrumb of a drill."""
     table = "dims.dim_customer_hierarchy" if dimension == "customer" else "dims.dim_material_hierarchy"
@@ -775,6 +798,7 @@ def is_account(code: str) -> bool:
     return one("select 1 ok from dims.dim_account where account_code = ?", code) is not None
 
 
+@_since_run
 def material_tree_under(node: str) -> dict:
     """The material nodes beneath a node in one read: each child's label, level, whether it has children of its own and how many."""
     rows = q("""with k as (select descendant_code code, descendant_level lvl from dims.dim_material_hierarchy where ancestor_code = ? and depth = 1 and descendant_code <> ancestor_code)
@@ -787,12 +811,14 @@ def material_tree_under(node: str) -> dict:
     return {r["code"]: r for r in rows}
 
 
+@_since_run
 def customer_labels() -> dict:
     rows = q("""select planning_unit code, any_value(planning_unit_name) as "label" from dims.dim_account group by 1
                 union all select account_code, account_name from dims.dim_account""")
     return {r["code"]: r["label"] for r in rows}
 
 
+@_since_run
 def finance_customer_nodes() -> list[dict]:
     """The customer nodes Finance types at: all, the units, the accounts — never a ship-to."""
     rows = q("""select h.descendant_code code, h.descendant_level lvl, h.depth, p.ancestor_code parent from dims.dim_customer_hierarchy h
