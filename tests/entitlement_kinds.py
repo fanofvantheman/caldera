@@ -25,6 +25,7 @@ sys.path.insert(0, str(BUILD))
 if os.environ.get("FACE_ROOT"):
     sys.path.insert(0, os.environ["FACE_ROOT"])
 
+from markupsafe import escape                         # noqa: E402
 import chassis                                        # noqa: E402
 from chassis import app as chassis_app                # noqa: E402
 from chassis.warehouse import q                       # noqa: E402
@@ -72,6 +73,15 @@ def main() -> None:
     assert all(k["kind_label"] in page for k in kinds.values()) and "not yet priced" in page and "not an interpretation" in page
     assert "Caldera Food Processing Agreement 2025" in page and "cl. 12.2" in page and "casual loading of 25%" in page
     print("page            the kinds with what is priced and what is not yet, both agreements' entitlements with their clauses, and what it is for")
+
+    i_st, i_ns = page.index('<h2 id="statutory">Statutory'), page.index('<h2 id="non-statutory">Non-statutory')
+    assert i_st < i_ns < page.index("In force, by layer")
+    stat_part, non_part = page[i_st:i_ns], page[i_ns:page.index("In force, by layer")]
+    for r in rows:
+        mine, other = (stat_part, non_part) if r["layer"] == "statute" else (non_part, stat_part)
+        ref = str(escape(r["clause_ref"]))
+        assert ref in mine and ref not in other, (r["layer"], r["clause_ref"])
+    print("headings        Statutory (the statute layer) and Non-statutory (award, agreement) — every row under the heading its layer gives")
 
     st = [r for r in rows if r["layer"] == "statute"]
     assert st and all(r["specimen"] and r["value"] is None and r["clause_ref"].startswith("to be drafted from") for r in st)

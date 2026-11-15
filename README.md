@@ -226,8 +226,8 @@ version the latest view — the version every page opens on — whole, nothing m
   role* in the factory cost centres (positions by classification priced through each entity's agreement, the increase
   from January 2027, a campaign casual pool at a loading; a name beside a position carries nothing) and *By name* in the
   overhead ones (each person's salary, incentive and dates; a named vacancy at a typed figure) — and *Entitlements*: the closed list of kinds the labour model can price (base rate, loading,
-  allowance, leave accrual, on-cost, dated increase, one-off payment; which it prices today) and each agreement's
-  entitlements beneath them with the clause each came from — the rates the labour model reads are made from these; then the layers in force by entity — the agreement where it speaks, the statutory floor of the
+  allowance, leave accrual, on-cost, dated increase, one-off payment; which it prices today) and the entitlements beneath them organised under **Statutory** (the floor for the entity's jurisdiction) and
+  **Non-statutory** (the award, and each entity's agreement), each with the clause it came from — the rates the labour model reads are made from these; then the layers in force by entity — the agreement where it speaks, the statutory floor of the
   Commonwealth and the entity's state where it does not, the floor a specimen awaiting its sources (no figure recalled),
   the on-cost the plan uses today beside it; and **agreements in** — a copy of an agreement (the renegotiated one waits in
 `data/generated/documents/`) taken in by the holder of the agreement register's right, read by the shared tool's first pass
