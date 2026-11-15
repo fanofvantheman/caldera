@@ -1,10 +1,10 @@
-/* The labour model, line by line, on each open version for every period it calculates after its last actual one.
+/* The labour model, line by line, on every plan — open, or a frozen business plan over its year — for every period it calculates after its last actual one.
    By role: a position's FTE × paid hours a week × the period's weeks × its classification's rate in force (× 1 + the
    agreement's casual loading for the casual pool, an entitlement of the agreement) — a change of person moves nothing. By name: a person's salary × (1 + incentive at
    target) ÷ 52 × the weeks of the period they are employed in. On-costs on both at the entity's rates. The output every
    reader takes is plan.labour_cost; this table carries individual pay. */
 MODEL (name plan.labour_line, kind FULL, grain (version_id, model, line_id, period));
-WITH v AS (SELECT version_id, horizon_start, horizon_end, from_period FROM dims.ctl_version WHERE status = 'open'),
+WITH v AS (SELECT version_id, horizon_start, horizon_end, from_period FROM dims.ctl_version WHERE version_kind <> 'actual'),
 per AS (SELECT v.version_id, p.period, p.fiscal_year, p.period_start, p.period_end, p.weeks_in_period
         FROM v JOIN dims.dim_period p ON p.period BETWEEN v.horizon_start AND v.horizon_end WHERE p.period > v.from_period),
 oc AS (SELECT entity_code, SUM(rate) AS on_cost FROM dims.ref_on_cost GROUP BY ALL),

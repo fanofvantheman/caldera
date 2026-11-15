@@ -107,9 +107,11 @@ def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], ver
     table a model name resolves to. `version` is a version id (no quotes in ids)."""
     v = version.replace("'", "")
     per = fetch(f"select period, fiscal_year, prior_year_period, period_state from {T('dims.dim_period')} order by period")
-    ver = (fetch(f"""select horizon_start, horizon_end, status, from_period, horizon_periods, plan_through
+    ver = (fetch(f"""select horizon_start, horizon_end, status, version_kind, from_period, horizon_periods, plan_through
                      from {T('dims.ctl_version')} where version_id = '{v}'""") or [{}])[0]
     is_open = ver.get("status") == "open"
+    # every plan carries a schedule, open or not (DEC-20261115-06 point 1): a frozen business plan is read, never typed on
+    planned = ver.get("version_kind") not in (None, "actual")
     # the version says which periods are actual, not the calendar: the rate's window ends at its from point, and the
     # schedule plans the periods after it — its own window, never more than the version's horizon
     upto = ver.get("from_period") or ""
@@ -117,7 +119,7 @@ def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], ver
     step = fetch(f"select horizon_periods from {T('dims.ref_step_horizon')} where step = '{STEP}'")
     n = min(int(step[0]["horizon_periods"]) if step else 0, int(ver.get("horizon_periods") or 0))
     after = [p["period"] for p in per if upto and p["period"] > upto][:n]
-    periods = [p for p in after if ver["horizon_start"] <= p <= ver["horizon_end"] and p <= (ver.get("plan_through") or "")] if is_open else []
+    periods = [p for p in after if ver["horizon_start"] <= p <= ver["horizon_end"] and p <= (ver.get("plan_through") or "")] if planned else []
     fy_of = {p["period"]: int(p["fiscal_year"]) for p in per}
     prior = {p["period"]: p["prior_year_period"] for p in per}
     inn = ",".join(f"'{p}'" for p in window) or "''"
@@ -157,6 +159,20 @@ def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], ver
             inp.capex[(line, r["period"])] = float(r["amount"] or 0)
             inp.capex_lines.add(line)
     return inp
+
+
+def carried(fetch: Callable[[str], list[dict]], T: Callable[[str], str], version: str) -> list[dict]:
+    """The lines a business plan carries (DEC-20261115-06 point 6, `?`; caldera ambiguity #48): the first latest view
+    named for its fiscal year, its drivers and rates as first declared — the acts entered on or before the day that view
+    was named. No month (typed, adjusted or locked) and nothing after the naming: those are this cycle's. Read from the
+    record as entered, so a later withdrawal on the latest view does not move a frozen plan. Every other version: none."""
+    v = version.replace("'", "")
+    return fetch(f"""with bp as (select fiscal_year from {T('dims.ctl_version')} where version_id = '{v}' and version_kind = 'business_plan'),
+                     lv as (select l.version_id, l.named_on from {T('dims.ctl_version')} l join bp using (fiscal_year)
+                            where l.version_kind = 'latest_view' order by l.named_on, l.version_id limit 1)
+                     select e.* exclude (withdrawn_by_act, withdrawn_by, withdrawn_on) from {T('plan.schedule_edit')} e join lv using (version_id)
+                     where e.action in ('driver', 'rate') and e.entered_on::date <= lv.named_on
+                     order by e.entered_on, e.edit_id""")
 
 
 def calculated_rate(inp: Inputs, line: Line, driver: str) -> float | None:

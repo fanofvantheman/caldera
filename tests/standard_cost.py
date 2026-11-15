@@ -6,8 +6,9 @@ only, against the warehouse and through the routes.
 Each component of a sample of materials is made again here from its own source and must equal plan.standard_cost:
 material from the bill of materials and the input prices (the energy in the bill left to variable overhead), labour from
 the route's crew and the production halls' loaded rate, variable overhead from the plant's cases-made schedule lines,
-fixed overhead from the plant's other lines less the crews over the business plan's cases. The four sum to the standard;
-Finance's cost of goods is volume × it wherever all four are read; the fixed overhead not absorbed is its own line, and
+fixed overhead from the plant's other lines less the crews over cases — the business plan's rate in its year, the plan's own
+past it (DEC-20261115-06). The four sum to the standard; Finance's cost of goods is volume × it wherever all four are read,
+the business plan's included; the fixed overhead not absorbed is its own line, and
 incurred less absorbed is it. The page answers, and at a location shows only that plant.
 """
 from __future__ import annotations
@@ -38,7 +39,7 @@ def close(a, b, tol=1e-6) -> bool:
 
 def main() -> None:
     V = q("select version_id from dims.ctl_version where version_kind = 'latest_view' and status = 'open' order by version_id limit 1")[0]["version_id"]
-    BP = q("select version_id, fiscal_year from dims.ctl_version where version_kind = 'business_plan'")[0]
+    BP = q("select version_id, fiscal_year from dims.ctl_version where version_kind = 'business_plan' and base_version is null order by named_on limit 1")[0]
     rows = q("select * from plan.standard_cost where version_id = ? and complete", V)
     assert rows, "no complete standard on the latest view"
     p0 = min(r["period"] for r in rows)
@@ -74,26 +75,32 @@ def main() -> None:
                     join dims.dim_input_material i on i.material_code = b.component_material and i.material_type = 'utility' limit 0""")
     print(f"components      {len(sample)} materials made again from their sources in {p0}: material, labour, variable overhead each equal; the four sum to the standard")
 
-    # fixed overhead: the plant's other lines less the crews, over the business plan's cases at the plant for its year
+    # fixed overhead: the plant's other lines less the crews over cases — in the business plan's year its rate, held
+    # (DEC-20261115-06; tests.business_plan_standard checks the rate and its split), past it the plan's own
     for plant in ("ECH", "LOX"):
-        f = q("select distinct fixed_pool, denominator, denominator_version, fixed_overhead from plan.standard_cost where version_id = ? and plant_code = ?", V, plant)
-        assert len(f) == 1 and f[0]["denominator_version"] == BP["version_id"], f
+        f = q("""select distinct p.fiscal_year fy, fixed_pool, denominator, denominator_version, fixed_held, fixed_overhead from plan.standard_cost s
+                 join dims.dim_period p using (period) where version_id = ? and plant_code = ? order by 1""", V, plant)
+        assert len(f) == len({x["fy"] for x in f}), f
+        for x in f:
+            assert x["denominator_version"] == (BP["version_id"] if x["fixed_held"] else V) and x["fixed_held"] == (int(x["fy"]) == int(BP["fiscal_year"])), x
+            assert close(x["fixed_overhead"], x["fixed_pool"] / x["denominator"])
+        held = next(x for x in f if x["fixed_held"])
         den = q("""select sum(d.cases) c from plan.demand_financialised d join dims.ref_route r using (material_code) join dims.dim_period p on p.period = d.period
                    where r.is_primary and r.plant_code = ? and d.version_id = ? and p.fiscal_year = ?""", plant, BP["version_id"], BP["fiscal_year"])[0]["c"]
-        assert close(f[0]["denominator"], den) and close(f[0]["fixed_overhead"], f[0]["fixed_pool"] / den)
+        assert close(held["denominator"], den)
         ab = q("select * from plan.standard_absorption where version_id = ? and plant_code = ?", V, plant)
         assert ab and all(close(a["under_absorbed"], a["fixed_overhead_incurred"] - (a["absorbed"] or 0), 1e-9) for a in ab)
-        print(f"fixed overhead  {plant}: {f[0]['fixed_pool']:,.0f} over {den:,.0f} cases of {BP['version_id']} = {f[0]['fixed_overhead']:.4f} a case; "
-              f"not absorbed over the year {sum(a['under_absorbed'] for a in ab):,.0f}")
+        print(f"fixed overhead  {plant}: " + "; ".join(f"FY{x['fy']} {x['fixed_pool']:,.0f} over {x['denominator']:,.0f} cases of {x['denominator_version']} = {x['fixed_overhead']:.4f}" for x in f)
+              + f"; not absorbed over the schedule {sum(a['under_absorbed'] for a in ab):,.0f}")
 
     # Finance's cost of goods is volume × the standard, wherever all four are read
     bad = q("""select count(*) n from plan.finance_plan f join plan.standard_cost s on s.version_id = f.version_id and s.material_code = f.material_code
                and s.period = f.period and s.complete where abs(coalesce(f.std_cost, -1) - s.std_cost) > 1e-9 or abs(f.cogs - f.cases * s.std_cost) > 1e-6""")[0]["n"]
     n = q("select count(*) n from plan.finance_plan where version_id = ? and cogs is not null", V)[0]["n"]
     assert bad == 0 and n > 0, (bad, n)
-    none_bp = q("select count(*) n from plan.finance_plan where version_id = ? and cogs is not null", BP["version_id"])[0]["n"]
-    assert none_bp == 0, "a cost of goods valued on a version with no overhead on its schedule"
-    print(f"Finance's grid  cost of goods = volume × the standard on all {n:,} cells of {V} that have one; none on {BP['version_id']}, whose standard is incomplete")
+    n_bp = q("select count(*) n from plan.finance_plan where version_id = ? and cogs is not null", BP["version_id"])[0]["n"]
+    assert n_bp > 0, "no cost of goods on the business plan, which carries its own schedule"
+    print(f"Finance's grid  cost of goods = volume × the standard on all {n:,} cells of {V} that have one, and {n_bp:,} of {BP['version_id']}")
 
     # the page
     app = chassis_app.create_app(SHELL, session, roles, blueprints=[M.plan])

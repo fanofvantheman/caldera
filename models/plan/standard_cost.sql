@@ -5,11 +5,14 @@
      labour             the route's crew ÷ its cases an hour × the loaded hourly rate of the plant's production halls'
                         positions in the period (the labour model: wages and on-costs over paid hours)
      variable_overhead  the plant's factory cost centres' schedule lines driven by cases made there: the line's own rate
-     fixed_overhead     those cost centres' other lines over the schedule's planned periods — indirect labour (every
-                        position but the crews), depreciation, production leases, the rest — ÷ the denominator declared on
-                        the version: the business plan's cases at the plant for its year
+     fixed_overhead     the rate set on the business plan of the period's fiscal year and held on every plan of that year
+                        (DEC-20261115-06): its factory cost centres' other lines over its year — indirect labour (every
+                        position but the crews), depreciation, production leases, the rest — ÷ its cases at the plant for
+                        the year. A period of a year with no business plan takes the plan's own: its fixed lines over the
+                        schedule's planned periods ÷ its own cases at the plant over the same periods (caldera #48)
    Variable or fixed is read from the line's driver; direct or indirect labour from the route — no second classification.
-   Under- or over-absorption is plan.standard_absorption, never folded into the unit cost. */
+   Material, labour and variable overhead are each plan's own; only the fixed component is held. Under- or
+   over-absorption is plan.standard_absorption, never folded into the unit cost. */
 MODEL (name plan.standard_cost, kind FULL, grain (version_id, material_code, period));
 WITH versions AS (SELECT version_id, from_period, plan_through FROM dims.ctl_version WHERE version_kind <> 'actual' AND from_period IS NOT NULL),
 route AS (SELECT material_code, plant_code, line_code, rate_cases_per_hour FROM dims.ref_route WHERE is_primary),
@@ -57,25 +60,39 @@ direct AS (                                           -- the direct labour the p
   FROM (SELECT version_id, material_code, period, SUM(cases) cases FROM plan.demand_financialised GROUP BY ALL) d
   JOIN labour l USING (version_id, material_code, period) GROUP BY ALL
 ),
-pool AS (                                             -- fixed overhead over the schedule's planned periods: every fixed line, less the crews
-  SELECT f.version_id, f.plant_code, SUM(f.amount) - COALESCE(MAX(dl.direct_labour), 0) AS fixed_pool, COUNT(DISTINCT f.period) AS n_periods
+pool AS (                                             -- fixed overhead over the schedule's planned periods: every fixed line, less the crews,
+  SELECT f.version_id, f.plant_code, SUM(f.amount) - COALESCE(MAX(dl.direct_labour), 0) AS fixed_pool, COUNT(DISTINCT f.period) AS n_periods,
+         MAX(oc.cases) AS own_cases                   -- and the plan's own cases at the plant over the same periods
   FROM (SELECT version_id, plant_code, SUM(amount) amount, period FROM sched WHERE NOT variable GROUP BY ALL) f
   LEFT JOIN (SELECT dd.version_id, dd.plant_code, SUM(dd.direct_labour) direct_labour FROM direct dd
              WHERE (dd.version_id, dd.period) IN (SELECT version_id, period FROM sched) GROUP BY ALL) dl USING (version_id, plant_code)
+  LEFT JOIN (SELECT c.version_id, c.plant_code, SUM(c.cases) cases FROM cases c
+             WHERE (c.version_id, c.period) IN (SELECT version_id, period FROM sched) GROUP BY ALL) oc USING (version_id, plant_code)
   GROUP BY ALL
 ),
-denominator AS (                                      -- declared on the version: the business plan's cases at the plant for its year
-  SELECT v.version_id, c.plant_code, SUM(c.cases) AS denominator, bp.version_id AS denominator_version
-  FROM versions v CROSS JOIN (SELECT version_id, fiscal_year FROM dims.ctl_version WHERE version_kind = 'business_plan') bp
-  JOIN cases c ON c.version_id = bp.version_id JOIN dims.dim_period p ON p.period = c.period AND p.fiscal_year = bp.fiscal_year
+bp AS (                                               -- the business plan of each fiscal year: the one named before the build, not a copy of it
+  SELECT fiscal_year::INT AS fiscal_year, version_id AS bp_version FROM dims.ctl_version
+  WHERE version_kind = 'business_plan' AND base_version IS NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY fiscal_year ORDER BY named_on, version_id) = 1
+),
+fixed_rate AS (                                       -- the rate each period takes: set on its year's business plan, held; else the plan's own
+  SELECT m.version_id, l.plant_code, m.period,
+         COALESCE(bpp.fixed_pool, po.fixed_pool) AS fixed_pool,
+         CASE WHEN bpp.fixed_pool IS NOT NULL THEN bpp.own_cases ELSE po.own_cases END AS denominator,
+         CASE WHEN bpp.fixed_pool IS NOT NULL THEN b.bp_version ELSE m.version_id END AS denominator_version,
+         bpp.fixed_pool IS NOT NULL AS fixed_held
+  FROM (SELECT DISTINCT version_id, material_code, period FROM mats) m JOIN labour l USING (version_id, material_code, period)
+  JOIN dims.dim_period p ON p.period = m.period
+  LEFT JOIN bp b ON b.fiscal_year = p.fiscal_year::INT
+  LEFT JOIN pool bpp ON bpp.version_id = b.bp_version AND bpp.plant_code = l.plant_code
+  LEFT JOIN pool po ON po.version_id = m.version_id AND po.plant_code = l.plant_code
   GROUP BY ALL
 )
 SELECT m.version_id, m.material_code, l.plant_code, m.period, mt.material_cost, l.crew_hours, l.loaded_rate, l.labour_cost,
-       vr.variable_overhead, po.fixed_pool, dn.denominator, dn.denominator_version, po.fixed_pool / NULLIF(dn.denominator, 0) AS fixed_overhead,
-       COALESCE(mt.material_cost, 0) + COALESCE(l.labour_cost, 0) + COALESCE(vr.variable_overhead, 0) + COALESCE(po.fixed_pool / NULLIF(dn.denominator, 0), 0) AS std_cost,
-       mt.material_cost IS NOT NULL AND l.labour_cost IS NOT NULL AND vr.variable_overhead IS NOT NULL AND po.fixed_pool IS NOT NULL AS complete
+       vr.variable_overhead, fr.fixed_pool, fr.denominator, fr.denominator_version, fr.fixed_held, fr.fixed_pool / NULLIF(fr.denominator, 0) AS fixed_overhead,
+       COALESCE(mt.material_cost, 0) + COALESCE(l.labour_cost, 0) + COALESCE(vr.variable_overhead, 0) + COALESCE(fr.fixed_pool / NULLIF(fr.denominator, 0), 0) AS std_cost,
+       mt.material_cost IS NOT NULL AND l.labour_cost IS NOT NULL AND vr.variable_overhead IS NOT NULL AND fr.fixed_pool IS NOT NULL AS complete
 FROM mats m JOIN labour l USING (version_id, material_code, period)
 LEFT JOIN material mt USING (version_id, material_code, period)
 LEFT JOIN var_rate vr ON vr.version_id = m.version_id AND vr.plant_code = l.plant_code
-LEFT JOIN pool po ON po.version_id = m.version_id AND po.plant_code = l.plant_code
-LEFT JOIN denominator dn ON dn.version_id = m.version_id AND dn.plant_code = l.plant_code
+LEFT JOIN fixed_rate fr ON fr.version_id = m.version_id AND fr.plant_code = l.plant_code AND fr.period = m.period

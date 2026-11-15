@@ -25,7 +25,7 @@ from chassis.warehouse import Busy, q
 from chassis.working import Copies, History
 from flask import current_app, redirect, request, url_for
 
-from calc.schedule import compute, in_force, lines_of, read_inputs, rules_from, total
+from calc.schedule import carried, compute, in_force, lines_of, read_inputs, rules_from, total
 
 from . import costs
 from .words import said
@@ -97,6 +97,7 @@ def base(version: str, fresh: bool = False) -> dict:
         acts.sort(key=lambda a: (a["entered_on"], a["edit_id"]))
         on_file = acts
         acts = in_force(acts)                     # a withdrawn act, or every act of a withdrawn save, is out of force
+        acts = _acts_from(carried(lambda sql: q(sql), lambda n: n, version)) + acts      # a business plan's lines, as first declared
         _CACHE[version] = {"stamp": stamp, "inp": inp, "rules": rules(), "acts": acts, "on_file": on_file, "cells": compute(inp, acts, rules())}
         return _CACHE[version]
 
