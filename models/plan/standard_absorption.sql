@@ -16,7 +16,7 @@ absorbed AS (
   SELECT d.version_id, s.plant_code, d.period, SUM(d.cases) AS cases, SUM(d.cases * s.fixed_overhead) AS absorbed, SUM(d.cases * s.labour_cost) AS direct_labour,
          ANY_VALUE(s.fixed_overhead) AS fixed_overhead, ANY_VALUE(s.denominator_version) AS rate_version, BOOL_AND(s.fixed_held) AS fixed_held
   FROM (SELECT version_id, material_code, period, SUM(cases) cases FROM plan.demand_financialised GROUP BY ALL) d
-  JOIN plan.standard_cost s USING (version_id, material_code, period) GROUP BY ALL
+  JOIN plan.planned_unit_cost s USING (version_id, material_code, period) GROUP BY ALL
 ),
 incurred AS (
   SELECT f.version_id, f.plant_code, f.period, f.fixed_lines, a.direct_labour, f.fixed_lines - COALESCE(a.direct_labour, 0) AS fixed_overhead_incurred,

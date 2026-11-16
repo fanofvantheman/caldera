@@ -57,11 +57,11 @@ def main() -> None:
     bad = q(f"""with p as (select version_id, material_code, period,
                         sum(case when component = 'material' then per_case end) m, sum(case when component = 'labour' then per_case end) l,
                         sum(case when component = 'variable_overhead' then per_case end) v, sum(case when component = 'fixed_overhead' then per_case end) f
-                   from plan.standard_cost_pool group by all)
-               select count(*) n from plan.standard_cost s join p using (version_id, material_code, period)
+                   from plan.planned_unit_cost_pool group by all)
+               select count(*) n from plan.planned_unit_cost s join p using (version_id, material_code, period)
                where abs(coalesce(s.material_cost, 0) - coalesce(p.m, 0)) > {EPS} or abs(coalesce(s.labour_cost, 0) - coalesce(p.l, 0)) > {EPS}
                   or abs(coalesce(s.variable_overhead, 0) - coalesce(p.v, 0)) > {EPS} or abs(coalesce(s.fixed_overhead, 0) - coalesce(p.f, 0)) > {EPS}""")[0]["n"]
-    n = q("select count(*) n from plan.standard_cost")[0]["n"]
+    n = q("select count(*) n from plan.planned_unit_cost")[0]["n"]
     assert bad == 0, f"{bad} cells whose components are not the sum of their pools"
     ind = q("""select r.version_id, r.plant_code, r.period, r.lines_amount, r.direct_labour, r.amount from plan.cost_pool_rate r where pool_code = 'INDIRECT_LABOUR'""")
     assert ind and all(abs(r["lines_amount"] - r["direct_labour"] - r["amount"]) < 1e-6 for r in ind)

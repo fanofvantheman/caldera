@@ -49,9 +49,9 @@ def revenue_is_volume_times_price(c: dict) -> bool:
 
 
 def cogs_is_volume_times_standard(c: dict) -> bool:
-    if c.get("std_cost") is None or c["cases"] is None:
+    if c.get("unit_cost") is None or c["cases"] is None:
         return c.get("cogs") is None
-    return close(c["cogs"], c["cases"] * c["std_cost"])
+    return close(c["cogs"], c["cases"] * c["unit_cost"])
 
 
 def margin_is_revenue_less_cogs(c: dict) -> bool:
@@ -71,12 +71,26 @@ def component_is_volume_times(per_case: str, amount: str):
 
 FORMULAS = {
     ("finance", "revenue", "volume × price"): revenue_is_volume_times_price,
-    ("finance", "cogs_material", "volume × material per case"): component_is_volume_times("std_material", "cogs_material"),
-    ("finance", "cogs_labour", "volume × labour per case"): component_is_volume_times("std_labour", "cogs_labour"),
-    ("finance", "cogs_variable", "volume × variable overhead per case"): component_is_volume_times("std_variable", "cogs_variable"),
-    ("finance", "cogs_fixed", "volume × fixed overhead per case"): component_is_volume_times("std_fixed", "cogs_fixed"),
-    ("finance", "cogs", "volume × standard cost"): cogs_is_volume_times_standard,
+    ("finance", "cogs_material", "volume × material per case"): component_is_volume_times("uc_material", "cogs_material"),
+    ("finance", "cogs_labour", "volume × labour per case"): component_is_volume_times("uc_labour", "cogs_labour"),
+    ("finance", "cogs_variable", "volume × variable overhead per case"): component_is_volume_times("uc_variable", "cogs_variable"),
+    ("finance", "cogs_fixed", "volume × fixed overhead per case"): component_is_volume_times("uc_fixed", "cogs_fixed"),
+    ("finance", "cogs", "volume × planned unit cost"): cogs_is_volume_times_standard,
     ("finance", "margin", "revenue − cost of goods"): margin_is_revenue_less_cogs,
+    ("finance", "vsm_material", "volume × material against standard per case"): component_is_volume_times("vs_material", "vsm_material"),
+    ("finance", "vsm_labour", "volume × labour against standard per case"): component_is_volume_times("vs_labour", "vsm_labour"),
+    ("finance", "cogs_std", "volume × standard cost per case"): component_is_volume_times("std_cost", "cogs_std"),
+    ("finance", "cogs_std_material", "volume × standard material per case"): component_is_volume_times("std_material", "cogs_std_material"),
+    ("finance", "cogs_std_labour", "volume × standard labour per case"): component_is_volume_times("std_labour", "cogs_std_labour"),
+    ("finance", "cogs_std_variable", "volume × standard variable overhead per case"): component_is_volume_times("std_variable", "cogs_std_variable"),
+    ("finance", "cogs_std_fixed", "volume × standard fixed overhead per case"): component_is_volume_times("std_fixed", "cogs_std_fixed"),
+    ("finance", "vsm_mat_price", "volume × material price per case"): component_is_volume_times("vs_mat_price", "vsm_mat_price"),
+    ("finance", "vsm_mat_usage", "volume × material usage per case"): component_is_volume_times("vs_mat_usage", "vsm_mat_usage"),
+    ("finance", "vsm_lab_rate", "volume × labour rate per case"): component_is_volume_times("vs_lab_rate", "vsm_lab_rate"),
+    ("finance", "vsm_lab_eff", "volume × labour efficiency per case"): component_is_volume_times("vs_lab_eff", "vsm_lab_eff"),
+    ("finance", "vsm_var_oh", "volume × variable overhead variance per case"): component_is_volume_times("vs_var_oh", "vsm_var_oh"),
+    ("finance", "vsm_fixed_oh", "volume × fixed overhead variance per case"): component_is_volume_times("vs_fixed_oh", "vsm_fixed_oh"),
+    ("finance", "vsm_total", "volume × against standard per case"): component_is_volume_times("vs_total", "vsm_total"),
 }
 
 
@@ -154,7 +168,7 @@ def small_grid(rules: dict, std: float | None = None) -> Grid:
     """One account, two materials, one period: M1 fed by 100 cases at 10.00, M2 by 300 at 20.00; the standard given with its four components."""
     g = Grid({"ALL": {"A1"}, "A1": {"A1"}}, {"ALL": {"M1", "M2"}, "M1": {"M1"}, "M2": {"M2"}}, lambda a, m: "fed", {"P1": 2027}, rules)
     def parts(x):                     # a standard and its four components, in the shares 5 : 2 : 1 : 2
-        return {"std_cost": x, **{k: None if x is None else x * w for k, w in (("std_material", .5), ("std_labour", .2), ("std_variable", .1), ("std_fixed", .2))}}
+        return {"unit_cost": x, **{k: None if x is None else x * w for k, w in (("uc_material", .5), ("uc_labour", .2), ("uc_variable", .1), ("uc_fixed", .2))}}
     g.start(("V", "A1", "M1", "P1"), "fed", 100.0, 1000.0, **parts(std))
     g.start(("V", "A1", "M2", "P1"), "fed", 300.0, 6000.0, **parts(None if std is None else std * 2))
     return g
@@ -228,7 +242,7 @@ def main() -> None:
         s.type("V", "A1", "M2", "P1", "price", 25.0, "T2")
         for k in sorted(stated & set(FORMULAS)):
             ok = all(FORMULAS[k](c) for c in s.cells.values())
-            (print(f"✓ {grid}.{k[1]}: holds on a small grid with a standard cost given, after a typed volume and price") if ok
+            (print(f"✓ {grid}.{k[1]}: holds on a small grid with a planned unit cost given, after a typed volume and price") if ok
              else fail(f"{grid}.{k[1]}: fails on the small grid: {list(s.cells.values())}"))
 
         # 2 · the words of each setting match the setting
@@ -244,6 +258,14 @@ def main() -> None:
                 fail(f"{grid}.{m}: typed ({r['breakback']}) and the verb that types it ({r['verb']}) must come together")
         cells = list(small_grid(rules, std=4.0).cells.values())
         for m, r in rules.items():
+            if r["rollup"] == "ratio" and aggregate(cells, r["rollup_num"], rules) is None:
+                if aggregate(cells, m, rules) is not None:   # a figure the small grid is not given (the standard) reads nothing
+                    fail(f"{grid}.{m}: reads a figure at a total with nothing beneath it")
+                continue
+            if r["rollup"] == "sum" and all(c[r["field"]] is None for c in cells):
+                if aggregate(cells, m, rules) not in (None, 0):
+                    fail(f"{grid}.{m}: reads a figure at a total with nothing beneath it")
+                continue
             want = (sum(c[r["field"]] for c in cells if c[r["field"]] is not None) if r["rollup"] == "sum"
                     else aggregate(cells, r["rollup_num"], rules) / aggregate(cells, r["rollup_den"], rules))
             if not close(aggregate(cells, m, rules), want):

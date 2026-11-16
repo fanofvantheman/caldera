@@ -16,7 +16,7 @@ cases AS (SELECT d.version_id, r.plant_code, d.period, SUM(d.cases) AS cases FRO
 direct AS (
   SELECT d.version_id, l.plant_code, d.period, SUM(d.cases * l.labour_cost) AS direct_labour
   FROM (SELECT version_id, material_code, period, SUM(cases) cases FROM plan.demand_financialised GROUP BY ALL) d
-  JOIN plan.standard_labour l USING (version_id, material_code, period) GROUP BY ALL
+  JOIN plan.planned_labour l USING (version_id, material_code, period) GROUP BY ALL
 ),
 line_rate AS (                                       -- the lines driven by cases made: each line's own rate, once
   SELECT version_id, plant_code, pool_code, SUM(rate) AS line_rate

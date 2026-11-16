@@ -136,7 +136,7 @@ def main() -> None:
         # 5 · a second person sees none of it
         session.become(OTHER)
         r = c.get(f"/revenue?version={V}&fy={fy}&customer=ALL&material=ALL")
-        assert r.status_code == 200 and b"not saved" not in r.data and not UNSAVED_CELL.search(r.data.decode())
+        assert r.status_code == 200 and b'class="hint unsaved-note"' not in r.data and not UNSAVED_CELL.search(r.data.decode())     # the note, not the page's standing hint
         assert at("ALL", cat, "volume", who=OTHER) != at("ALL", cat, "volume")
         session.become(FINANCE_USER)
 

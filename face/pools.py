@@ -90,7 +90,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 figs[(r["pool_code"], r["plant_code"])] = {"cost": r["cost"], "per_case": None}
             sched = [r["period"] for r in q("select distinct period from plan.cost_pool_rate where version_id = ? order by 1", version)]
             per_case = q("""select s.plant_code, s.pool_code, s.component, sum(s.per_case * d.c) / nullif(sum(d.c), 0) per_case
-                            from plan.standard_cost_pool s
+                            from plan.planned_unit_cost_pool s
                             join (select material_code, sum(cases) c from plan.demand_financialised where version_id = ? and period = ? group by 1) d using (material_code)
                             where s.version_id = ? and s.period = ? group by all""", version, period, version, period)
             for r in per_case:
@@ -98,7 +98,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             # material and direct labour have no schedule line: their cost is the plan's cases × the cost per case over the same periods
             if sched:
                 ph = ",".join("?" * len(sched))
-                for r in q(f"""select s.plant_code, s.pool_code, sum(s.per_case * d.c) as "cost" from plan.standard_cost_pool s
+                for r in q(f"""select s.plant_code, s.pool_code, sum(s.per_case * d.c) as "cost" from plan.planned_unit_cost_pool s
                                join (select material_code, period, sum(cases) c from plan.demand_financialised where version_id = ? group by all) d using (material_code, period)
                                where s.version_id = ? and s.component in ('material', 'labour') and s.period in ({ph}) group by all""", version, version, *sched):
                     figs.setdefault((r["pool_code"], r["plant_code"]), {"cost": None, "per_case": None})["cost"] = r["cost"]

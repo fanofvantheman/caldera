@@ -72,7 +72,7 @@ def main() -> None:
           f"({len(later)} rate typed after it not carried; no month typed); labour over 12 periods; {cap} capital plan charges")
 
     # 2 · its rate: fixed overhead for the year ÷ cases for the year, absorbing nil over the year
-    std = q("select s.*, p.fiscal_year fy from plan.standard_cost s join dims.dim_period p using (period) where version_id in (?, ?)", B, V)
+    std = q("select s.*, p.fiscal_year fy from plan.planned_unit_cost s join dims.dim_period p using (period) where version_id in (?, ?)", B, V)
     ab = q("select * from plan.standard_absorption where version_id in (?, ?)", B, V)
     rate = {}
     for plant in ("ECH", "LOX"):
@@ -129,8 +129,8 @@ def main() -> None:
           f"volume moved {sum(a['volume_moved'] for a in held):,.0f}; the rest at its own rate, not split")
 
     # 6 · cost of goods valued on the business plan
-    bad = q("""select count(*) n from plan.finance_plan f join plan.standard_cost s using (version_id, material_code, period)
-               where f.version_id = ? and (abs(f.std_cost - s.std_cost) > 1e-9 or abs(f.cogs - f.cases * s.std_cost) > 1e-6)""", B)[0]["n"]
+    bad = q("""select count(*) n from plan.finance_plan f join plan.planned_unit_cost s using (version_id, material_code, period)
+               where f.version_id = ? and (abs(f.unit_cost - s.unit_cost) > 1e-9 or abs(f.cogs - f.cases * s.unit_cost) > 1e-6)""", B)[0]["n"]
     n = q("select count(*) n, sum(cogs) c from plan.finance_plan where version_id = ? and cogs is not null", B)[0]
     assert bad == 0 and n["n"] > 0, (bad, n)
     print(f"cost of goods   {B}: valued on {n['n']:,} cells, {n['c']:,.0f} — volume × its standard on every one")

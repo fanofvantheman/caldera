@@ -28,7 +28,7 @@ from chassis import CONFIG
 from chassis.warehouse import q
 from chassis.working import Copies, History
 
-from calc.finance import NEGLIGIBLE, Grid, aggregate, rules_from
+from calc.finance import NEGLIGIBLE, PER_CASE_KEYS, Grid, aggregate, cost_sql, rules_from
 
 COPIES = Copies()
 _BASE: dict[str, tuple[tuple, Grid]] = {}
@@ -75,11 +75,10 @@ def _pending_rows(landing, version: str) -> tuple[list[dict], dict[str, list]]:
 
 
 def standard_of(version: str) -> dict:
-    """The standard per case by material and period on a version, its sum and its four components — what the run's grid is made with."""
-    return {(r["version_id"], r["material_code"], r["period"]): {"std_cost": r["std_cost"], "std_material": r["material_cost"], "std_labour": r["labour_cost"],
-                                                                  "std_variable": r["variable_overhead"], "std_fixed": r["fixed_overhead"]}
-            for r in q("""select version_id, material_code, period, std_cost, material_cost, labour_cost, variable_overhead, fixed_overhead
-                          from plan.standard_cost where version_id = ? and complete""", version)}
+    """The figures per case by material and period on a version — the planned unit cost and its four, the standard and
+    each line against it — what the run's grid is made with (the same query, calc.finance.cost_sql)."""
+    return {(r["version_id"], r["material_code"], r["period"]): {k: r[k] for k in PER_CASE_KEYS}
+            for r in q(cost_sql("plan.planned_unit_cost", "plan.cost_variance", "and u.version_id = ?"), version)}
 
 
 def base(version: str, landing) -> tuple[tuple, Grid]:

@@ -1,5 +1,5 @@
 """Finance's plan at its grain — account × material × period: volume, price and revenue, with the demand plan beneath;
-cost of goods and margin from the standard cost per case by plant (plan.standard_cost).
+cost of goods and margin from the planned unit cost per case by plant (plan.planned_unit_cost).
 
 Fed cells start as the demand plan valued; built cells exist only where Finance has typed at the grain and have no
 source. Every figure in force is then replayed in the order it was typed: the cells it wrote when it was typed are put
@@ -17,20 +17,21 @@ from datetime import datetime
 import pandas as pd
 from sqlmesh import ExecutionContext, model
 
-from calc.finance import COLUMNS, Grid, rules_from
+from calc.finance import AGAINST, COLUMNS, PER_CASE_KEYS, STANDARD, Grid, cost_sql, rules_from
 
 TYPES = {"version_id": "TEXT", "account_code": "TEXT", "material_code": "TEXT", "period": "TEXT", "fiscal_year": "INT",
          "source": "TEXT", "source_cases": "DOUBLE", "source_net_sales": "DOUBLE", "source_price": "DOUBLE",
-         "cases": "DOUBLE", "price": "DOUBLE", "net_sales": "DOUBLE", "std_cost": "DOUBLE", "cogs": "DOUBLE", "margin": "DOUBLE",
-         "volume_edit_id": "TEXT", "price_edit_id": "TEXT", "std_material": "DOUBLE", "std_labour": "DOUBLE", "std_variable": "DOUBLE",
-         "std_fixed": "DOUBLE", "cogs_material": "DOUBLE", "cogs_labour": "DOUBLE", "cogs_variable": "DOUBLE", "cogs_fixed": "DOUBLE"}
+         "cases": "DOUBLE", "price": "DOUBLE", "net_sales": "DOUBLE", "unit_cost": "DOUBLE", "cogs": "DOUBLE", "margin": "DOUBLE",
+         "volume_edit_id": "TEXT", "price_edit_id": "TEXT", "uc_material": "DOUBLE", "uc_labour": "DOUBLE", "uc_variable": "DOUBLE",
+         "uc_fixed": "DOUBLE", "cogs_material": "DOUBLE", "cogs_labour": "DOUBLE", "cogs_variable": "DOUBLE", "cogs_fixed": "DOUBLE",
+         **{c: "DOUBLE" for kv in list(STANDARD.items()) + list(AGAINST.items()) for c in kv}}
 
 
 @model(
     "plan.finance_plan",
     kind="FULL",
     grain=["version_id", "account_code", "material_code", "period"],
-    depends_on=["plan.demand_financialised", "plan.standard_cost", "plan.finance_edit", "plan.finance_edit_cell", "plan.finance_source", "plan.ref_grid_measure",
+    depends_on=["plan.demand_financialised", "plan.planned_unit_cost", "plan.cost_variance", "plan.finance_edit", "plan.finance_edit_cell", "plan.finance_source", "plan.ref_grid_measure",
                 "dims.dim_customer_hierarchy", "dims.dim_material_hierarchy", "dims.dim_period", "dims.ctl_version"],
     columns={c: TYPES[c] for c in COLUMNS},
     description="Finance's plan: volume × price = revenue at account × material × period, fed by the demand plan or built by Finance.",
@@ -65,12 +66,11 @@ def execute(context: ExecutionContext, start: datetime, end: datetime, execution
     for typed, a, m, x in written.itertuples(index=False, name=None):
         on_record[typed].append((a, m, float(x)))
 
-    # the standard cost per case of each material in each period, from the standard by plant (DEC-20261115-04)
+    # the planned unit cost per case of each material in each period (DEC-20261115-04, DEC-20261116-02)
     # and its four components, each carried on the cell with its amount (DEC-20261115-04 point 4)
-    standard = {(v, m, p): {"std_cost": float(s), "std_material": float(a), "std_labour": float(b), "std_variable": float(c), "std_fixed": float(d)}
-                for v, m, p, s, a, b, c, d in context.fetchdf(
-        f"""select version_id, material_code, period, std_cost, material_cost, labour_cost, variable_overhead, fixed_overhead
-            from {T('plan.standard_cost')} where complete""").itertuples(index=False, name=None)}
+    # and the standard of the year with each line against it (DEC-20261116-02)
+    standard = {(r["version_id"], r["material_code"], r["period"]): {k: (None if pd.isna(r[k]) else float(r[k])) for k in PER_CASE_KEYS}
+                for r in context.fetchdf(cost_sql(T('plan.planned_unit_cost'), T('plan.cost_variance'))).to_dict("records")}
     grid = Grid(dict(accounts_under), dict(materials_under), source_of, fy_of, rules, actual_through, standard).from_source(demand.itertuples(index=False, name=None))
     grid.replay(edits.to_dict("records"), on_record)
     return pd.DataFrame(list(grid.cells.values()), columns=COLUMNS)

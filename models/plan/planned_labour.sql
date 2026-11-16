@@ -2,7 +2,7 @@
    hour × the loaded hourly rate of the plant's production halls' positions in the period (the labour model: wages and
    on-costs over paid hours). Read by the direct labour pool and, through the cases, by what indirect labour is left
    (DEC-20261115-04 point 2: direct or indirect is read from the route). */
-MODEL (name plan.standard_labour, kind FULL, grain (version_id, material_code, period));
+MODEL (name plan.planned_labour, kind FULL, grain (version_id, material_code, period));
 WITH versions AS (SELECT version_id, from_period, plan_through FROM dims.ctl_version WHERE version_kind <> 'actual' AND from_period IS NOT NULL),
 route AS (SELECT material_code, plant_code, line_code, rate_cases_per_hour FROM dims.ref_route WHERE is_primary),
 mats AS (SELECT DISTINCT d.version_id, d.material_code, d.period FROM plan.demand_financialised d JOIN versions v USING (version_id)

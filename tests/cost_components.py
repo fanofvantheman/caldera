@@ -39,7 +39,7 @@ from face import __main__ as M                        # noqa: E402
 from face import finance_live as FL                   # noqa: E402
 
 chassis.configure(root=BUILD, db="data/caldera.duckdb", receipts="data/receipts", landing="data/landing")
-STD = {"std_material": "material_cost", "std_labour": "labour_cost", "std_variable": "variable_overhead", "std_fixed": "fixed_overhead"}
+STD = {"uc_material": "material_cost", "uc_labour": "labour_cost", "uc_variable": "variable_overhead", "uc_fixed": "fixed_overhead"}
 
 
 def close(a, b, tol=1e-6) -> bool:
@@ -51,14 +51,14 @@ def main() -> None:
     BP = q("select version_id, fiscal_year from dims.ctl_version where version_kind = 'business_plan' and base_version is null order by named_on limit 1")[0]
 
     # 1 · on every cell
-    std = {(r["version_id"], r["material_code"], r["period"]): r for r in q("select * from plan.standard_cost where complete")}
-    cells = q("select * from plan.finance_plan where std_cost is not null")
+    std = {(r["version_id"], r["material_code"], r["period"]): r for r in q("select * from plan.planned_unit_cost where complete")}
+    cells = q("select * from plan.finance_plan where unit_cost is not null")
     for c in cells:
         s = std[(c["version_id"], c["material_code"], c["period"])]
         assert all(close(c[k], s[v], 1e-9) for k, v in STD.items()), c
         assert all(close(c[a], c["cases"] * c[k], 1e-9) for k, a in COMPONENTS.items()), c
-        assert close(sum(c[k] for k in COMPONENTS), c["std_cost"], 1e-9) and close(sum(c[a] for a in COMPONENTS.values()), c["cogs"], 1e-9), c
-    bare = q("select count(*) n from plan.finance_plan where std_cost is null and (std_material is not null or cogs_material is not null)")[0]["n"]
+        assert close(sum(c[k] for k in COMPONENTS), c["unit_cost"], 1e-9) and close(sum(c[a] for a in COMPONENTS.values()), c["cogs"], 1e-9), c
+    bare = q("select count(*) n from plan.finance_plan where unit_cost is null and (uc_material is not null or cogs_material is not null)")[0]["n"]
     assert bare == 0
     by_v = defaultdict(int)
     for c in cells:
@@ -83,18 +83,18 @@ def main() -> None:
         vol = sum(c["cases"] for c in cs)
         per = {k: aggregate(cs, k, rules) for k in COMPONENTS}
         assert all(close(per[k], sum(c[a] for c in cs) / vol) for k, a in COMPONENTS.items()), cat
-        assert close(sum(per.values()), aggregate(cs, "std_cost", rules)), cat
+        assert close(sum(per.values()), aggregate(cs, "unit_cost", rules)), cat
         shown.append(cat)
     allv = {k: aggregate(mine, k, rules) for k in COMPONENTS}
     print(f"register        each per case a ratio of its cost to volume; at {len(shown)} categories and the total the four read cost ÷ volume and sum to the standard "
-          f"({V}: material {allv['std_material']:.2f}, labour {allv['std_labour']:.2f}, variable {allv['std_variable']:.2f}, fixed {allv['std_fixed']:.2f} "
+          f"({V}: material {allv['uc_material']:.2f}, labour {allv['uc_labour']:.2f}, variable {allv['uc_variable']:.2f}, fixed {allv['uc_fixed']:.2f} "
           f"= {sum(allv.values()):.2f} a case)")
 
     # 3 · the fixed component in the business plan's year is the rate held from it
-    held = q("""select count(*) n from plan.finance_plan f join plan.standard_cost s using (version_id, material_code, period) join dims.dim_period p using (period)
-                where f.version_id = ? and p.fiscal_year = ? and s.fixed_held and s.denominator_version = ? and abs(f.std_fixed - s.fixed_overhead) < 1e-12""",
+    held = q("""select count(*) n from plan.finance_plan f join plan.planned_unit_cost s using (version_id, material_code, period) join dims.dim_period p using (period)
+                where f.version_id = ? and p.fiscal_year = ? and s.fixed_held and s.denominator_version = ? and abs(f.uc_fixed - s.fixed_overhead) < 1e-12""",
              V, BP["fiscal_year"], BP["version_id"])[0]["n"]
-    inyear = q("""select count(*) n from plan.finance_plan f join dims.dim_period p using (period) where f.version_id = ? and p.fiscal_year = ? and f.std_cost is not null""",
+    inyear = q("""select count(*) n from plan.finance_plan f join dims.dim_period p using (period) where f.version_id = ? and p.fiscal_year = ? and f.unit_cost is not null""",
                V, BP["fiscal_year"])[0]["n"]
     assert held == inyear > 0, (held, inyear)
     print(f"held            {V}: all {held:,} cells in FY{BP['fiscal_year']} carry the fixed overhead per case held from {BP['version_id']}")
@@ -103,7 +103,7 @@ def main() -> None:
     app = chassis_app.create_app(SHELL, session, roles, blueprints=[M.plan])
     with app.test_request_context():
         g = FL.base(V, M.FINANCE)[1].copy()
-        c0 = max((c for c in g.cells.values() if c["version_id"] == V and c["std_cost"] is not None and c["source"] == "fed"), key=lambda c: c["cases"] or 0)
+        c0 = max((c for c in g.cells.values() if c["version_id"] == V and c["unit_cost"] is not None and c["source"] == "fed"), key=lambda c: c["cases"] or 0)
         key = (c0["version_id"], c0["account_code"], c0["material_code"], c0["period"])
         g.put(key, "volume", round(c0["cases"] * 1.5), "T-1")                # a volume at the grain, as Finance types it
         c1 = g.cells[key]
@@ -120,7 +120,7 @@ def main() -> None:
     entry = re.search(r'<a href="([^"]*)"[^>]*>Cost of goods</a>', side).group(1).replace("&amp;", "&")
     h = c.get(entry).data.decode()
     tabs = re.findall(r'<nav class="tabs">(.*?)</nav>', h, re.S)[0]
-    assert re.findall(r'>([^<]+)</a>', tabs) == ["Cost per case", "Cost of goods", "Margin"] and re.findall(r'class="active">([^<]+)', tabs) == ["Cost per case"], tabs
+    assert re.findall(r'>([^<]+)</a>', tabs) == ["Cost per case", "Cost of goods", "Margin", "Against standard"] and re.findall(r'class="active">([^<]+)', tabs) == ["Cost per case"], tabs
     body = h.split("<main", 1)[-1]
     top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', body, re.S).group(1)
     assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in M.PER_CASE], top[:300]
@@ -130,7 +130,7 @@ def main() -> None:
     for ep in ("plan.standard", "plan.assumptions", "plan.headcount_role", "plan.entitlements", "plan.schedule"):
         with app.test_request_context():
             assert f'href="{url_for(ep)}' in body.split('id="fin-tiles"')[1].split('class="toolbar"')[0], ep
-    lab = c.get(f"/revenue?version={V}&measure=std_cost&part=std_labour").data.decode().split("<main", 1)[-1]
+    lab = c.get(f"/revenue?version={V}&measure=unit_cost&part=uc_labour").data.decode().split("<main", 1)[-1]
     rows_lab = re.findall(r'<tbody id="fin-r-(?!ALL)[^"]+">(.*?)</tbody>', lab, re.S)
     assert rows_lab and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["labour / case"] for b in rows_lab)
     # the year: the plan periods' cost per case weighted by their cases; actual periods hold none
@@ -138,7 +138,7 @@ def main() -> None:
         g = FL.base(V, M.FINANCE)[1]
         vp = M.reads.version_periods(V)
         plan_in_fy = [p["period"] for p in vp["periods"] if not p["actual"] and p["fiscal_year"] == vp["fy"]]
-        costed = [g.cells[k] for p in plan_in_fy for k in g.by_period.get((V, p), ()) if g.cells[k]["std_cost"] is not None]
+        costed = [g.cells[k] for p in plan_in_fy for k in g.by_period.get((V, p), ()) if g.cells[k]["unit_cost"] is not None]
         want = sum(x["cogs"] for x in costed) / sum(x["cases"] for x in costed)
     cells = re.findall(r'<td class="n ([^"]*)"[^>]*>([^<]*)', top.split("</tr>")[0])
     year = next(v for k, v in cells if "tot" in k)
@@ -149,11 +149,11 @@ def main() -> None:
           f"the year {year} = the plan periods weighted by cases, {len(vp['actual'])} actual periods empty; no reading of money offered")
     h = c.get(f"/revenue?version={V}&measure=cogs").data.decode()
     top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', h, re.S).group(1)
-    assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in ("volume", "std_cost", "cogs")], top[:300]
+    assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in ("volume", "unit_cost", "cogs")], top[:300]
     assert "Finance plan" in h and "Cost of a case" in h
     m = c.get(f"/revenue?version={V}&measure=margin").data.decode()
     assert "Margin" in m and "Waits for" not in m and "Cost of a case" in m
-    b = c.get(f"/revenue?version={BP['version_id']}&measure=std_cost").data.decode()
+    b = c.get(f"/revenue?version={BP['version_id']}&measure=unit_cost").data.decode()
     assert "fixed overhead / case" in b and "Waits for" not in b
     print("tabs            Cost of goods shows cases, cost per case and cost of goods; Margin valued; both carry the per-case tiles; "
           f"Cost per case the same on {BP['version_id']}")

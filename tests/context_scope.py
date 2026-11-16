@@ -66,7 +66,7 @@ def main() -> None:
     _, sel, _ = block(c.get("/schedule?" + link.group(1).replace("&amp;", "&").split("?", 1)[1]).data.decode())
     assert sel.get("cc") == "CC_SALES", sel
     sizes = {}
-    for u in ("/", "/schedule", "/demand", "/costs/mapping", "/standard", "/revenue?measure=std_cost", "/versions", "/capex"):
+    for u in ("/", "/schedule", "/demand", "/costs/mapping", "/standard", "/revenue?measure=unit_cost", "/versions", "/capex"):
         f = re.search(r'<form class="context".*?</form>', c.get(u).data.decode(), re.S)
         assert f, f"{u} draws no context block"
         sizes[u] = (len(re.findall(r'class="ctx-slot"', f.group(0))), len(block(f.group(0))[0]))
