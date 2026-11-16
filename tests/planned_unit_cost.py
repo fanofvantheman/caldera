@@ -52,11 +52,16 @@ def main() -> None:
     cc_plant = {(r["entity_code"], r["cost_centre_code"]): r for r in q("select * from plan.ref_cost_centre_plant")}
     sched = q("select * from plan.opex_schedule where version_id = ?", V)
     weeks = {r["period"]: r["weeks_in_period"] for r in q("select period, weeks_in_period from dims.dim_period")}
+    # a key raw material is valued at its stock's weighted-average cost in the period (DEC-20261116-04), the rest at the price in force
+    stock = {(r["input_code"], r["plant_code"], r["period"]): (r["consumption_value"] / r["consumption_quantity"] if r["consumption_quantity"] else r["average_cost"])
+             for r in q("select * from plan.material_stock where version_id = ?", V)}
     for s in sample:
         m, plant = s["material_code"], route[s["material_code"]]["plant_code"]
-        # material: the bill × prices in force, the utility left out
+        # material: the bill × usage × the stock's average cost or the price in force, the utility left out
         bom = q("select * from dims.ref_bom where parent_material = ? and plant_code = ?", m, plant)
-        mat = sum(b["quantity_per_case"] * price[b["component_material"]]["price"] * idx.get((price[b["component_material"]]["index_code"], s["period"]), 100) / 100
+        usage = idx.get((f"USAGE_{plant}", s["period"]), 100) / 100
+        mat = sum(b["quantity_per_case"] * usage * stock.get((b["component_material"], plant, s["period"]),
+                  price[b["component_material"]]["price"] * idx.get((price[b["component_material"]]["index_code"], s["period"]), 100) / 100)
                   for b in bom if kind.get(b["component_material"]) != "utility" and b["component_material"] in price)
         assert close(s["material_cost"], mat), (m, s["material_cost"], mat)
         # labour: crew ÷ cases an hour × the production halls' loaded rate

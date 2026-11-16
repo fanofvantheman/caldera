@@ -20,4 +20,13 @@ SELECT * FROM (VALUES
    'the standard cost of the input materials linked to the index', FALSE),
   ('SUGAR_IDX',    'standard: sugar', 'Standard by plant', 'plan.rung', 'standard',
    'the standard cost of the input materials linked to the index', FALSE)
+,
+  ('USAGE_ECH',    'planned unit cost: usage', 'Material purchases', 'plan.material_purchases', NULL,
+   'the quantity of each input a case at Echuca consumes = the bill × usage ÷ 100; and the purchase plan''s requirement', TRUE),
+  ('USAGE_LOX',    'planned unit cost: usage', 'Material purchases', 'plan.material_purchases', NULL,
+   'the quantity of each input a case at Loxton consumes = the bill × usage ÷ 100; and the purchase plan''s requirement', TRUE),
+  ('EFFICIENCY_ECH', 'planned unit cost: efficiency', 'Cost of goods', 'plan.revenue', NULL,
+   'the crew hours of a case at Echuca = the route''s hours ÷ (efficiency ÷ 100)', TRUE),
+  ('EFFICIENCY_LOX', 'planned unit cost: efficiency', 'Cost of goods', 'plan.revenue', NULL,
+   'the crew hours of a case at Loxton = the route''s hours ÷ (efficiency ÷ 100)', TRUE)
 ) AS t(assumption_code, reader, page_label, page, page_slug, how, built)

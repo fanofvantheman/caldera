@@ -119,6 +119,7 @@ def main() -> None:
     tables.update(costs.capex_reference())              # the asset classes and the fixed-asset register as loaded
     tables.update(costs.standard_inputs(INPUT_MATERIALS))   # each input's price and index; each line's crew
     plan["reg_capex"] = costs.capex_items(PLAN_FY, LATEST_CLOSED)      # the capital plan's items on each version; draws nothing
+    plan["reg_purchase_act"] = costs.purchase_acts()                    # the buyer's acts on the purchase plan; draws nothing
     plan["reg_cost_pool_rule"] = costs.pool_rules()                     # the map onto the cost pools, as set up; draws nothing
     history["cost_actual"] += costs.capex_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, plan["reg_capex"])   # draws nothing
     tables.update(loads.structure_loads(tables))        # the load before, and one member the client has not finished; draws nothing

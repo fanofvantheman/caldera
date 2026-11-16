@@ -225,6 +225,13 @@ def schedule_edits(version: str, actuals: list[dict], window: list[str]) -> list
 # ---- labour: two models (DEC-20261113-02) — by role in the factory cost centres, by name in the overhead ones ----------
 # each entity's agreement: classification → (name, hourly rate before the increase); the increase from the period that
 # holds 1 January 2027. Riverbend kept its own agreement, about 3% below Caldera's.
+def purchase_acts() -> list[dict]:
+    """What the buyer typed over the purchase plan: one spot price quoted for the 120 g cup at Loxton. Draws nothing."""
+    return [{"act_id": "PUR-0001", "action": "set", "withdraws": "", "version_id": "LV-2027P04", "input_code": "CUP_120", "plant_code": "LOX",
+             "period": "2027P06", "quantity": "", "price": 0.064, "reason": "quoted by the importer for the October shipment",
+             "entered_by": "supply.planner@caldera", "entered_at": "2026-11-09T10:30:00"}]
+
+
 POOL_RULE_COLUMNS = ["act_id", "action", "entity_code", "cost_centre_code", "account_code", "pool_code", "set_by", "set_at", "reason"]
 _HALL_CCS = ["CC_E_FRUIT", "CC_E_TOM", "CC_E_BEANS", "CC_E_SPRD", "CC_L_PROD"]
 _NOT_IN_COGS = ["CC_LOG", "CC_PROC", "CC_PLAN", "CC_SALES", "CC_MKT", "CC_TM", "CC_FIN", "CC_HR", "CC_IT", "CC_EXEC"]

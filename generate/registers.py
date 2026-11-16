@@ -247,6 +247,10 @@ def assumptions() -> list[dict]:
         "TINPLATE_IDX":("Tinplate price index (FY2027P01 = 100)", "index", 100.0),
         "RESIN_IDX":   ("PP resin price index (FY2027P01 = 100)", "index", 100.0),
         "SUGAR_IDX":   ("Sugar price index (FY2027P01 = 100)", "index", 100.0),
+        "USAGE_ECH":   ("Expected usage at Echuca, % of the bill", "index", 100.0),
+        "USAGE_LOX":   ("Expected usage at Loxton, % of the bill", "index", 100.0),
+        "EFFICIENCY_ECH": ("Expected efficiency at Echuca, % of the route's rate achieved", "index", 100.0),
+        "EFFICIENCY_LOX": ("Expected efficiency at Loxton, % of the route's rate achieved", "index", 100.0),
         "RETURNS_RATE":("Returns and ullage, share of invoice value (history rate)", "pct", 0.004),
         "CLAIMS_RATE": ("Shortage and damage claims, share of invoice value (history rate)", "pct", 0.003),
     }

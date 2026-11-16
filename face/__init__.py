@@ -69,6 +69,9 @@ PROCESSES = [
             Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"], uses=("version",)),
         ]),
         Area("supply", "Supply", [
+            # the key raw materials: requirement, purchases by source, stock at a weighted average (DEC-20261116-04)
+            Section("purchases", "Material purchases", "plan.material_purchases", uses=("version", "location"),
+                    verbs=["register.supply_plan.maintain", "register.supplier_price_list.maintain", "delta.supply.enter", "read.plan", "read.proof", *FIN_READ]),
             Section("supply", "Supply plan", RUNG, {"slug": "supply"}, verbs=["delta.supply.enter", "register.supply_plan.maintain", "policy.production.accept", "read.proof"]),
             Section("capacity", "Capacity", RUNG, {"slug": "capacity"}, verbs=["register.capacity.machine.maintain", "register.capacity.labour.maintain", "register.capacity.storage.maintain", "register.capacity.logistics.maintain", "schedule.line.enter", "headcount.enter"]),
             Section("inventory", "Inventory", RUNG, {"slug": "inventory"}, verbs=["register.service_level.maintain", "register.sourcing.maintain", "delta.supply.enter", "read.proof"]),
@@ -122,6 +125,8 @@ PROCESSES = [
             # the standard: a unit cost in four components, each read from the model that holds it (DEC-20261115-04)
             Section("standard", "Standard by plant", "plan.standard", uses=("version", "fy", "location", "material"),
                     verbs=["standard.derive", "standard.declare", "register.cost_input.maintain", *FIN_READ]),
+            # the purchase plan's stock, read as given: Finance does not plan purchases (DEC-20261116-04 points 5, 7)
+            Section("material_stock", "Material stock", "plan.material_stock", uses=("version", "location"), verbs=[*FIN_READ, "register.cost_input.maintain"]),
             Section("landed", "Landed cost", RUNG, {"slug": "landed"}, verbs=["register.supplier_price_list.maintain", "register.freight_contract.maintain", "register.hedge_book.maintain", "register.customs.maintain"]),
         ]),
         # the cost side: the entities' ledgers read through the plan's own cost centres (DEC-20261113-03)

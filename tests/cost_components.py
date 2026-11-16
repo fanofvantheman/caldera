@@ -123,7 +123,7 @@ def main() -> None:
     assert re.findall(r'>([^<]+)</a>', tabs) == ["Cost per case", "Cost of goods", "Margin", "Against standard"] and re.findall(r'class="active">([^<]+)', tabs) == ["Cost per case"], tabs
     body = h.split("<main", 1)[-1]
     top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', body, re.S).group(1)
-    assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in M.PER_CASE], top[:300]
+    assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in M.FIN_TABS["unit_cost"]], top[:300]
     beneath = re.findall(r'<tbody id="fin-r-(?!ALL)[^"]+">(.*?)</tbody>', body, re.S)
     assert beneath and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["cost / case"] for b in beneath)
     assert "Finance plan" not in body.split('class="finwrap"')[0].split('class="toolbar"')[1] and "the rows beneath show" in body

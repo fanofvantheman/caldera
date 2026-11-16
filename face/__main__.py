@@ -34,6 +34,7 @@ from . import workflow
 from . import views
 from . import standard
 from . import pools
+from . import purchases
 from . import assumptions
 from . import versions as versions_page
 from . import strategic
@@ -2721,6 +2722,7 @@ workflow.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCO
 views.register(plan, _page, _who, _ctx, _busy, session, roles)
 standard.register(plan, _page, _who, _ctx, _busy)
 pools.register(plan, _page, _who, _ctx, _busy, session, roles)
+purchases.register(plan, _page, _who, _ctx, _busy, session, roles)
 
 
 def main() -> None:
