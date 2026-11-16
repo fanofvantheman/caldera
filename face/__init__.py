@@ -111,7 +111,9 @@ PROCESSES = [
         ]),
         Area("cogs", "Cost of goods", [
             # the same page and working copy as Revenue's tabs: a volume typed there shows here
-            Section("cogs", "Cost of goods", "plan.revenue", {"measure": "cogs"}, uses=CONTEXT_ALL, tabs=[
+            # it opens on the cost of a case; the money is the line it makes, as revenue is of volume and price (DEC-20261116-01)
+            Section("cogs", "Cost of goods", "plan.revenue", {"measure": "std_cost"}, uses=CONTEXT_ALL, tabs=[
+                Tab("fin_std_cost", "Cost per case", "plan.revenue", {"measure": "std_cost"}, verbs=FIN_READ),
                 Tab("fin_cogs", "Cost of goods", "plan.revenue", {"measure": "cogs"}, verbs=FIN_READ),
                 Tab("fin_margin", "Margin", "plan.revenue", {"measure": "margin"}, verbs=FIN_READ)]),
             # the standard: a unit cost in four components, each read from the model that holds it (DEC-20261115-04)

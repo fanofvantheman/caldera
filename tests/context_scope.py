@@ -3,7 +3,9 @@
     uv run python -m tests.context_scope        # from build/, with the warehouse built; writes nothing
 
 1. The context block shows the selections the screen applies and only those; a value the address holds for one it does
-   not apply is carried, so the next screen that applies it opens on it.
+   not apply is carried, so the next screen that applies it opens on it. The block is one size on every screen — as many
+   slots as the most any screen applies, the screen's own selections first and the rest empty — so the navigation
+   beneath it never moves (caldera ambiguity #59).
 2. A person whose assignments reach one cost centre lands in it, with nothing else offered.
 3. The opex schedule at a node above a cost centre is that node's total by account, read only, and each total is the sum
    of the plan's cells beneath it; at a cost centre the lines are typed, and only that cost centre's.
@@ -40,7 +42,7 @@ def block(html: str) -> tuple[list[str], dict, dict]:
     if not form:
         return [], {}, {}
     f = form.group(0)
-    shown = re.findall(r'<label><span>(.*?)</span><select name="(\w+)"', f)
+    shown = re.findall(r'<label[^>]*><span>(.*?)</span><select name="(\w+)"', f)
     sel = {k: (re.search(rf'<select name="{k}">.*?<option value="([^"]*)" selected', f, re.S) or [None, None])[1] for _, k in shown}
     return [k for _, k in shown], sel, dict(re.findall(r'type="hidden" name="(\w+)" value="([^"]*)"', f))
 
@@ -63,6 +65,14 @@ def main() -> None:
     assert link and "cc=CC_SALES" in link.group(1), "a link from the demand plan does not carry the cost centre"
     _, sel, _ = block(c.get("/schedule?" + link.group(1).replace("&amp;", "&").split("?", 1)[1]).data.decode())
     assert sel.get("cc") == "CC_SALES", sel
+    sizes = {}
+    for u in ("/", "/schedule", "/demand", "/costs/mapping", "/standard", "/revenue?measure=std_cost", "/versions", "/capex"):
+        f = re.search(r'<form class="context".*?</form>', c.get(u).data.decode(), re.S)
+        assert f, f"{u} draws no context block"
+        sizes[u] = (len(re.findall(r'class="ctx-slot"', f.group(0))), len(block(f.group(0))[0]))
+    most = max(len(set(s.uses_of(k)) & set(SHELL.context_keys())) for p in SHELL.processes for a in p.areas for s in a.sections for k in [s.key] + [t.key for t in s.tabs])
+    assert {n for n, _ in sizes.values()} == {most}, sizes
+    print(f"one size        {most} slots on every screen, filled {', '.join(f'{u} {k}' for u, (_, k) in sizes.items())}")
     print("block           the schedule shows version, year, entity, cost centre; the demand plan version, customer, material, carrying the "
           "cost centre unseen, and the schedule opens on it from there; the mapping review shows none")
 
@@ -112,7 +122,7 @@ def main() -> None:
     products = {r["p"] for r in q("select distinct product_code p from dims.dim_material where category_code = ?", cat)}
     shown = set(re.findall(r'<tbody id="fin-r-([^"]+)"', html))
     mats = shown - products - {cat}
-    assert products & shown and mats and 'padding-left:1.4rem' in html, (len(shown), len(products))
+    assert products & shown and mats and 'class="node d2' in html, (len(shown), len(products))
     print(f"revenue         {cat}: {len(products & shown)} products, each followed by its materials ({len(mats)} rows beneath them)")
 
 

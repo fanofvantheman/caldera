@@ -9,11 +9,16 @@ in-memory copy of the grid and the routes.
    category — and the four read at a node still sum to the standard there.
 3. In the business plan's year the fixed component is the rate held from it.
 4. A volume typed moves the four costs with cost of goods (a copy of the grid, nothing saved).
-5. The Cost of goods tab shows the four and their sum per case; the Margin tab is valued.
+5. The entry opens on Cost per case (DEC-20261116-01): the node in context carries the cost of a case and its four
+   components, each row beneath one line — the component chosen beside the grid; the tiles are per case, each component
+   opening the model that holds it; the year is the plan periods' cost per case weighted by their cases, the actual
+   periods empty; the reading of money is not offered there. Cost of goods shows cases, cost per case and cost of goods,
+   with the same year figure; Margin is valued.
 """
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -24,6 +29,7 @@ if os.environ.get("FACE_ROOT"):
     sys.path.insert(0, os.environ["FACE_ROOT"])
 
 import chassis                                        # noqa: E402
+from flask import url_for                             # noqa: E402
 from chassis import app as chassis_app                # noqa: E402
 from chassis.warehouse import q                       # noqa: E402
 
@@ -109,16 +115,48 @@ def main() -> None:
     # 5 · the tabs
     c = app.test_client()
     session.become("finance.manager@caldera")
-    h = c.get(f"/revenue?version={V}&measure=cogs").data.decode()
+    rules = FL.rules()
+    side = c.get(f"/revenue?version={V}").data.decode().split("</aside>")[0]
+    entry = re.search(r'<a href="([^"]*)"[^>]*>Cost of goods</a>', side).group(1).replace("&amp;", "&")
+    h = c.get(entry).data.decode()
+    tabs = re.findall(r'<nav class="tabs">(.*?)</nav>', h, re.S)[0]
+    assert re.findall(r'>([^<]+)</a>', tabs) == ["Cost per case", "Cost of goods", "Margin"] and re.findall(r'class="active">([^<]+)', tabs) == ["Cost per case"], tabs
     body = h.split("<main", 1)[-1]
-    at = [body.find(w) for w in ("Material per case", "Labour per case", "Variable overhead per case", "Fixed overhead per case", "Standard cost", "Cost of goods")]
-    assert all(i > 0 for i in at) and at[:5] == sorted(at[:5]), at
+    top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', body, re.S).group(1)
+    assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in M.PER_CASE], top[:300]
+    beneath = re.findall(r'<tbody id="fin-r-(?!ALL)[^"]+">(.*?)</tbody>', body, re.S)
+    assert beneath and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["cost / case"] for b in beneath)
+    assert "Finance plan" not in body.split('class="finwrap"')[0].split('class="toolbar"')[1] and "the rows beneath show" in body
+    for ep in ("plan.standard", "plan.assumptions", "plan.headcount_role", "plan.entitlements", "plan.schedule"):
+        with app.test_request_context():
+            assert f'href="{url_for(ep)}' in body.split('id="fin-tiles"')[1].split('class="toolbar"')[0], ep
+    lab = c.get(f"/revenue?version={V}&measure=std_cost&part=std_labour").data.decode().split("<main", 1)[-1]
+    rows_lab = re.findall(r'<tbody id="fin-r-(?!ALL)[^"]+">(.*?)</tbody>', lab, re.S)
+    assert rows_lab and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["labour / case"] for b in rows_lab)
+    # the year: the plan periods' cost per case weighted by their cases; actual periods hold none
+    with app.test_request_context():
+        g = FL.base(V, M.FINANCE)[1]
+        vp = M.reads.version_periods(V)
+        plan_in_fy = [p["period"] for p in vp["periods"] if not p["actual"] and p["fiscal_year"] == vp["fy"]]
+        costed = [g.cells[k] for p in plan_in_fy for k in g.by_period.get((V, p), ()) if g.cells[k]["std_cost"] is not None]
+        want = sum(x["cogs"] for x in costed) / sum(x["cases"] for x in costed)
+    cells = re.findall(r'<td class="n ([^"]*)"[^>]*>([^<]*)', top.split("</tr>")[0])
+    year = next(v for k, v in cells if "tot" in k)
+    assert vp["actual"] and all(v == "" for k, v in cells if "actual" in k) and year == f"{want:,.2f}", (year, want)
+    tile = re.search(r'Cost of a case · FY\d+[^<]*</span><b>([^<]+)</b>', body).group(1)
+    assert tile == year, (tile, year)
+    print(f"cost per case   opens first; {len(beneath)} rows beneath, one line each (labour when chosen); tiles per case, each component opening its model; "
+          f"the year {year} = the plan periods weighted by cases, {len(vp['actual'])} actual periods empty; no reading of money offered")
+    h = c.get(f"/revenue?version={V}&measure=cogs").data.decode()
+    top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', h, re.S).group(1)
+    assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in ("volume", "std_cost", "cogs")], top[:300]
+    assert "Finance plan" in h and "Cost of a case" in h
     m = c.get(f"/revenue?version={V}&measure=margin").data.decode()
-    assert "Margin" in m and "Waits for" not in m
-    b = c.get(f"/revenue?version={BP['version_id']}&measure=cogs").data.decode()
-    assert "Fixed overhead per case" in b and "Waits for" not in b
-    print("tabs            Cost of goods shows material, labour, variable and fixed overhead per case, then the standard and cost of goods; Margin valued; "
-          f"the same on {BP['version_id']}")
+    assert "Margin" in m and "Waits for" not in m and "Cost of a case" in m
+    b = c.get(f"/revenue?version={BP['version_id']}&measure=std_cost").data.decode()
+    assert "fixed overhead / case" in b and "Waits for" not in b
+    print("tabs            Cost of goods shows cases, cost per case and cost of goods; Margin valued; both carry the per-case tiles; "
+          f"Cost per case the same on {BP['version_id']}")
 
 
 if __name__ == "__main__":
