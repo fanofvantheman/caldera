@@ -167,6 +167,10 @@ PROCESSES = [
                 Tab("cc_entities", "Entities and ledgers", "plan.cost_entities", verbs=COST_READ, uses=("entity",)),
                 Tab("cc_actuals", "Actuals", "plan.cost_actuals", verbs=COST_READ),
                 Tab("cc_mapping", "Mapping review", "plan.cost_mapping", verbs=["register.cost_centre_map.maintain", "read.proof"], uses=())]),
+            # the cost pools a case's cost is made of, and the map of cost centre × account onto them (DEC-20261116-03)
+            Section("costpools", "Cost pools", "plan.cost_pools", uses=("version",), tabs=[
+                Tab("pools_set", "Pools", "plan.cost_pools", verbs=COST_READ + FIN_READ),
+                Tab("pools_map", "The map", "plan.cost_pool_map", verbs=COST_READ + FIN_READ)]),
             # the one set every plan is valued with — everyone who plans reads it; Finance amends it (DEC-20261113-10)
             Section("assumptions", "Assumptions", "plan.assumptions", uses=("version", "fy"), verbs=sorted(set(READ + FIN_READ + COST_READ))),
         ]),
@@ -238,7 +242,7 @@ MAP_NODES = [
     Node("versions", "plan", "Versions", "open or closed, the reference", "plan.versions"),
     Node("rates", "plan", "Prices and terms", "lists and terms in force", "plan.terms"),
     Node("assumptions", "plan", "Assumptions", "one set by period; what reads each", "plan.assumptions"),
-    Node("costcentres", "plan", "Cost centres", "ours over each entity's own", "plan.cost_centres", surfaces=["plan.worklist_cost_centre_unmapped"]),
+    Node("costcentres", "plan", "Cost centres", "ours over each entity's own", "plan.cost_centres", surfaces=["plan.worklist_cost_centre_unmapped", "plan.worklist_cost_pool_unmapped"]),
     Node("stack", "made", "The demand plan", "every layer, by version", "plan.demand", surfaces=["plan.worklist_stack_negative"]),
     Node("supply", "made", "Supply plan", "stock, lines and purchases", "plan.rung", {"slug": "supply"}, built=False),
     Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),

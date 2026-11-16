@@ -225,6 +225,28 @@ def schedule_edits(version: str, actuals: list[dict], window: list[str]) -> list
 # ---- labour: two models (DEC-20261113-02) — by role in the factory cost centres, by name in the overhead ones ----------
 # each entity's agreement: classification → (name, hourly rate before the increase); the increase from the period that
 # holds 1 January 2027. Riverbend kept its own agreement, about 3% below Caldera's.
+POOL_RULE_COLUMNS = ["act_id", "action", "entity_code", "cost_centre_code", "account_code", "pool_code", "set_by", "set_at", "reason"]
+_HALL_CCS = ["CC_E_FRUIT", "CC_E_TOM", "CC_E_BEANS", "CC_E_SPRD", "CC_L_PROD"]
+_NOT_IN_COGS = ["CC_LOG", "CC_PROC", "CC_PLAN", "CC_SALES", "CC_MKT", "CC_TM", "CC_FIN", "CC_HR", "CC_IT", "CC_EXEC"]
+_BY_ACCOUNT = {"6100": "INDIRECT_LABOUR", "6150": "INDIRECT_LABOUR", "6200": "SITE_ENERGY", "6210": "PROCESS_ENERGY", "6300": "MAINTENANCE",
+               "6400": "MAINTENANCE", "6600": "VAR_HANDLING", "6700": "DEPN_LEASES", "6720": "SITE_ENERGY", "6750": "DEPN_LEASES"}
+
+
+def pool_rules() -> list[dict]:
+    """The map of the plan's cost centre × account onto the cost pools, as Finance set it up: each rule an act, the
+    latest per key standing. Distribution, selling and administration are not in cost of goods; quality is its own pool;
+    by account where the account says enough; in a production hall electricity and consumables are driven by the cases
+    made there. Draws nothing."""
+    rows = [("", cc, "", "NOT_COGS", "below gross margin") for cc in _NOT_IN_COGS]
+    rows += [("", "CC_QA", "", "QUALITY", "quality and technical, whatever the account")]
+    rows += [("", "", acct, pool, "by account") for acct, pool in _BY_ACCOUNT.items()]
+    rows += [("", cc, "6200", "PROCESS_ENERGY", "a production hall's power runs with its lines") for cc in _HALL_CCS]
+    rows += [("", cc, "6400", "CONSUMABLES", "a production hall's consumables run with its lines") for cc in _HALL_CCS]
+    return [{"act_id": f"POOL-{i:03d}", "action": "set", "entity_code": e, "cost_centre_code": cc, "account_code": a, "pool_code": pool,
+             "set_by": "finance.manager@caldera", "set_at": "2026-07-01T09:00:00", "reason": why}
+            for i, (e, cc, a, pool, why) in enumerate(rows, start=1)]
+
+
 AGREEMENTS = {"CF": ("CFPA-2025", "Caldera Food Processing Agreement 2025", 1.00), "RBF": ("RBF-2024", "Riverbend Fruit Agreement 2024", 0.97)}
 CLASSIFICATIONS = [
     ("PO1", "Process operator grade 1", 34.50), ("PO2", "Process operator grade 2", 37.00), ("PO3", "Leading hand", 40.50),

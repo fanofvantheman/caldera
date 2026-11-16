@@ -1,5 +1,5 @@
 /* Under- or over-absorption, a line of its own (DEC-20261115-04 point 3, DEC-20261115-06 point 3): each plant's fixed
-   overhead in a planned period against what the standard absorbs on the version's cases there — the period's fixed
+   overhead (its fixed pools, DEC-20261116-03) in a planned period against what the standard absorbs on the version's cases there — the period's fixed
    overhead per case × cases. Positive is under-absorbed: fixed cost the cases do not carry. Never folded into the unit
    cost.
    Where the rate is held from the business plan of the period's year, the amount splits in two (caldera #48):
@@ -8,10 +8,9 @@
    They sum to the amount not absorbed. On the business plan itself cost moved is nil. A period whose rate is the plan's
    own (no business plan for its year) is not split. */
 MODEL (name plan.standard_absorption, kind FULL, grain (version_id, plant_code, period));
-WITH fixed AS (
-  SELECT s.version_id, c.plant_code, s.period, SUM(s.amount) AS fixed_lines
-  FROM plan.opex_schedule s JOIN plan.ref_cost_centre_plant c ON c.entity_code = s.entity_code AND c.cost_centre_code = s.cost_centre_code
-  WHERE s.driver <> 'cases_made_' || LOWER(c.plant_code) GROUP BY ALL
+WITH fixed AS (                                      -- the fixed pools' lines at the plant, as the map declares them
+  SELECT version_id, plant_code, period, SUM(lines_amount) AS fixed_lines
+  FROM plan.cost_pool_rate WHERE component = 'fixed_overhead' GROUP BY ALL
 ),
 absorbed AS (
   SELECT d.version_id, s.plant_code, d.period, SUM(d.cases) AS cases, SUM(d.cases * s.fixed_overhead) AS absorbed, SUM(d.cases * s.labour_cost) AS direct_labour,
