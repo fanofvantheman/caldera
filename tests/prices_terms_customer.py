@@ -5,7 +5,7 @@
 1. Both tabs offer the customer selection in the context block.
 2. All customers: every account's terms and every price list. One account: only its terms and the lists it is on.
    A unit: the accounts beneath it.
-3. The amendment forms are offered only for the terms shown.
+3. Terms is one table, the account in the rows; its one amendment form offers only the instruments shown.
 """
 from __future__ import annotations
 
@@ -29,6 +29,15 @@ chassis.configure(root=BUILD, db="data/caldera.duckdb", receipts="data/receipts"
 FINANCE = "finance.manager@caldera"
 
 
+def accounts_in(html: str) -> set[str]:
+    return set(re.findall(r'data-account="([^"]+)"', html))
+
+
+def offered(html: str) -> int:
+    form = re.search(r'action="/terms/amend.*?</form>', html, re.S)
+    return len(re.findall(r'<option value="[^"|]+\|', form.group(0))) if form else 0
+
+
 def heads(html: str) -> list[str]:
     return re.findall(r"<h2>([^<]+)<span", html)
 
@@ -46,8 +55,10 @@ def main() -> None:
     assert len(accounts) > 1 and len(lists) > 1
     acct = accounts[0]
     t1 = c.get(f"/terms?customer={acct}").data.decode()
-    assert len(re.findall(r'<h2>[^<]+<span class="count">' + acct, t1)) == 1, "terms at one account"
-    assert len(re.findall(r'action="/terms/amend', t1)) < len(re.findall(r'action="/terms/amend', terms_all))
+    assert accounts_in(terms_all) == set(accounts), "all customers: every account's terms in the one table"
+    assert terms_all.count("<table") - terms_all.count('id="envelopes"') >= 1 and not re.search(r'<h2>[^<]+<span class="count">' + acct, terms_all), "a table per account"
+    assert accounts_in(t1) == {acct}, "terms at one account"
+    assert len(re.findall(r'action="/terms/amend', t1)) == 1 and 0 < offered(t1) < offered(terms_all), "the one form offers the instruments shown"
     p1 = c.get(f"/price_lists?customer={acct}").data.decode()
     mine = [pl["price_list"] for pl in lists if any(a["account_code"] == acct for a in pl["accounts"])]
     shown = [h for h in heads(p1) if h in {pl["price_list"] for pl in lists}]
@@ -55,7 +66,7 @@ def main() -> None:
     unit = reads.unit_of_account(acct)
     under = reads.accounts_under(unit)
     tu = c.get(f"/terms?customer={unit}").data.decode()
-    assert {a for a in accounts if re.search(r'class="count">' + a, tu)} == under & set(accounts), "terms at a unit"
+    assert accounts_in(tu) == under & set(accounts), "terms at a unit"
     print(f"{acct}: its terms only and {len(mine)} of {len(lists)} price lists; unit {unit}: {len(under)} accounts; all customers: {len(accounts)} accounts, {len(lists)} lists")
 
 

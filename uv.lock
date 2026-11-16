@@ -81,7 +81,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "chassis", path = "99_core_clones/chassis-0.18.0-py3-none-any.whl" },
+    { name = "chassis", path = "99_core_clones/chassis-0.19.0-py3-none-any.whl" },
     { name = "coa-map", path = "99_core_clones/coa_map-0.5.0-py3-none-any.whl" },
     { name = "dlt", extras = ["duckdb"] },
     { name = "duckdb" },
@@ -231,14 +231,14 @@ wheels = [
 
 [[package]]
 name = "chassis"
-version = "0.18.0"
-source = { path = "99_core_clones/chassis-0.18.0-py3-none-any.whl" }
+version = "0.19.0"
+source = { path = "99_core_clones/chassis-0.19.0-py3-none-any.whl" }
 dependencies = [
     { name = "duckdb" },
     { name = "flask" },
 ]
 wheels = [
-    { filename = "chassis-0.18.0-py3-none-any.whl", hash = "sha256:ff1926e8a0412263ca4e9c71674926d52a32a8eae4382b9318c8edddbdddd7ac" },
+    { filename = "chassis-0.19.0-py3-none-any.whl", hash = "sha256:1b134b5010d17ce2232ce58850180f0a82da6460bbccf5311e86503922089d9a" },
 ]
 
 [package.metadata]

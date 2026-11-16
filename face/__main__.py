@@ -2387,13 +2387,18 @@ TERMS = """<h1>Terms<small>the instruments in force, by account — effective-da
 {% for e in envelopes %}<tr><td>{{ e.instrument_code }}</td><td>{{ e.account_code }}</td><td>{{ e.valid_from }} – {{ e.valid_to or 'open' }}</td><td class="n">{{ e.committed|n }}</td><td class="n">{{ e.drawn|n }}</td>
 <td class="n">{{ e.remaining|n }}{% if e.remaining < 0 %} <span class="state">over</span>{% endif %}</td><td class="small">{{ e.drawn_by or '' }}</td></tr>{% endfor %}</tbody></table>
 <p class="hint">The money is counted once, at the event: a drawdown is a lump sum on the event in the gross-to-net; the envelope itself values nothing.</p>{% endif %}
-{% for a in groups %}<h2>{{ a.account_name }}<span class="count">{{ a.account_code }} · {{ a.rows|length }} row{{ '' if a.rows|length == 1 else 's' }}</span></h2>
-<table><thead><tr><th>Instrument</th><th>Kind</th><th>Driver basis</th><th class="n">Rate</th><th>Flow position</th><th>Conditionality</th><th>Settlement</th><th>Material scope</th><th>Valid from</th><th>Valid to</th><th>Note</th>{% if may_edit %}<th>Amend from a date</th>{% endif %}</tr></thead><tbody>
-{% for r in a.rows %}<tr class="{{ 'retired' if r.valid_to and r.valid_to < today }}{{ ' added' if r.amended_by_file }}"><td>{{ r.instrument_code }}</td><td>{{ r.instrument_kind }}</td><td>{{ r.driver_basis }}</td>
-<td class="n">{{ r.rate|n if r.driver_basis == 'lump_sum' else r.rate|pct1 }}</td><td>{{ r.flow_position }}</td><td>{{ r.conditionality }}</td><td>{{ r.settlement_timing }}</td><td>{{ r.scope_material or '' }}</td><td>{{ r.valid_from }}</td><td>{{ r.valid_to or '' }}</td><td class="small">{{ r.note or '' }}</td>
-{% if may_edit %}<td class="acts">{% if not r.valid_to or r.valid_to >= today %}<form class="inline" method="post" action="{{ url_for('plan.terms_amend') }}"><input type="hidden" name="instrument_code" value="{{ r.instrument_code }}"><input type="hidden" name="row_from" value="{{ r.valid_from }}">
-<input name="rate" type="number" step="any" required placeholder="{{ 'amount' if r.driver_basis == 'lump_sum' else 'rate, e.g. 0.02' }}" style="width:7rem"> <input name="valid_from" type="date" required value="{{ next_from }}"> <input name="note" required placeholder="why" size="14"> <button class="act">Amend</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}
-</tbody></table>{% else %}<p class="muted">No terms are on file for {{ where }}.</p>{% endfor %}
+{% if may_edit and amendable %}<h2 id="amend">Amend an instrument<span class="count">a new row from a date — the row in force stays on file</span></h2>
+<form class="entry" method="post" action="{{ url_for('plan.terms_amend') }}">
+<label class="wide">instrument<select name="row" required>{% for r in amendable %}<option value="{{ r.instrument_code }}|{{ r.valid_from }}">{{ r.account_name }} · {{ r.instrument_code }} · {{ r.instrument_kind }} · {{ r.rate|n if r.driver_basis == 'lump_sum' else r.rate|pct1 }} from {{ r.valid_from }}</option>{% endfor %}</select></label>
+<label>rate or amount<input name="rate" type="number" step="any" required placeholder="a rate, e.g. 0.02; an amount for a lump sum"></label>
+<label>from<input name="valid_from" type="date" required value="{{ next_from }}"></label>
+<label class="wide">why<input name="note" required placeholder="what the amendment is for"></label>
+<div class="actions"><button class="primary">Amend</button><span class="hint">by {{ who }} — read from the week it starts in, after the next run</span></div></form>{% endif %}
+{% if rows %}<h2>Instruments<span class="count">{{ rows|length }} row{{ '' if rows|length == 1 else 's' }} · {{ accounts }} account{{ '' if accounts == 1 else 's' }}</span></h2>
+<table><thead><tr><th>Account</th><th>Instrument</th><th>Kind</th><th>Driver basis</th><th class="n">Rate</th><th>Flow position</th><th>Conditionality</th><th>Settlement</th><th>Material scope</th><th>Valid</th></tr></thead><tbody>
+{% for r in rows %}<tr class="{{ 'retired' if r.valid_to and r.valid_to < today }}{{ ' added' if r.amended_by_file }}"><td data-account="{{ r.account_code }}" title="{{ r.account_code }}" style="white-space:nowrap">{{ r.account_name }}</td><td>{{ r.instrument_code }}</td><td>{{ r.instrument_kind }}{% if r.note %}<br><small class="muted">{{ r.note }}</small>{% endif %}</td><td>{{ r.driver_basis }}</td>
+<td class="n">{{ r.rate|n if r.driver_basis == 'lump_sum' else r.rate|pct1 }}</td><td>{{ r.flow_position }}</td><td>{{ r.conditionality }}</td><td>{{ r.settlement_timing }}</td><td>{{ r.scope_material or '' }}</td><td style="white-space:nowrap">{% if r.valid_to %}{{ r.valid_from }} – {{ r.valid_to }}{% else %}from {{ r.valid_from }}{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="muted">No terms are on file for {{ where }}.</p>{% endif %}
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
@@ -2405,17 +2410,16 @@ def terms():
         cust = _ctx().get("customer") or "ALL"                                 # the context's customer: the accounts beneath it
         under = None if cust == "ALL" else reads.accounts_under(cust)
         names = {a["account_code"]: a["account_name"] for a in q("select account_code, account_name from dims.dim_account")}
-        groups: dict[str, dict] = {}
-        for r in reads.terms():
-            if under is not None and r["account_code"] not in under:
-                continue
-            g = groups.setdefault(r["account_code"], {"account_code": r["account_code"], "account_name": names.get(r["account_code"], r["account_code"]), "rows": []})
-            g["rows"].append(r)
+        rows = sorted(({**r, "account_name": names.get(r["account_code"], r["account_code"])} for r in reads.terms()
+                       if under is None or r["account_code"] in under),
+                      key=lambda r: (r["account_name"], r["instrument_code"], r["valid_from"]))
+        today = dt.date.today()
+        amendable = [r for r in rows if not r["valid_to"] or r["valid_to"] >= today]
         verb = "register.terms.maintain"
-        return _page(TERMS, title="Terms", active="terms", groups=sorted(groups.values(), key=lambda g: g["account_name"]), version=version,
+        return _page(TERMS, title="Terms", active="terms", rows=rows, amendable=amendable, accounts=len({r["account_code"] for r in rows}), version=version,
                      envelopes=[e for e in (reads.envelopes(version) if version else []) if under is None or e["account_code"] in under],
                      where=reads.node_label("customer", cust), may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
-                     what="the terms register", today=dt.date.today(), next_from=_next_monday().isoformat(), last=session.last, receipt_acts=("terms",))
+                     what="the terms register", today=today, next_from=_next_monday().isoformat(), last=session.last, receipt_acts=("terms",))
     except Busy as e:
         return _busy("Terms", e)
 
@@ -2441,7 +2445,9 @@ def terms_amend():
     """Finance amends an instrument from a date: a new row in the register's layout, every attribute carried from the row
     being amended, the new rate and a note. The row in force is never edited; the next run reads the new row from its date."""
     f = request.form; who = _who(); verb = "register.terms.maintain"
-    row = next((r for r in reads.terms() if r["instrument_code"] == f.get("instrument_code") and str(r["valid_from"]) == f.get("row_from")), None)
+    code, _, row_from = (f.get("row") or "").partition("|")                  # the one form names the row as instrument|from
+    code, row_from = code or f.get("instrument_code"), row_from or f.get("row_from")
+    row = next((r for r in reads.terms() if r["instrument_code"] == code and str(r["valid_from"]) == row_from), None)
     rate, start, note = _num(f.get("rate")), _date(f.get("valid_from")), (f.get("note") or "").strip()
     may = roles.may(who, verb)
     within = bool(row and start and start >= row["valid_from"] and (row["valid_to"] is None or start <= row["valid_to"]))
@@ -2459,7 +2465,7 @@ def terms_amend():
         TERMS_LANDING.place([{**{k: row[k] for k in ("account_code", "instrument_code", "instrument_kind", "driver_basis", "flow_position", "conditionality",
                                                     "settlement_timing", "scope_material")},
                               "rate": rate, "valid_from": start.isoformat(), "valid_to": row["valid_to"].isoformat() if row["valid_to"] else "", "note": note}], who)
-    session.last = receipts.write("terms.amend", who, f.get("instrument_code", ""), checks, placed)
+    session.last = receipts.write("terms.amend", who, code or "", checks, placed)
     session.say(f"{row['instrument_code']} amended from {start} — in the plan after the next run" if placed
                 else "amendment refused: " + "; ".join(c["says"] for c in checks if not c["ok"] and not c.get("flag")), placed)
     return redirect(url_for("plan.terms"))

@@ -42,7 +42,7 @@ def block(html: str) -> tuple[list[str], dict, dict]:
     if not form:
         return [], {}, {}
     f = form.group(0)
-    shown = re.findall(r'<label[^>]*><span>(.*?)</span><select name="(\w+)"', f)
+    shown = re.findall(r'<label[^>]*><span class="ctx-label"><span>(.*?)</span>.*?</span><select name="(\w+)"', f)
     sel = {k: (re.search(rf'<select name="{k}">.*?<option value="([^"]*)" selected', f, re.S) or [None, None])[1] for _, k in shown}
     return [k for _, k in shown], sel, dict(re.findall(r'type="hidden" name="(\w+)" value="([^"]*)"', f))
 
