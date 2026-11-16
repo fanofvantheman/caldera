@@ -2393,7 +2393,7 @@ TERMS = """<h1>Terms<small>the instruments in force, by account — effective-da
 <td class="n">{{ r.rate|n if r.driver_basis == 'lump_sum' else r.rate|pct1 }}</td><td>{{ r.flow_position }}</td><td>{{ r.conditionality }}</td><td>{{ r.settlement_timing }}</td><td>{{ r.scope_material or '' }}</td><td>{{ r.valid_from }}</td><td>{{ r.valid_to or '' }}</td><td class="small">{{ r.note or '' }}</td>
 {% if may_edit %}<td class="acts">{% if not r.valid_to or r.valid_to >= today %}<form class="inline" method="post" action="{{ url_for('plan.terms_amend') }}"><input type="hidden" name="instrument_code" value="{{ r.instrument_code }}"><input type="hidden" name="row_from" value="{{ r.valid_from }}">
 <input name="rate" type="number" step="any" required placeholder="{{ 'amount' if r.driver_basis == 'lump_sum' else 'rate, e.g. 0.02' }}" style="width:7rem"> <input name="valid_from" type="date" required value="{{ next_from }}"> <input name="note" required placeholder="why" size="14"> <button class="act">Amend</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}
-</tbody></table>{% endfor %}
+</tbody></table>{% else %}<p class="muted">No terms are on file for {{ where }}.</p>{% endfor %}
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
@@ -2402,14 +2402,19 @@ TERMS = """<h1>Terms<small>the instruments in force, by account — effective-da
 def terms():
     try:
         who = _who(); version = reads.default_version()
+        cust = _ctx().get("customer") or "ALL"                                 # the context's customer: the accounts beneath it
+        under = None if cust == "ALL" else reads.accounts_under(cust)
         names = {a["account_code"]: a["account_name"] for a in q("select account_code, account_name from dims.dim_account")}
         groups: dict[str, dict] = {}
         for r in reads.terms():
+            if under is not None and r["account_code"] not in under:
+                continue
             g = groups.setdefault(r["account_code"], {"account_code": r["account_code"], "account_name": names.get(r["account_code"], r["account_code"]), "rows": []})
             g["rows"].append(r)
         verb = "register.terms.maintain"
         return _page(TERMS, title="Terms", active="terms", groups=sorted(groups.values(), key=lambda g: g["account_name"]), version=version,
-                     envelopes=reads.envelopes(version) if version else [], may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
+                     envelopes=[e for e in (reads.envelopes(version) if version else []) if under is None or e["account_code"] in under],
+                     where=reads.node_label("customer", cust), may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
                      what="the terms register", today=dt.date.today(), next_from=_next_monday().isoformat(), last=session.last, receipt_acts=("terms",))
     except Busy as e:
         return _busy("Terms", e)
@@ -2479,7 +2484,7 @@ PRICE_LISTS = """<h1>Price lists<small>list price per case in the list's currenc
 <td class="n">{{ p.price_per_case|n(2) if p else '' }}</td><td>{% if p %}{{ p.valid_from }} to {{ p.valid_to or 'open' }}{% endif %}</td>
 <td class="n">{{ c.price_per_case|n(2) }}</td><td>{{ c.valid_from }} to {{ c.valid_to or 'open' }}</td>
 <td class="n">{{ m.change|pct1s if m.change is not none else '' }}</td><td>{{ c.price_event or '' }}</td></tr>{% endfor %}
-</tbody></table>{% endfor %}
+</tbody></table>{% else %}<p class="muted">No price list is on file for {{ where }}.</p>{% endfor %}
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 
@@ -2488,7 +2493,11 @@ PRICE_LISTS = """<h1>Price lists<small>list price per case in the list's currenc
 def price_lists():
     try:
         who = _who(); verb = "register.price_list.maintain"; lists = reads.price_lists()
-        return _page(PRICE_LISTS, title="Price lists", active="pricelists", lists=lists, may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
+        cust = _ctx().get("customer") or "ALL"                                 # the context's customer: the lists its accounts are on
+        under = None if cust == "ALL" else reads.accounts_under(cust)
+        if under is not None:
+            lists = [pl for pl in lists if any(a["account_code"] in under for a in pl["accounts"])]
+        return _page(PRICE_LISTS, title="Price lists", active="pricelists", lists=lists, where=reads.node_label("customer", cust), may_edit=roles.may(who, verb), holders=reads.holders(verb), verb=verb,
                      what="the price lists", next_from=_next_monday().isoformat(), last=session.last, receipt_acts=("price",),
                      materials=sorted({m["material_code"] for pl in lists for m in pl["materials"]}))
     except Busy as e:

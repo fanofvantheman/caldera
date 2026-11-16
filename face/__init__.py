@@ -63,7 +63,7 @@ PROCESSES = [
                 Tab("mapping", "Mapping review", "plan.mapping", verbs=["mapping.accept", "mapping.alter"]),
                 Tab("structure", "Their structure to ours", "plan.mapping_structure", verbs=["mapping.accept", "mapping.alter", "register.promo_calendar.maintain", "read.drill"])]),
             # the rate registers: every planner reads them; only Finance (the holders of the maintain verbs) amends them
-            Section("prices", "Prices and terms", "plan.terms", tabs=[
+            Section("prices", "Prices and terms", "plan.terms", uses=("customer",), tabs=[
                 Tab("terms", "Terms", "plan.terms", verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill", "read.plan"]),
                 Tab("pricelists", "Price lists", "plan.price_lists", verbs=["register.price_list.maintain", "read.drill", "read.plan"])]),
             Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"], uses=("version",)),
@@ -103,7 +103,7 @@ PROCESSES = [
                 Tab("fin_versions", "Versions", "plan.revenue_versions", verbs=FIN_READ)]),
             # the same page as Demand's, listed here too: the menu stays in Financial planning (via), and whoever holds the
             # maintain right amends it from either process — nothing says where it lives
-            Section("rev_prices", "Prices and terms", "plan.terms", {"via": "finplan"}, tabs=[
+            Section("rev_prices", "Prices and terms", "plan.terms", {"via": "finplan"}, uses=("customer",), tabs=[
                 Tab("fin_terms", "Terms", "plan.terms", {"via": "finplan"}, verbs=["register.terms.maintain", "register.price_list.maintain", "read.drill", "read.plan"]),
                 Tab("fin_pricelists", "Price lists", "plan.price_lists", {"via": "finplan"}, verbs=["register.price_list.maintain", "read.drill", "read.plan"])]),
             # steps of the chain whose registers live under Demand, where the planners read them: shown here as links, not moved
