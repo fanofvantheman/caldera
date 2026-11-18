@@ -159,7 +159,7 @@ PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its 
 <h2>Horizons<span class="count">what each kind of version is named with, and the shorter window a step plans</span></h2>
 <div class="cards"><div class="card"><table><thead><tr><th>Kind</th><th class="n">Periods by month</th><th class="n">Then quarters</th><th>Reaches</th></tr></thead><tbody>
 {% for k in kinds %}<tr><td>{{ k.kind_label }}</td><td class="n">{{ k.horizon_periods }}</td><td class="n">{{ k.horizon_quarters }}</td><td class="small">{{ k.says }}</td></tr>{% endfor %}</tbody></table>
-<p class="hint">A version takes its kind's horizon when it is named. Quarters past the months are not planned yet.</p></div>
+<p class="hint">A version takes its kind's horizon when it is named. Past the months a latest view runs in quarters to the end of the second fiscal year after its from point, the baseline carried forward: Finance's grid shows a column a quarter, the sum of its periods, and a figure typed on one is written down to them. A Plan's name does not carry its horizon — the reach is here.</p></div>
 <div class="card"><table><thead><tr><th>Step</th><th class="n">Periods</th><th>Window</th></tr></thead><tbody>
 {% for s in steps %}<tr><td>{{ s.step_label }}</td><td class="n">{{ s.horizon_periods }}</td><td class="small">{{ s.says }}</td></tr>{% endfor %}</tbody></table>
 <p class="hint">A step may plan a shorter window than the version, never a longer one: it plans the lesser of the two.</p></div></div>

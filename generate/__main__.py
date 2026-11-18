@@ -103,6 +103,7 @@ def main() -> None:
     }
     for name in COPIED:                     # a row copied onto a version named from a base names the act it came from
         plan[name] = [{**r, "copied_from": ""} for r in plan[name]]
+    plan["reg_finance_overlay"] = [{**r, "span": ""} for r in plan["reg_finance_overlay"]]    # none typed for a quarter past the months
     fcst, fcst_waiting = forecaster.run(shipments, materials, weeks, LATEST_CLOSED, {a[0]: BASELINE_SOURCE.get(a[0], "PLAN") for a in ACCOUNTS},
                                         lv_id(LATEST_CLOSED))       # after the last draw on rng above: it draws nothing
     plan.update({**fcst, "reg_door_act": plan["reg_door_act"] + fcst["reg_door_act"]})     # one act register for every door

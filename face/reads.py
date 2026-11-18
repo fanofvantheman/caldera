@@ -34,14 +34,27 @@ _VERSIONS = """select v.* replace (coalesce(s.state, case v.status when 'open' t
                from dims.ctl_version v left join plan.version_state s using (version_id)"""
 
 
+KIND_NAMED = {"business_plan": "Budget"}       # a kind finance names by itself; every other Plan is a forecast, named by its months
+
+
 def plan_codes() -> dict[str, tuple[str, str]]:
-    """Each Plan's key → (its code, its code with the horizon beside it: `FY27 P05 | 4+18`) — what a person reads; the key
-    stays in the data and the address (DEC-20261118-03)."""
+    """Each Plan's key → (its short form, its name) — what a person reads; the key stays in the data and the address.
+    The name is the planning cycle, then finance's name for the Plan (DEC-20261119-02): `FY27 P05 | FCST 4+8` — the actual
+    months of the year it is named for and the forecast months left in it, fixed by the from point and the year end, so a
+    changed horizon never changes it (the rolling reach is on the Plans page) — and the budget `FY27 P01 | Budget`. The
+    short form is the cycle alone for a forecast; for a budget it is the whole name, since `FY27 P01` alone reads as a
+    forecast."""
     out = {}
-    for v in q("select version_id, plan_code, actual_months, horizon_periods, horizon_quarters, version_kind from dims.ctl_version"):
+    for v in q("select version_id, plan_code, actual_months, version_kind from dims.ctl_version"):
         code = v["plan_code"] or v["version_id"]
-        hz = f"{v['actual_months'] or 0}+{v['horizon_periods'] or 0}" + (f"+{v['horizon_quarters']}Q" if v.get("horizon_quarters") else "")
-        out[v["version_id"]] = (code, code if v["version_kind"] == "actual" else f"{code} | {hz}")
+        if v["version_kind"] == "actual":
+            out[v["version_id"]] = (code, code)
+        elif v["version_kind"] in KIND_NAMED:
+            name = f"{code} | {KIND_NAMED[v['version_kind']]}"
+            out[v["version_id"]] = (name, name)
+        else:
+            a = int(v["actual_months"] or 0)
+            out[v["version_id"]] = (code, f"{code} | FCST {a}+{12 - a}")
     return out
 
 
@@ -78,7 +91,7 @@ def version_periods(version_id: str | None) -> dict:
     is named for (up to its from point), then the plan periods for its horizon — past the year end where it reaches. Each
     period: period, fiscal_year, fiscal_period, actual."""
     v = version(version_id) if version_id else None
-    out = {"fy": None, "from": None, "through": None, "periods": [], "actual": [], "plan": [], "horizon": 0, "quarters": 0}
+    out = {"fy": None, "from": None, "through": None, "periods": [], "actual": [], "plan": [], "horizon": 0, "quarters": 0, "quarter_cols": [], "quarter_of": {}}
     if not v or not v.get("from_period"):
         return out
     fy = int(v["fiscal_year"]) if v.get("fiscal_year") else None
@@ -86,9 +99,23 @@ def version_periods(version_id: str | None) -> dict:
                 where (fiscal_year = ? and period <= ?) or (period > ? and period <= ?) order by period""",
              fy or -1, v["from_period"], v["from_period"], v.get("plan_through") or v["from_period"])
     ps = [{**r, "actual": r["period"] <= v["from_period"]} for r in rows]
+    # past the months, the horizon in quarters (DEC-20261113-11 point 8): a quarter is a time parent of its periods — the
+    # sum of the three, a figure typed on it written down to them; a part quarter (where the months stop inside one) holds
+    # the periods left in it
+    qrows = q("""select period, fiscal_year, quarter from dims.dim_period where period > ? and period <= ? order by period""",
+              v.get("plan_through") or "", v.get("quarters_through") or "") if v.get("quarters_through") and v.get("plan_through") else []
+    quarters: list[dict] = []
+    for r in qrows:
+        qid = f"{r['fiscal_year']}Q{r['quarter']}"
+        if not quarters or quarters[-1]["id"] != qid:
+            quarters.append({"id": qid, "label": f"FY{str(r['fiscal_year'])[2:]} Q{r['quarter']}", "fiscal_year": r["fiscal_year"], "periods": []})
+        quarters[-1]["periods"].append(r["period"])
+    for x in quarters:
+        x["part"] = len(x["periods"]) < 3
     return {"fy": fy, "from": v["from_period"], "through": v.get("plan_through"), "periods": ps,
             "actual": [p["period"] for p in ps if p["actual"]], "plan": [p["period"] for p in ps if not p["actual"]],
-            "horizon": int(v.get("horizon_periods") or 0), "quarters": int(v.get("horizon_quarters") or 0)}
+            "horizon": int(v.get("horizon_periods") or 0), "quarters": int(v.get("horizon_quarters") or 0),
+            "quarter_cols": quarters, "quarter_of": {per: x for x in quarters for per in x["periods"]}}
 
 
 def version_kinds() -> list[dict]:

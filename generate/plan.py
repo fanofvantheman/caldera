@@ -5,7 +5,7 @@ a scope on each dimension, a time window, a value that is either cases or a rate
 and the rule that spreads it to the storage grain. The models spread, sum and value; this file is
 what the people typed.
 
-Two versions carry entries. B202701 (FY27 BUD) is the frozen business plan: its baseline was entered in June
+Two versions carry entries. B202701 (FY27 P01 | Budget) is the frozen business plan: its baseline was entered in June
 as cases by material × account × period (run-rate × trend × a little optimism) and it does not move.
 F202705 (FY27 P05) is the open latest view: its baseline is computed by the models from history at the
 cycle; the people enter adjustments, listings, launches and exits over the top.

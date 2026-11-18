@@ -62,10 +62,11 @@ def main() -> None:
         head = re.search(r"<thead>(.*?)</thead>", html, re.S).group(1)
         n_actual_th = len(re.findall(r'<th class="n actual"', head))
         n_th = len(re.findall(r"<th class=\"n", head))
-        assert n_actual_th == len(vp["actual"]) and n_th == len(vp["actual"]) + len(vp["plan"]) + 1, (n_actual_th, n_th)
+        n_q = len(re.findall(r'<th class="n qtr"', head))           # past the months, a column a quarter (DEC-20261113-11 point 8)
+        assert n_actual_th == len(vp["actual"]) and n_q == len(vp["quarter_cols"]) and n_th == len(vp["actual"]) + len(vp["plan"]) + 1 + n_q, (n_actual_th, n_q, n_th)
         inputs = set(re.findall(r'name="v\|[^|"]+\|(\d{4}P\d{2})"', html))
         assert inputs and inputs <= set(vp["plan"]) and not inputs & set(vp["actual"]), sorted(inputs)
-        print(f"finance grid    {n_th} columns: {n_actual_th} actual (no input), {len(vp['plan'])} plan, the year; inputs only in plan periods")
+        print(f"finance grid    {n_th} columns: {n_actual_th} actual (no input), {len(vp['plan'])} plan, the year, {n_q} quarters; period inputs only in plan periods")
 
         # 3 · the schedule plans its own window — the lesser of its step's and the version's — from the version's from point
         step = int(q("select horizon_periods from dims.ref_step_horizon where step = 'opex_schedule'")[0]["horizon_periods"])

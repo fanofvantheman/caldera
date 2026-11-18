@@ -114,6 +114,7 @@ class Typed:
     cells: list[tuple] = field(default_factory=list)      # (account, material, value, source at the cell then)
     year: int | None = None                                # typed for the year: this period's share of it
     year_value: float | None = None                        # the year figure as typed
+    span: str | None = None                                # typed for a quarter past the months (`2028Q4`): this period's share of it
 
     @property
     def edit_id(self) -> str:
@@ -216,18 +217,20 @@ def node_value(grid: Grid, version: str, customer: str, material: str, period: s
     return aggregate(cells, measure, grid.rules, source)
 
 
-def type_year(wc: WorkingCopy, customer: str, material: str, year: int, periods: list[str], measure: str, value: float,
-              actual: list[dict]) -> list[Typed] | str | None:
+def type_year(wc: WorkingCopy, customer: str, material: str, year: int | None, periods: list[str], measure: str, value: float,
+              actual: list[dict], span: str | None = None) -> list[Typed] | str | None:
     """A figure typed for the year at a node: the year as the grid reads it — `actual` (what happened beneath the node in
     the year's actual periods, as cells) and the plan together. Only the forecast `periods` move: their part is what the
     figure leaves once the actual is taken off, spread by the measure's breakback over every cell beneath the node in
     those periods at once, then put as one figure per period — which spreads within the period to the same cells. One
-    step. Returns the figures, None when nothing changes, or why it cannot be done."""
+    step. Returns the figures, None when nothing changes, or why it cannot be done.
+    A quarter past the months is the same act with no actual (`span` names it, `year` is None): its three periods move
+    by the measure's own spread (DEC-20261113-11 point 8)."""
     g, v, rules = wc.grid, wc.version, wc.grid.rules
     r = rules[measure]
     keys = [k for p in periods for k in g.scope(v, customer, material, p)]
     if not keys:
-        return f"nothing beneath {material} at {customer} in the year's forecast periods to spread to"
+        return f"nothing beneath {material} at {customer} in the {'quarter' if span else 'year'}'s forecast periods to spread to"
     cells = [g.cells[k] for k in keys]
     now = aggregate(cells + list(actual), measure, rules)
     if now is not None and abs(now - value) < NEGLIGIBLE[r["shown_as"]]:
@@ -260,7 +263,7 @@ def type_year(wc: WorkingCopy, customer: str, material: str, year: int, periods:
             x = sum((g.cells[k][dfield] or 0.0) * shares[k] for k in ks) / w if w > 0 else plan
         t = type_figure(wc, customer, material, p, measure, x, join=started)
         if t is not None:
-            t.year, t.year_value, started = year, value, True
+            t.year, t.year_value, t.span, started = year, value, span, True
             out.append(t)
     return out or None
 
@@ -323,10 +326,10 @@ def rows_for_save(wc: WorkingCopy, save_id: str, stamp: dt.datetime, who: str, r
         eid = f"{save_id.replace('FS-', 'FE-')}-{i:03d}"
         rows.append({**common, "edit_id": eid, "action": "enter", "scope_customer": t.customer, "scope_material": t.material, "period": t.period,
                      "measure": t.measure, "value": repr(t.value), "source_at_entry": None if t.source_at_entry is None else repr(t.source_at_entry),
-                     "note": note, "typed": ""})
+                     "note": note, "typed": "", "span": t.span or ""})
         for j, (a, m, x, s) in enumerate(t.cells, start=1):
             rows.append({**common, "edit_id": f"{eid}-C{j:04d}", "action": "cell", "scope_customer": a, "scope_material": m, "period": t.period,
-                         "measure": t.measure, "value": repr(x), "source_at_entry": None if s is None else repr(s), "note": "", "typed": eid})
+                         "measure": t.measure, "value": repr(x), "source_at_entry": None if s is None else repr(s), "note": "", "typed": eid, "span": t.span or ""})
     return rows
 
 

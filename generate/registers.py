@@ -34,7 +34,7 @@ def step_horizons() -> list[dict]:
 
 def versions(weeks: list[Week], plan_fy: int, latest_closed: str) -> list[dict]:
     """Every forward view is a version, named by the cycle that produced it, with a reach and a horizon.
-    ACTUAL is the closed history; B<year>01 the business plan for the year (FY27 BUD); F<first planned period> the latest view
+    ACTUAL is the closed history; B<year>01 the business plan for the year (FY27 P01 | Budget); F<first planned period> the latest view
     produced by a cycle, calculated 36 periods from the period after the one it closed; scenarios hang off the version they were read against.
     The from point is the last period a version treats as actual, fixed when it is named: the business plan has none in
     its year (it was made before the year began), the latest view the period its cycle closed. The horizon — periods by
