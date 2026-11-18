@@ -66,6 +66,10 @@ COPIES = [
      """select b.* from bronze.reg_promo_event b join plan.promo_typed_event t on t.event_id = b.event_id and t.version_id = b.version_id
         where b.version_id = ? and t.state <> 'refused'
         qualify row_number() over (partition by b.event_id order by b.source_file desc, b.file_row_number desc) = 1"""),
+    ("reg_unit_cost_act", "unit cost components typed", ["act_id"],
+     """select b.* from bronze.reg_unit_cost_act b join plan.unit_cost_act a on a.act_id = b.act_id where b.version_id = ?"""),
+    ("reg_production_act", "production quantities typed", ["act_id"],
+     """select b.* from bronze.reg_production_act b join plan.production_act a on a.act_id = b.act_id where b.version_id = ?"""),
     ("reg_promo_neighbour", "neighbour lines", ["neighbour_id"],
      """select b.* from bronze.reg_promo_neighbour b where b.version_id = ?
         and b.neighbour_id in (select neighbour_id from plan.promo_neighbour where version_id = b.version_id)"""),

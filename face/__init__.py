@@ -72,9 +72,13 @@ PROCESSES = [
             # the key raw materials: requirement, purchases by source, stock at a weighted average (DEC-20261116-04)
             Section("purchases", "Material purchases", "plan.material_purchases", uses=("version", "location"),
                     verbs=["register.supply_plan.maintain", "register.supplier_price_list.maintain", "delta.supply.enter", "read.plan", "read.proof", *FIN_READ]),
-            Section("supply", "Supply plan", RUNG, {"slug": "supply"}, verbs=["delta.supply.enter", "register.supply_plan.maintain", "policy.production.accept", "read.proof"]),
+            # the production requirement by plant, with the stocking points it comes from; production typed over it (DEC-20261117-02)
+            Section("supply", "Supply plan", "plan.supply_plan", uses=("version", "location", "material"), verbs=["delta.supply.enter", "register.supply_plan.maintain", "policy.production.accept", "read.plan", "read.proof"]),
             Section("capacity", "Capacity", RUNG, {"slug": "capacity"}, verbs=["register.capacity.machine.maintain", "register.capacity.labour.maintain", "register.capacity.storage.maintain", "register.capacity.logistics.maintain", "schedule.line.enter", "headcount.enter"]),
-            Section("inventory", "Inventory", RUNG, {"slug": "inventory"}, verbs=["register.service_level.maintain", "register.sourcing.maintain", "delta.supply.enter", "read.proof"]),
+            # replenishment at each stocking point to an order-up-to target (DEC-20261117-02)
+            Section("inventory", "Inventory", "plan.inventory", uses=("version", "location", "material"), verbs=["register.service_level.maintain", "register.sourcing.maintain", "delta.supply.enter", "read.plan", "read.proof"]),
+            # pallet positions against capacity by class, and the stress test as a reading (DEC-20261117-03)
+            Section("storage", "Storage", "plan.storage", uses=("version",), verbs=["register.capacity.storage.maintain", "delta.supply.enter", "register.supply_plan.maintain", "read.plan", "read.proof"]),
         ]),
         Area("innovation", "Innovation", [
             Section("launches", "Launches", "plan.launches", verbs=["layer.7.enter", "structure.material.maintain", "read.drill"], uses=("version",)),
@@ -255,7 +259,7 @@ MAP_NODES = [
     Node("assumptions", "plan", "Assumptions", "one set by period; what reads each", "plan.assumptions"),
     Node("costcentres", "plan", "Cost centres", "ours over each entity's own", "plan.cost_centres", surfaces=["plan.worklist_cost_centre_unmapped", "plan.worklist_cost_pool_unmapped"]),
     Node("stack", "made", "The demand plan", "every layer, by version", "plan.demand", surfaces=["plan.worklist_stack_negative"]),
-    Node("supply", "made", "Supply plan", "stock, lines and purchases", "plan.rung", {"slug": "supply"}, built=False),
+    Node("supply", "made", "Supply plan", "replenishment, cases to make, purchases", "plan.supply_plan"),
     Node("valued", "made", "The plan valued", "through the gross-to-net", "plan.money"),
     Node("schedule", "made", "Opex schedule", "driver × rate, by cost centre", "plan.schedule"),
     Node("labour", "plan", "Headcount", "by role through the agreement; by name", "plan.headcount_role"),

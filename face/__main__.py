@@ -36,6 +36,8 @@ from . import standard
 from . import pools
 from . import purchases
 from . import typed_cost
+from . import supply
+from . import storage
 from . import assumptions
 from . import versions as versions_page
 from . import strategic
@@ -2784,6 +2786,8 @@ standard.register(plan, _page, _who, _ctx, _busy)
 pools.register(plan, _page, _who, _ctx, _busy, session, roles)
 purchases.register(plan, _page, _who, _ctx, _busy, session, roles)
 typed_cost.register(plan, _page, _who, _ctx, _busy, session, roles)
+supply.register(plan, _page, _who, _ctx, _busy, session, roles)
+storage.register(plan, _page, _who, _ctx, _busy, session, roles)
 
 
 def main() -> None:

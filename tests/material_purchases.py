@@ -3,7 +3,7 @@ removed again.
 
     uv run python -m tests.material_purchases        # from build/, with the warehouse built
 
-1. Requirement is the plan's cases at each material's primary plant × the bill × usage, for the key materials only.
+1. Requirement is the production requirement at the plant × the bill × usage, for the key materials only.
 2. The stock walks: opening + purchases − consumption = closing, carried to the next period; consumption at the period's
    weighted average; the run's figures are the shared function's, made again here.
 3. Purchases follow the source: a campaign buys only in its window; a contract within its term at its price (× its index);
@@ -48,13 +48,14 @@ def main() -> None:
     assert keys
     # 1 · requirement
     k0 = next(k for k in keys if k["input_code"] == "TOMATO")
-    want = q("""select d.period, sum(d.cases * b.quantity_per_case) w from plan.demand_financialised d join dims.ref_route r on r.material_code = d.material_code and r.is_primary
-                join dims.ref_bom b on b.parent_material = d.material_code and b.plant_code = r.plant_code
-                where d.version_id = ? and b.component_material = ? and r.plant_code = ? group by 1""", LV, k0["input_code"], k0["plant_code"])
+    # cases made are the inventory plan's production requirement at the plant (DEC-20261117-02 point 6), no longer cases sold
+    want = q("""select p.period, sum(p.quantity * b.quantity_per_case) w from plan.production_requirement p
+                join dims.ref_bom b on b.parent_material = p.material_code and b.plant_code = p.plant_code
+                where p.version_id = ? and b.component_material = ? and p.plant_code = ? group by 1""", LV, k0["input_code"], k0["plant_code"])
     got = {r["period"]: r["quantity"] for r in q("select * from plan.material_requirement where version_id = ? and input_code = ? and plant_code = ?", LV, k0["input_code"], k0["plant_code"])}
     assert want and all(close(got.get(r["period"]), r["w"]) for r in want if r["period"] in got) and got
     assert {r["input_code"] for r in q("select distinct input_code from plan.material_requirement")} == {k["input_code"] for k in keys}
-    print(f"requirement     {k0['input_code']} at {k0['plant_code']}: cases × the bill × usage in every period; only the {len({k['input_code'] for k in keys})} key materials")
+    print(f"requirement     {k0['input_code']} at {k0['plant_code']}: cases to make × the bill × usage in every period; only the {len({k['input_code'] for k in keys})} key materials")
 
     # 2 · the stock walks, and is the shared function's
     rows = q("select * from plan.material_stock order by version_id, input_code, plant_code, period")
