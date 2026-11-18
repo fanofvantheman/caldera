@@ -28,6 +28,7 @@ POOLS = """<h1>Cost pools<small>{{ version }} · the kinds of cost a case is mad
 {% for pl in pools_by[comp] %}<tr><td><b>{{ pl.pool_name }}</b></td><td class="small">{{ pl.reaches }}</td>
 {% if comp %}{% for p in plants %}{% set f = figs.get((pl.pool_code, p.code)) %}<td class="n">{{ money0(f.cost) if f else '' }}</td><td class="n">{{ money(f.per_case) if f else '' }}</td>{% endfor %}{% else %}<td class="n">{{ money0(not_cogs) }}</td>{% endif %}
 <td class="n">{% if pl.cells %}<a href="{{ url_for('plan.cost_pool_map', pool=pl.pool_code) }}">{{ pl.cells }}</a>{% elif comp == 'material' %}<span class="small muted">read from the input</span>{% elif comp == 'labour' %}<span class="small muted">read from the route</span>{% else %}0{% endif %}</td></tr>{% endfor %}
+{% if comp == 'fixed_overhead' %}<tr><td class="small muted">Other factory's share</td><td class="small muted">of fixed overhead at the plant — a catch-all that grows is a rule to write</td>{% for p in plants %}{% set sh = other_share.get(p.code) %}<td class="n small">{{ '{:.1%}'.format(sh) if sh is not none else '' }}</td><td></td>{% endfor %}<td></td></tr>{% endif %}
 {% if comp %}<tr class="total"><td>{{ label }}</td><td></td>{% for p in plants %}{% set t = totals.get((comp, p.code)) %}<td class="n">{{ money0(t.cost) if t and t.cost is not none else '' }}</td><td class="n"><b>{{ money(t.per_case) if t else '' }}</b></td>{% endfor %}<td></td></tr>{% endif %}
 </tbody></table>{% endfor %}
 <p class="hint">Per case at {{ period }}, weighted by its cases at the plant. <b>Cost</b>: for an overhead pool, its schedule lines at the plant over the {{ n_sched }} planned periods — indirect labour less the direct labour the routes' crews take for the plan's cases; for material and direct labour, the cases planned at the plant × their cost per case over the same periods. A variable pool's per case is its lines' rates per case made; a fixed pool's is its cost for the year ÷ the planned cases at the plant, both set on the business plan of the year and held on every plan of it. The cost centre stops at the map: from here on a rate is a pool's at a plant. <a href="{{ url_for('plan.cost_pool_map') }}">The map</a> says which cost centre × account is in which pool.</p>
@@ -49,7 +50,7 @@ MAP = """<h1>The map<small>{{ version }} · the plan's cost centre × account on
 <label>entity<select name="entity_code"><option value="">any</option>{% for e in entities %}<option value="{{ e.entity_code }}">{{ e.entity_name }}</option>{% endfor %}</select></label>
 <label>cost centre<select name="cost_centre_code"><option value="">any</option>{% for c in centres %}<option value="{{ c.cost_centre_code }}">{{ c.cost_centre_name }} · {{ c.cost_centre_code }}</option>{% endfor %}</select></label>
 <label>account<select name="account_code"><option value="">any</option>{% for a in all_accounts %}<option value="{{ a.account_code }}">{{ a.account_code }} {{ a.account_name }}</option>{% endfor %}</select></label>
-<label>pool<select name="pool_code">{% for comp, label in components %}<optgroup label="{{ label }}">{% for pl in pools_by[comp] if pl.component not in ('material', 'labour') %}<option value="{{ pl.pool_code }}">{{ pl.pool_name }}</option>{% endfor %}</optgroup>{% endfor %}<option value="">— remove the rule for this key</option></select></label>
+<label>pool<select name="pool_code">{% for comp, label in components %}<optgroup label="{{ label }}">{% for pl in pools_by[comp] if pl.component != 'labour' %}<option value="{{ pl.pool_code }}">{{ pl.pool_name }}</option>{% endfor %}</optgroup>{% endfor %}<option value="">— remove the rule for this key</option></select></label>
 <label class="wide">why<input name="reason" required placeholder="what the rule is for"></label>
 <div class="actions"><button class="primary">Set the rule</button><span class="hint">by {{ who }} — in force after the next run</span></div></form>{% endif %}
 <h2>Rules in force<span class="count">{{ rules|length }} · the latest act per key</span></h2>
@@ -109,6 +110,9 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                     if f and pl["component"]:
                         t = totals.setdefault((pl["component"], p["code"]), {"cost": 0.0, "per_case": 0.0})
                         t["cost"] += f["cost"] or 0; t["per_case"] += f["per_case"] or 0
+            # other factory's share of the plant's fixed overhead, so a catch-all that has grown is seen (DEC-20261118-02 point 3)
+            other_share = {p["code"]: ((figs.get(("OTHER_FACTORY", p["code"])) or {}).get("cost") or 0) / totals[("fixed_overhead", p["code"])]["cost"]
+                           for p in plants if (totals.get(("fixed_overhead", p["code"])) or {}).get("cost")}
             not_cogs = q("""select sum(s.amount) a from plan.opex_schedule s join plan.cost_pool_cell c using (entity_code, cost_centre_code, account_code)
                             where s.version_id = ? and c.pool_code = 'NOT_COGS'""", version)[0]["a"]
             pools_by = {comp: [] for comp, _ in COMPONENTS}
@@ -116,7 +120,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 pools_by[pl["component"]].append({**pl, "cells": cells.get(pl["pool_code"], 0)})
             waiting = q("select count(*) n from plan.worklist_cost_pool_unmapped")[0]["n"]
             return page(MACRO + POOLS, title="Cost pools", active="pools_set", version=version, period=period, plants=plants, components=COMPONENTS,
-                        pools_by=pools_by, figs=figs, totals=totals, not_cogs=not_cogs, n_sched=len(sched), waiting=waiting)
+                        pools_by=pools_by, figs=figs, totals=totals, other_share=other_share, not_cogs=not_cogs, n_sched=len(sched), waiting=waiting)
         except Busy as e:
             return busy("Cost pools", e)
 
@@ -191,12 +195,12 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         known = {p["pool_code"]: p for p in pools()}
         existing = q("select * from plan.cost_pool_map where entity_code = ? and cost_centre_code = ? and account_code = ?", e, cc, acct)
         key = " × ".join(x for x in [cc or "any cost centre", acct or "any account"]) + (f" for {e}" if e else "")
-        settable = pool in known and known[pool]["component"] not in ("material", "labour")
+        settable = pool in known and known[pool]["component"] != "labour"         # material pools take the ledgers' material consumed (DEC-20261117-01 point 6)
         checks = [
             {"check": "who may keep the map", "ok": may, "says": f"{who} holds {said(VERB)}" if may else f"{who} does not hold {said(VERB)} — the map is kept by {', '.join(reads.holders(VERB))}"},
             {"check": "a cost centre or an account", "ok": bool(cc or acct), "says": key if (cc or acct) else "a rule names a cost centre, an account, or both"},
             {"check": "the pool", "ok": settable if pool else bool(existing),
-             "says": (known[pool]["pool_name"] if settable else f"{pool} is not a pool the map can name — material and direct labour are not mapped") if pool
+             "says": (known[pool]["pool_name"] if settable else f"{pool} is not a pool the map can name — direct labour is read from the route") if pool
                      else (f"removes the rule {key} → {existing[0]['pool_code']}" if existing else f"there is no rule for {key} to remove")},
             {"check": "a reason", "ok": bool(reason), "says": reason or "a rule says why"},
         ]

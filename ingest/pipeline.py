@@ -107,6 +107,9 @@ PLAN = {
     "reg_capex": ("spend", "life_years", "lifetime_units", "rate", "lease_charge"),
     "reg_cost_pool_rule": (),
     "reg_purchase_act": (),
+    "reg_unit_cost_act": ("per_case",),
+    "reg_sourcing": ("share",),
+    "reg_production_act": ("quantity",),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})

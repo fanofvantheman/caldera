@@ -8,7 +8,9 @@
      variable overhead planned − standard, the sum of its pools
      fixed overhead   planned − standard per case: nil where the rate is held from the business plan of the year
    The lines sum to the planned unit cost less the standard. A period of a year with no standard for the material reads
-   none. Fixed overhead's spending and volume are a plant's money, not a case's: plan.fixed_variance. */
+   none. Fixed overhead's spending and volume are a plant's money, not a case's: plan.fixed_variance.
+   A component typed over its drivers (DEC-20261116-02 point 7) has no price and usage, rate and efficiency to split: its
+   variance is read whole — material or labour planned − standard, the split lines empty. */
 MODEL (name plan.cost_variance, kind FULL, grain (version_id, material_code, period));
 WITH u AS (
   SELECT u.*, p.fiscal_year::INT AS fiscal_year FROM plan.planned_unit_cost u JOIN dims.dim_period p ON p.period = u.period
@@ -32,14 +34,16 @@ inputs AS (
 SELECT u.version_id, u.material_code, u.plant_code, u.period, u.fiscal_year, s.set_on,
        u.unit_cost, s.std_cost, s.std_material, s.std_labour, s.std_variable, s.std_fixed,
        u.crew_hours AS planned_hours, u.loaded_rate AS planned_rate, s.std_hours, s.std_rate,
-       i.mat_price, i.mat_usage,
-       (u.loaded_rate - s.std_rate) * u.crew_hours AS lab_rate,
-       (u.crew_hours - s.std_hours) * s.std_rate AS lab_eff,
-       COALESCE(i.mat_price, 0) + COALESCE(i.mat_usage, 0) AS var_material,
-       (u.loaded_rate - s.std_rate) * u.crew_hours + (u.crew_hours - s.std_hours) * s.std_rate AS var_labour,
+       CASE WHEN NOT u.typed_material THEN i.mat_price END AS mat_price, CASE WHEN NOT u.typed_material THEN i.mat_usage END AS mat_usage,
+       CASE WHEN NOT u.typed_labour THEN (u.loaded_rate - s.std_rate) * u.crew_hours END AS lab_rate,
+       CASE WHEN NOT u.typed_labour THEN (u.crew_hours - s.std_hours) * s.std_rate END AS lab_eff,
+       CASE WHEN u.typed_material THEN u.material_cost - s.std_material ELSE COALESCE(i.mat_price, 0) + COALESCE(i.mat_usage, 0) END AS var_material,
+       CASE WHEN u.typed_labour THEN u.labour_cost - s.std_labour
+            ELSE (u.loaded_rate - s.std_rate) * u.crew_hours + (u.crew_hours - s.std_hours) * s.std_rate END AS var_labour,
        u.variable_overhead - s.std_variable AS var_oh,
        u.fixed_overhead - s.std_fixed AS fixed_oh,
-       u.unit_cost - s.std_cost AS var_total
+       u.unit_cost - s.std_cost AS var_total,
+       u.typed_material, u.typed_labour, u.typed_variable, u.typed_fixed
 FROM u JOIN s ON s.material_code = u.material_code AND s.plant_code = u.plant_code AND s.fiscal_year = u.fiscal_year
 LEFT JOIN inputs i ON i.version_id = u.version_id AND i.material_code = u.material_code AND i.period = u.period
 WHERE u.complete

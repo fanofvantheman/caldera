@@ -16,7 +16,7 @@ from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIA
 from .history import forecast_snapshots, generate_demand, generate_prices, value_shipments
 from .registers import versions, period_control, roles, verbs, composed_roles, reports, capacity_register, assumptions, assumption_amendments, version_acts, strategic_plan, strategic_growth, version_kinds, step_horizons
 from .plan import business_plan_entries, latest_view_entries, promo_events, promo_neighbours, terms_register, reason_codes, submissions, finance_edits, finance_sources
-from .emit import emit_all, dataclass_rows
+from .emit import emit_all, dataclass_rows, header_only
 from . import sender
 from . import forecaster
 from . import loads
@@ -120,10 +120,17 @@ def main() -> None:
     tables.update(costs.standard_inputs(INPUT_MATERIALS))   # each input's price and index; each line's crew
     plan["reg_capex"] = costs.capex_items(PLAN_FY, LATEST_CLOSED)      # the capital plan's items on each version; draws nothing
     plan["reg_purchase_act"] = costs.purchase_acts()                    # the buyer's acts on the purchase plan; draws nothing
+    plan["reg_unit_cost_act"] = costs.unit_cost_acts()                  # a component typed over its drivers; draws nothing
     plan["reg_cost_pool_rule"] = costs.pool_rules()                     # the map onto the cost pools, as set up; draws nothing
     history["cost_actual"] += costs.capex_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, plan["reg_capex"])   # draws nothing
+    history["cost_actual"] += costs.material_actuals(shipments, tables["ref_route"], tables["ref_bom"], INPUT_MATERIALS, periods, LATEST_CLOSED, args.seed)   # a stream of its own
     tables.update(loads.structure_loads(tables))        # the load before, and one member the client has not finished; draws nothing
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
+    # registers with nothing in them yet: the sourcing rules declared over the primary route, production typed over the
+    # requirement (DEC-20261117-02 points 3, 8) — their headers alone
+    header_only(Path(args.out) / "plan" / "reg_sourcing.csv", ["act_id", "node_code", "material_code", "plant_code", "share", "reason", "entered_by", "entered_at"])
+    header_only(Path(args.out) / "plan" / "reg_production_act.csv", ["act_id", "action", "withdraws", "version_id", "material_code", "plant_code", "period",
+                                                                     "quantity", "reason", "entered_by", "entered_at"])
     documents.write(Path(args.out))                     # the renegotiated agreement, waiting as text to be taken in; draws nothing
     c = manifest["counts"]
     print(f"generated: {c['dim_material']} materials, {c['dim_ship_to']} ship-tos, {c['dim_week']} weeks, "

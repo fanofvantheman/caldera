@@ -123,8 +123,9 @@ def read_inputs(fetch: Callable[[str], list[dict]], T: Callable[[str], str], ver
     fy_of = {p["period"]: int(p["fiscal_year"]) for p in per}
     prior = {p["period"]: p["prior_year_period"] for p in per}
     inn = ",".join(f"'{p}'" for p in window) or "''"
+    # material consumed is the cost of goods' own, read through the pools — never a line of the opex schedule
     act = fetch(f"""select entity_code, cost_centre_code, account_code, period, sum(amount) amount from {T('plan.cost_actual')}
-                    where state = 'mapped' and period in ({inn}) group by all""")
+                    where state = 'mapped' and coalesce(cost_family, '') <> 'material' and period in ({inn}) group by all""")
     actual = {((a["entity_code"], a["cost_centre_code"], a["account_code"]), a["period"]): float(a["amount"]) for a in act}
     lines = sorted({k[0] for k in actual})
     plant = f"""(select material_code, lower(plant_code) plant from {T('dims.ref_route')} where is_primary)"""

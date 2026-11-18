@@ -290,7 +290,7 @@ def view(who: str, version: str, fy: int, page: dict, roles, say: str | None = N
     step = next((r for r in reads.step_horizons() if r["step"] == "opex_schedule"), {})
     actual: dict = defaultdict(dict)
     if closed:
-        for r in q(f"""select entity_code, cost_centre_code, account_code, period, sum(amount) a from plan.cost_actual where state = 'mapped'
+        for r in q(f"""select entity_code, cost_centre_code, account_code, period, sum(amount) a from plan.cost_actual where state = 'mapped' and coalesce(cost_family, '') <> 'material'
                        and period in ({','.join('?' * len(closed))}) group by all""", *closed):
             actual[(r["entity_code"], r["cost_centre_code"], r["account_code"])][r["period"]] = r["a"]
     by_line = lines_of(cells)

@@ -35,6 +35,7 @@ from . import views
 from . import standard
 from . import pools
 from . import purchases
+from . import typed_cost
 from . import assumptions
 from . import versions as versions_page
 from . import strategic
@@ -865,9 +866,9 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 <div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}{% if p.total %}<th class="n tot"{% if fin.year_says %} title="{{ fin.year_says }}"{% endif %}>{{ p.label }}{% if fin.year_says %}<div class="small muted">{{ fin.year_says }}</div>{% endif %}</th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="an actual period of {{ version }} — what was shipped and invoiced; nothing is typed here"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>
 {% for r in fin.rows %}{{ fin_row(fin, r) }}{% else %}<tbody><tr><td colspan="{{ fin.periods|length + 2 }}" class="muted">Nothing in Finance's plan at {{ fin.customer_label }} × {{ fin.path[-1].label }} in FY{{ fy }}.</td></tr></tbody>{% endfor %}
 </table></div>{% if fin.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
-<p class="hint">{% if fin.n_actual %}{{ version }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.measure in ('unit_cost', 'against') %}{{ fin.row_head }} carries {{ 'the planned unit cost, the standard and the difference, for the total and for each component' if fin.measure == 'unit_cost' else 'every line, per case and in money' }}; each row beneath it is one figure a period — {{ fin.part_says }} — indented one level, product then material, so the products read against each other down the page; a name with ▸ opens one level down. At a node, a period's figure is its cost ÷ its cases. The year is the plan periods' cost per case, weighted by their cases. No cost per case is held for an actual period — the ledger is by account, not by material — so those periods are empty and are not in the year. Cases are on Revenue's Volume tab and on Cost of goods.
+<p class="hint">{% if fin.n_actual %}{{ version }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.measure in ('unit_cost', 'against') %}{{ fin.row_head }} carries {{ 'the planned unit cost, the standard and the difference, for the total and for each component' if fin.measure == 'unit_cost' else 'every line, per case and in money' }}; each row beneath it is one figure a period — {{ fin.part_says }} — indented one level, product then material, so the products read against each other down the page; a name with ▸ opens one level down. At a node, a period's figure is its cost ÷ its cases. The year is its actual and plan periods together, each period's cost per case weighted by its cases. An actual period's cost is the ledger's, read through the cost pools at each plant — the standard absorbed on the cases made and the variance by pool — and a material's figure there is its standard plus its share of each pool's variance at its plant, in proportion to the standard it absorbed: marked <i>apportioned</i>. An actual period splits nothing into price and usage or rate and efficiency: there are no actual quantities to split. Cases are on Revenue's Volume tab and on Cost of goods.{% if fin.typed_uc %} {{ fin.typed_uc }} component figure{{ 's' if fin.typed_uc != 1 }} on {{ version }} {{ 'are' if fin.typed_uc != 1 else 'is' }} typed over the drivers — listed on <a href="{{ url_for('plan.unit_cost_typed') }}">Standard by plant → Typed</a>; a typed figure's variance is read whole.{% endif %}
 {% elif fin.reading == 'finance' %}Each row beneath {{ fin.row_head }} is indented one level — product, then material; a name with ▸ opens one level down and its rows become the grid, a name without has nothing beneath it. The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved. ↶ on a boxed figure takes it out: at once if it is not saved, by a withdrawal — shown first — if it is.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
-{% if fin.measure == 'against' %} Each line is calculated, never entered: <b>material price</b> = Σ inputs (planned price − standard price) × planned usage; <b>material usage</b> = Σ (planned usage − standard usage) × standard price; <b>labour rate</b> = (planned rate − standard rate) × planned hours; <b>labour efficiency</b> = (planned hours − standard hours) × standard rate; <b>variable overhead</b> and <b>fixed overhead</b> per case = planned − standard. They add to the planned unit cost less the standard; in money each is cases × it, so a volume typed under Revenue moves it. Positive is adverse (A): the case costs more than the standard. A year with no standard has nothing to read against and is left out.{% endif %}{% if fin.measure not in ('unit_cost', 'against') %}{% for r in fin.measures %} <b>{{ r.name }}</b>{% if r.formula %} = {{ r.formula }}{% endif %}; at a total, {{ r.rollup_says }}{% if r.typed %}; typed at a total, {{ r.breakback_says }}{% endif %}.{% endfor %}{% endif %}{% if fin.measure == 'cogs' %} At the year, the cost per case is the plan periods' cost per case weighted by their cases; no actual period holds one.{% endif %} <a href="{{ url_for('plan.rules') }}#finance">How each figure is calculated</a></p>
+{% if fin.measure == 'against' %} Each line is calculated, never entered: <b>material price</b> = Σ inputs (planned price − standard price) × planned usage; <b>material usage</b> = Σ (planned usage − standard usage) × standard price; <b>labour rate</b> = (planned rate − standard rate) × planned hours; <b>labour efficiency</b> = (planned hours − standard hours) × standard rate; <b>variable overhead</b> and <b>fixed overhead</b> per case = planned − standard. They add to the planned unit cost less the standard; in money each is cases × it, so a volume typed under Revenue moves it. Positive is adverse (A): the case costs more than the standard. A year with no standard has nothing to read against and is left out.{% endif %}{% if fin.measure not in ('unit_cost', 'against') %}{% for r in fin.measures %} <b>{{ r.name }}</b>{% if r.formula %} = {{ r.formula }}{% endif %}; at a total, {{ r.rollup_says }}{% if r.typed %}; typed at a total, {{ r.breakback_says }}{% endif %}.{% endfor %}{% endif %}{% if fin.measure == 'cogs' %} At the year, the cost per case is its actual and plan periods' cost per case weighted by their cases; an actual period's is the ledger's, apportioned.{% endif %} <a href="{{ url_for('plan.rules') }}#finance">How each figure is calculated</a></p>
 {% if fin.may and fin.open and version %}<form method="post" action="{{ url_for('plan.finance_save') }}" class="form-row" id="fin-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
 <label class="small">reason <select name="reason_code">{% for r in fin.reasons %}<option value="{{ r.reason_code }}" {{ 'selected' if r.reason_code == fin.default_reason }}>{{ r.description }}</option>{% endfor %}</select></label>
 <label class="small grow">note <input name="note" placeholder="what Finance knows that the demand plan does not"></label>
@@ -886,6 +887,10 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 <table><thead><tr><th>Plant</th><th>Fixed pool</th><th class="n">Incurred</th><th class="n">Business plan</th><th class="n">Spending</th><th class="n">Absorbed at the rate</th><th class="n">Volume</th></tr></thead><tbody>
 {% for r in fin.pools.fixed %}<tr class="{{ 'total' if r.total }}"><td>{{ r.plant_name }}</td><td>{{ r.pool_name }}</td><td class="n">{{ r.incurred|aud }}</td><td class="n">{{ r.budget|aud }}</td><td class="n">{{ r.spending_s }}</td><td class="n">{{ r.absorbed|aud }}</td><td class="n">{{ r.volume_s }}</td></tr>{% else %}<tr><td colspan="7" class="muted">The fixed rate is not held from a business plan here.</td></tr>{% endfor %}</tbody></table>
 <p class="hint">Fixed overhead is a plant's money, not a case's: <b>spending</b> is this plan's pool cost less the business plan's in the same periods; <b>volume</b> is the business plan's pool cost less what the standard rate absorbs on this plan's cases. They add to the fixed overhead not absorbed on <a href="{{ url_for('plan.standard') }}">Standard by plant</a>. Over the plan periods of FY{{ fy }}; every plant, whatever the material shown.</p>{% endif %}
+{% if fin.recon %}<h2>At standard, each variance, as reported<span class="count">FY{{ fy }} · {{ version }} · by plant — actual periods from the ledger, plan periods from the plan</span></h2>
+{% for pl in fin.recon.plants %}<div class="finwrap"><table class="fin recon"><thead><tr><th>{{ pl.plant_name }}</th>{% for p in fin.recon.periods %}<th class="n {{ 'actual' if p.actual }}">{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endfor %}<th class="n tot">FY{{ fy }}</th></tr></thead><tbody>
+{% for l in pl.lines %}<tr class="{{ 'total' if l.total }}"><td class="small{{ '' if l.total else ' muted' }}">{{ l.label }}</td>{% for x in l.cells %}<td class="n small {{ x.cls }}">{{ x.show }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endfor %}
+<p class="hint">Reported cost of goods = cases × the standard + the variances recognised in the period. <b>Plan periods</b>: cases made are cases sold, so every variance is recognised in the period it arises and none is retained in stock; material price variance is carried through the stock's weighted average and recognised as the stock is consumed. Fixed overhead's spending and volume are the plant's (as on Against standard); a year with no standard reads the planned cost and the fixed overhead not absorbed, unsplit. <b>Actual periods</b>: the ledger read through the cost pools — the standard absorbed on the cases made, each variance whole by component, fixed split into spending and volume — so <i>as reported</i> is the ledger's cost to the dollar. A dash: nothing to split. Positive is adverse. Finished goods and work in progress at a weighted average, with variances held in stock, wait on production being valued.</p>{% endif %}
 {{ fin_typed(fin) }}{{ fin_toast(fin) }}
 <h2>Saves<span class="count">{{ version }} · each save is one reason; withdrawing it returns its figures to the demand plan — or withdraw one figure from the list above · <a href="{{ url_for('plan.change_history', version=version, record="Finance's plan") }}">change history</a></span></h2>
 <table><thead><tr><th>Save</th><th>When</th><th>By</th><th>Reason</th><th>Customers</th><th>Periods</th><th class="n">Figures</th><th class="n">Held</th><th class="n">◆ moved</th><th>Note</th><th></th></tr></thead><tbody>
@@ -931,8 +936,9 @@ FIN_TABS = {"volume": ["volume"], "price": ["price"], "revenue": ["revenue"],
                           "uc_variable", "std_variable", "vs_var_oh", "uc_fixed", "std_fixed", "vs_fixed_oh"],
             "cogs": ["volume", "unit_cost", "cogs"], "margin": ["revenue", "cogs", "margin"],
             # the planned unit cost against the standard, line by line, per case and in money (DEC-20261116-02 points 5, 9)
-            "against": ["vs_mat_price", "vsm_mat_price", "vs_mat_usage", "vsm_mat_usage", "vs_lab_rate", "vsm_lab_rate", "vs_lab_eff", "vsm_lab_eff",
-                        "vs_var_oh", "vsm_var_oh", "vs_fixed_oh", "vsm_fixed_oh", "vs_total", "vsm_total"]}
+            # with the material and labour subtotals, which an actual period and a typed component read whole (DEC-20261117-01 point 5)
+            "against": ["vs_mat_price", "vsm_mat_price", "vs_mat_usage", "vsm_mat_usage", "vs_material", "vsm_material", "vs_lab_rate", "vsm_lab_rate", "vs_lab_eff", "vsm_lab_eff",
+                        "vs_labour", "vsm_labour", "vs_var_oh", "vsm_var_oh", "vs_fixed_oh", "vsm_fixed_oh", "vs_total", "vsm_total"]}
 COST_ENTRY = ("unit_cost", "cogs", "margin", "against")          # the tabs of the Cost of goods entry
 PER_CASE = ("unit_cost", "uc_material", "uc_labour", "uc_variable", "uc_fixed")
 # the standard and each line against it are read over the cells that have a standard: a year with none is not in them
@@ -1029,6 +1035,40 @@ def _against_pools(version: str, in_fy: list[dict], fm: str) -> dict:
             "variable": [{**r, "plant_name": plants.get(r["plant_code"], r["plant_code"]), "pool_name": names.get(r["pool_code"], r["pool_code"]),
                           "vs": fa(r["planned"] - r["standard"]) if r["planned"] is not None and r["standard"] is not None else ""} for r in var],
             "fixed": out_f}
+
+
+RECON_LINES = [("at_standard", "At standard", False), ("mat_price", "Material price", False), ("mat_usage", "Material usage", False),
+               ("material_whole", "Material, whole", False), ("lab_rate", "Labour rate", False), ("lab_eff", "Labour efficiency", False),
+               ("labour_whole", "Labour, whole", False), ("var_oh", "Variable overhead", False), ("fixed_case", "Fixed overhead, a case", False),
+               ("fixed_spending", "Fixed spending", False), ("fixed_volume", "Fixed volume", False), ("not_absorbed", "Fixed not absorbed, unsplit", False),
+               ("no_standard", "Cases with no standard, at cost", False), ("as_reported", "As reported", True)]
+
+
+def _reconciliation(version: str, in_fy: list[dict], fy: int) -> dict | None:
+    """Beneath the Cost of goods tab: the plant's reported cost of goods at standard, each variance and as reported, by
+    period — the actual periods from the ledger, the plan periods from the plan (plan.cogs_reconciliation)."""
+    periods = [p for p in in_fy if not p.get("total")]
+    if not periods:
+        return None
+    ph = ",".join("?" * len(periods))
+    rows = q(f"select * from plan.cogs_reconciliation where version_id = ? and period in ({ph}) order by plant_code, period", version, *[p["period"] for p in periods])
+    names = {r["node_code"]: r["node_name"] for r in q("select node_code, node_name from dims.dim_node")}
+    def show(x):
+        return "—" if x is None else (f"{x / 1e6:,.2f}M" if abs(x) >= 1e6 else f"{_z(x, 1e3) / 1e3 + 0.0:,.1f}k")
+    out = []
+    for plant in sorted({r["plant_code"] for r in rows}):
+        by = {r["period"]: r for r in rows if r["plant_code"] == plant}
+        lines = []
+        for key, label, total in RECON_LINES:
+            vals = [by.get(p["period"], {}).get(key) for p in periods]
+            if all(v is None for v in vals):
+                continue
+            year = sum(v for v in vals if v is not None)
+            cells = [{"show": show(v), "cls": ("actual " if p["actual"] else "") + ("adverse" if (v or 0) > 0.5 and key not in ("at_standard", "as_reported", "no_standard") else "")}
+                     for v, p in zip(vals, periods)] + [{"show": show(year), "cls": "tot"}]
+            lines.append({"label": label, "total": total, "cells": cells})
+        out.append({"plant_name": names.get(plant, plant), "lines": lines})
+    return {"plants": out, "periods": periods}
 
 
 def _shown_as(m: str) -> str:
@@ -1140,10 +1180,20 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                         buckets[(child_of[k[2]], p["period"])].append(k)
                     if k[2] in grand_of:
                         buckets[(grand_of[k[2]], p["period"])].append(k)
+        # an actual period's cost: the ledger's through the pools, a material's share apportioned (DEC-20261117-01)
+        costs_at = _once(reads.actual_costs)(vp["actual"])
         for r in _once(reads.finance_actuals)(vp["actual"]):
             if r["account_code"] in A and r["material_code"] in M:
                 c = {"source": "actual", "cases": r["cases"], "net_sales": r["net_sales"], "source_cases": r["cases"], "source_net_sales": r["net_sales"],
                      "price": None, "source_price": None, "unit_cost": None, "cogs": None, "margin": None}
+                pc = costs_at.get((r["material_code"], r["period"]))
+                if pc and pc.get("unit_cost") is not None:
+                    n = r["cases"] or 0
+                    c.update(pc)
+                    c["cogs"] = n * pc["unit_cost"]
+                    for each, amount in calc_finance.CARRIED.items():
+                        c[amount] = n * pc[each] if pc.get(each) is not None else None
+                    c["margin"] = (r["net_sales"] or 0) - c["cogs"]
                 actual_at[(fm, r["period"])].append(c)
                 if r["material_code"] in child_of:
                     actual_at[(child_of[r["material_code"]], r["period"])].append(c)
@@ -1201,8 +1251,15 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                 F = _figures(actual_at.get((code, p["period"]), []), rules, lines)
                 for m in MEASURES:
                     k = m["key"]
-                    row["cells"][k].append({"show": _show(k, F["fin"][k]) if F and reading != "variance" else "", "src": None, "built": None,
-                                            "cls": "actual", "title": ("actual — no cost per case is held for an actual period" if k in PER_CASE else "actual — what was shipped and invoiced; nothing is planned or typed here"),
+                    val = F["fin"][k] if F and reading != "variance" else None
+                    show = _show(k, val) if val is not None else ""
+                    cls = "actual"
+                    if k in AGAINST_KEYS and val is not None and abs(val) >= 0.005:
+                        show += " A" if val > 0 else " F"; cls += " adverse" if val > 0 else " favourable"
+                    costed_k = k in PER_CASE or k in AT_STANDARD or k in ("cogs", "margin")
+                    row["cells"][k].append({"show": show, "src": "apportioned" if costed_k and show and _shown_as(k) == "rate" else None, "built": None, "cls": cls,
+                                            "title": ("actual — the ledger's cost at the plant through the cost pools; a material's figure is its standard plus its share of each pool's variance there, in proportion to the standard it absorbed"
+                                                      if costed_k else "actual — what was shipped and invoiced; nothing is planned or typed here"),
                                             "input": None, "moved": False})
                 continue
             ks = fy_keys if p.get("total") else keys_by_p[p["period"]]
@@ -1216,7 +1273,7 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                             x["show"] += " A" if F["fin"][k] > 0 else " F"        # planned above the standard: adverse
                             x["cls"] += " adverse" if F["fin"][k] > 0 else " favourable"
                         if p.get("total") and k in PER_CASE:
-                            x["title"] = "the plan periods' cost per case, weighted by their cases — no actual period holds one"
+                            x["title"] = "the year's cost per case — actual periods and plan periods together, weighted by their cases"
                         x["src"] = ((_show(k, F["src"][k]) or "—") if rules[k]["source_field"] else None) if F["src"] else ("no demand plan" if k == "volume" else None)
                         if F["built"] and _shown_as(k) != "rate" and k not in AT_STANDARD:
                             x["built"] = _show(k, F["built"][k])
@@ -1265,7 +1322,8 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
            "act_rev": (T.get("act") or {}).get("revenue")}
     case = None
     if measure in COST_ENTRY:                            # the entry's tiles are per case (DEC-20261116-01 point 2)
-        year_cells = [grid.cells[k] for p in in_fy for k in buckets.get((fm, p["period"]), [])] if grid is not None else []
+        year_cells = ([grid.cells[k] for p in in_fy for k in buckets.get((fm, p["period"]), [])] if grid is not None else []) + \
+            [c for p in in_fy for c in actual_at.get((fm, p["period"]), [])]                 # the year reads across: actual and plan (DEC-20261117-01 point 7)
         costed = [c for c in year_cells if c.get("unit_cost") is not None]
         held = [c for c in year_cells if c.get("vs_total") is not None]
         each = {m: calc_finance.aggregate(costed, m, rules) for m in PER_CASE}
@@ -1288,12 +1346,14 @@ def _finance_ctx(version: str | None, fy: int, page: dict, who: str | None = Non
                      "standing": "unsaved", "state": "in_force", "reason": "", "entered_by": who}
                     for t in reversed(wc.typed if wc else []) if t.customer == fc and t.material in nodes and t.period in {p["period"] for p in periods if not p["actual"]}]
     pools = _against_pools(version, in_fy, fm) if measure == "against" and version else None
-    return {"fy": fy, "fc": fc, "fm": fm, "reading": reading, "measure": measure, "pools": pools,
+    recon = _reconciliation(version, in_fy, fy) if measure == "cogs" and version else None
+    typed_uc = _once(reads.typed_unit_costs)(version) if measure in COST_ENTRY and version else 0
+    return {"fy": fy, "fc": fc, "fm": fm, "reading": reading, "measure": measure, "pools": pools, "recon": recon, "typed_uc": typed_uc,
             "tab_label": {"unit_cost": "Cost per case", "against": "Against standard"}.get(measure) or rules[measure]["label"],
             "entry": "Cost of goods" if measure in COST_ENTRY else "Revenue", "case": case,
             "parts": [{"label": lab, "on": key == part, "href": L(part=key)} for key, lab in tab_parts] if per_case else None,
             "part_says": "the " + ("cost" if part == "unit_cost" else dict(tab_parts).get(part, "").lower()) + (" of a case" if measure == "unit_cost" else ""),
-            "year_says": "plan, by cases" if per_case else ("actual + plan" if vp["actual"] else None),
+            "year_says": ("actual + plan, by cases" if vp["actual"] else "plan, by cases") if per_case else ("actual + plan" if vp["actual"] else None),
             "not_built": [rules[m]["not_built_says"] for m in lines if not rules[m]["built"] and rules[m]["not_built_says"]][:1], "customers": customers, "customer_label": next((x["label"] for x in customers if x["code"] == fc), fc), "source_of": decl,
             "path": [{**n, "href": L(material=n["code"])} for n in _once(reads.node_path)("material", fm)] or [{"code": "ALL", "label": "All materials", "href": L(material="ALL")}],
             "readings": [{"label": lab, "on": key == reading, "href": L(reading=key)} for key, lab in READINGS],
@@ -2723,6 +2783,7 @@ views.register(plan, _page, _who, _ctx, _busy, session, roles)
 standard.register(plan, _page, _who, _ctx, _busy)
 pools.register(plan, _page, _who, _ctx, _busy, session, roles)
 purchases.register(plan, _page, _who, _ctx, _busy, session, roles)
+typed_cost.register(plan, _page, _who, _ctx, _busy, session, roles)
 
 
 def main() -> None:

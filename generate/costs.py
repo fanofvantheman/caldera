@@ -57,6 +57,8 @@ LEDGER_COST_CENTRES = [
 
 # the one chart: account, name, cost family (for reading), labour
 GL_ACCOUNTS = [
+    ("5100", "Ingredients consumed",          "material",                 False),
+    ("5200", "Packaging consumed",            "material",                 False),
     ("6100", "Wages and salaries",            "labour",                   True),
     ("6150", "Labour on-costs",               "labour",                   True),
     ("6200", "Electricity",                   "energy",                   False),
@@ -232,6 +234,20 @@ def purchase_acts() -> list[dict]:
              "entered_by": "supply.planner@caldera", "entered_at": "2026-11-09T10:30:00"}]
 
 
+UNIT_COST_ACT_COLUMNS = ["act_id", "action", "withdraws", "version_id", "material_code", "plant_code", "period", "component", "per_case",
+                         "reason", "entered_by", "entered_at"]
+
+
+def unit_cost_acts() -> list[dict]:
+    """A planned unit cost component Finance typed where its drivers are missing (DEC-20261116-02 point 7): the chia cups
+    launching at Loxton, whose bill is not yet released, carried at the co-packer's quoted material cost in their first
+    full period. Draws nothing."""
+    return [{"act_id": "UCA-0001", "action": "set", "withdraws": "", "version_id": "LV-2027P04", "material_code": "CUP_ADULT-CUP_2x170",
+             "plant_code": "LOX", "period": "2027P08", "component": "material", "per_case": 3.05,
+             "reason": "bill for the chia line not yet released — the co-packer's quoted material cost", "entered_by": "finance.manager@caldera",
+             "entered_at": "2026-11-12T15:20:00"}]
+
+
 POOL_RULE_COLUMNS = ["act_id", "action", "entity_code", "cost_centre_code", "account_code", "pool_code", "set_by", "set_at", "reason"]
 _HALL_CCS = ["CC_E_FRUIT", "CC_E_TOM", "CC_E_BEANS", "CC_E_SPRD", "CC_L_PROD"]
 _NOT_IN_COGS = ["CC_LOG", "CC_PROC", "CC_PLAN", "CC_SALES", "CC_MKT", "CC_TM", "CC_FIN", "CC_HR", "CC_IT", "CC_EXEC"]
@@ -249,6 +265,8 @@ def pool_rules() -> list[dict]:
     rows += [("", "", acct, pool, "by account") for acct, pool in _BY_ACCOUNT.items()]
     rows += [("", cc, "6200", "PROCESS_ENERGY", "a production hall's power runs with its lines") for cc in _HALL_CCS]
     rows += [("", cc, "6400", "CONSUMABLES", "a production hall's consumables run with its lines") for cc in _HALL_CCS]
+    # material consumed, in the ledgers' actuals only: a plan reads material from the bill (DEC-20261117-01 point 6)
+    rows += [("", "", "5100", "INGREDIENTS", "material consumed, as the ledger books it"), ("", "", "5200", "PACKAGING", "material consumed, as the ledger books it")]
     return [{"act_id": f"POOL-{i:03d}", "action": "set", "entity_code": e, "cost_centre_code": cc, "account_code": a, "pool_code": pool,
              "set_by": "finance.manager@caldera", "set_at": "2026-07-01T09:00:00", "reason": why}
             for i, (e, cc, a, pool, why) in enumerate(rows, start=1)]
@@ -462,6 +480,48 @@ def capex_items(plan_fy: int, latest_closed: str) -> list[dict]:
                          "project_kind": pk, "asset_class": cls, "entity_code": ent, "cost_centre_code": cc, "plant_code": pl, "spend": spend,
                          "spend_from": sf, "spend_to": st, "in_service_period": ins, "life_years": life, "lifetime_units": lu, "rate": rate,
                          "lease_charge": charge, "lease_to_period": to, "tier": tier, "note": note, "entered_by": by, "entered_on": on, "copied_from": ""})
+    return rows
+
+
+# material consumed joins the ledgers as two accounts (DEC-20261117-01 point 6): booked to the production hall the line
+# runs in, a specimen made here from the bill at the cost each input was bought at
+_HALL_OF_LINE = {"L_ECH_FRUIT": "1100", "L_ECH_TOM": "1110", "L_ECH_PASTE": "1110", "L_ECH_SAUCE": "1110", "L_ECH_BEANS": "1120",
+                 "L_ECH_JAR": "1130", "L_ECH_PORTION": "1130", "L_LOX_FRUIT": "LX-PRD", "L_LOX_CUP_1": "LX-PRD", "L_LOX_CUP_2": "LX-PRD"}
+MATERIAL_ACCOUNT = {"ingredient": "5100", "packaging": "5200"}
+
+
+def material_actuals(shipments: list[dict], routes: list[dict], bom: list[dict], input_materials: list, periods: list[dict],
+                     latest_closed: str, seed: int) -> list[dict]:
+    """Ingredients and packaging consumed, by entity × production hall × period, from each entity's first period to the
+    last closed one: the cases made (shipped — Caldera has no production history) × the bill at the plant × each input's
+    price, 3% a year lower before FY2027, and what it was bought at against that — a draw per hall and period, a little
+    over on average, as a year of yields and spot buys leaves it. A stream of its own: nothing else moves."""
+    rng = random.Random(seed * 7 + 5_100)
+    kind = {r[0]: r[2] for r in input_materials}
+    route = {r["material_code"]: (r["plant_code"], r["line_code"]) for r in routes if r["is_primary"] == "Y"}
+    bill: dict = defaultdict(list)
+    for b in bom:
+        if kind.get(b["component_material"]) in MATERIAL_ACCOUNT:
+            bill[(b["plant_code"], b["parent_material"])].append((b["component_material"], float(b["quantity_per_case"])))
+    entity = {cc: e for e, cc, _, _ in LEDGER_COST_CENTRES}
+    joined = {e[0]: e[4] for e in ENTITIES}
+    fy_of = {p["period"]: int(p["fiscal_year"]) for p in periods}
+    cost: dict = defaultdict(float)
+    for s in shipments:
+        per = s["period"]
+        if per > latest_closed or s["material_code"] not in route:
+            continue
+        plant, line = route[s["material_code"]]
+        cc = _HALL_OF_LINE[line]
+        if per < joined[entity[cc]]:
+            continue
+        deflate = 1.03 ** min(0, fy_of[per] - 2027)
+        for inp, qty in bill[(plant, s["material_code"])]:
+            cost[(cc, MATERIAL_ACCOUNT[kind[inp]], per)] += float(s["cases"]) * qty * INPUT_PRICES.get(inp, 0.0) * deflate
+    rows = []
+    for (cc, acct, per), amt in sorted(cost.items(), key=lambda kv: (kv[0][2], kv[0][0], kv[0][1])):
+        rows.append({"entity_code": entity[cc], "ledger_cost_centre": cc, "account_code": acct, "period": per,
+                     "amount": round(amt * rng.uniform(0.98, 1.05), 2)})
     return rows
 
 

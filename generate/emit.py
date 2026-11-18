@@ -49,5 +49,12 @@ def emit_all(out: Path, tables: dict[str, list[dict]], history: dict[str, list[d
     return manifest
 
 
+def header_only(path: Path, columns: list[str]) -> None:
+    """A register with nothing in it yet: its header alone, which the landing reads as an empty table (the header is the contract)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow(columns)
+
+
 def dataclass_rows(items) -> list[dict]:
     return [asdict(i) for i in items]

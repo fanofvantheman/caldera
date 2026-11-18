@@ -124,7 +124,10 @@ PROCESSES = [
                 Tab("fin_against", "Against standard", "plan.revenue", {"measure": "against"}, verbs=FIN_READ)]),
             # the standard: a unit cost in four components, each read from the model that holds it (DEC-20261115-04)
             Section("standard", "Standard by plant", "plan.standard", uses=("version", "fy", "location", "material"),
-                    verbs=["standard.derive", "standard.declare", "register.cost_input.maintain", *FIN_READ]),
+                    verbs=["standard.derive", "standard.declare", "register.cost_input.maintain", *FIN_READ], tabs=[
+                Tab("std_standard", "Standard", "plan.standard", verbs=["standard.derive", "standard.declare", "register.cost_input.maintain", *FIN_READ]),
+                # a component typed where its drivers are missing, by Finance's entry right (DEC-20261116-02 point 7)
+                Tab("std_typed", "Typed", "plan.unit_cost_typed", verbs=FIN_READ + ["overlay.finance.enter"], uses=("version",))]),
             # the purchase plan's stock, read as given: Finance does not plan purchases (DEC-20261116-04 points 5, 7)
             Section("material_stock", "Material stock", "plan.material_stock", uses=("version", "location"), verbs=[*FIN_READ, "register.cost_input.maintain"]),
             Section("landed", "Landed cost", RUNG, {"slug": "landed"}, verbs=["register.supplier_price_list.maintain", "register.freight_contract.maintain", "register.hedge_book.maintain", "register.customs.maintain"]),

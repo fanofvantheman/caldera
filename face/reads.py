@@ -786,6 +786,35 @@ def finance_actuals(periods: list[str]) -> list[dict]:
                  from history.shipments_period where period in ({','.join('?' * len(periods))}) group by all""", *periods)
 
 
+def actual_costs(periods: list[str]) -> dict[tuple, dict]:
+    """An actual period's cost per case by material (DEC-20261117-01 point 4): the standard plus its share of each pool's
+    variance at its plant, read at Finance's grain — a standard material, its own-label variants weighed in by their
+    cases. Keys are the grid's per-case figures; nothing is split into price and usage or rate and efficiency."""
+    if not periods:
+        return {}
+    rows = q(f"""select m.standard_material material_code, a.period, sum(a.cases) cases,
+                        sum(a.cases * a.unit_cost) unit_cost, sum(a.cases * a.material_cost) uc_material, sum(a.cases * a.labour_cost) uc_labour,
+                        sum(a.cases * a.variable_overhead) uc_variable, sum(a.cases * a.fixed_overhead) uc_fixed,
+                        sum(a.cases * a.std_cost) std_cost, sum(a.cases * a.std_material) std_material, sum(a.cases * a.std_labour) std_labour,
+                        sum(a.cases * a.std_variable) std_variable, sum(a.cases * a.std_fixed) std_fixed,
+                        sum(a.cases * a.var_material) vs_material, sum(a.cases * a.var_labour) vs_labour, sum(a.cases * a.var_oh) vs_var_oh,
+                        sum(a.cases * a.fixed_oh) vs_fixed_oh, sum(a.cases * a.var_total) vs_total
+                 from plan.actual_unit_cost a join dims.dim_material m using (material_code)
+                 where a.period in ({','.join('?' * len(periods))}) group by all""", *periods)
+    out = {}
+    for r in rows:
+        n, key = r.pop("cases") or 0, (r.pop("material_code"), r.pop("period"))
+        out[key] = {k: (v / n if n and v is not None else None) for k, v in r.items()}
+    return out
+
+
+def typed_unit_costs(version: str | None) -> int:
+    """How many planned unit cost components stand typed over their drivers on the version (DEC-20261116-02 point 7)."""
+    if not version:
+        return 0
+    return (one("select count(*) n from plan.unit_cost_act where version_id = ?", version) or {}).get("n") or 0
+
+
 def fy_periods(fy: int) -> list[dict]:
     return q("select period, fiscal_period, period_state from dims.dim_period where fiscal_year = ? order by period", fy)
 

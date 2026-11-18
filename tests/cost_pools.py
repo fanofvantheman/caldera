@@ -59,8 +59,13 @@ def main() -> None:
                         sum(case when component = 'variable_overhead' then per_case end) v, sum(case when component = 'fixed_overhead' then per_case end) f
                    from plan.planned_unit_cost_pool group by all)
                select count(*) n from plan.planned_unit_cost s join p using (version_id, material_code, period)
-               where abs(coalesce(s.material_cost, 0) - coalesce(p.m, 0)) > {EPS} or abs(coalesce(s.labour_cost, 0) - coalesce(p.l, 0)) > {EPS}
-                  or abs(coalesce(s.variable_overhead, 0) - coalesce(p.v, 0)) > {EPS} or abs(coalesce(s.fixed_overhead, 0) - coalesce(p.f, 0)) > {EPS}""")[0]["n"]
+               where abs(coalesce(s.material_driven, 0) - coalesce(p.m, 0)) > {EPS} or abs(coalesce(s.labour_driven, 0) - coalesce(p.l, 0)) > {EPS}
+                  or abs(coalesce(s.variable_driven, 0) - coalesce(p.v, 0)) > {EPS} or abs(coalesce(s.fixed_driven, 0) - coalesce(p.f, 0)) > {EPS}""")[0]["n"]
+    # a component typed over its drivers (DEC-20261116-02 point 7) replaces the driven figure; the pools stay the drivers'
+    untyped = q("""select count(*) n from plan.planned_unit_cost where (not typed_material and material_cost is distinct from material_driven)
+                   or (not typed_labour and labour_cost is distinct from labour_driven) or (not typed_variable and variable_overhead is distinct from variable_driven)
+                   or (not typed_fixed and fixed_overhead is distinct from fixed_driven)""")[0]["n"]
+    assert untyped == 0, f"{untyped} cells whose untyped components are not the drivers'"
     n = q("select count(*) n from plan.planned_unit_cost")[0]["n"]
     assert bad == 0, f"{bad} cells whose components are not the sum of their pools"
     ind = q("""select r.version_id, r.plant_code, r.period, r.lines_amount, r.direct_labour, r.amount from plan.cost_pool_rate r where pool_code = 'INDIRECT_LABOUR'""")

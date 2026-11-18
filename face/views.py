@@ -91,7 +91,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         rows = q("select * from plan.opex_schedule where version_id = ?", version)
         prior = {r["period"]: r["prior_year_period"] for r in q("select period, prior_year_period from dims.dim_period")}
         act = defaultdict(float)
-        for r in q("select entity_code, cost_centre_code, account_code, period, sum(amount) a from plan.cost_actual where state = 'mapped' group by all"):
+        for r in q("select entity_code, cost_centre_code, account_code, period, sum(amount) a from plan.cost_actual where state = 'mapped' and coalesce(cost_family, '') <> 'material' group by all"):
             act[(r["entity_code"], r["cost_centre_code"], r["account_code"], r["period"])] = r["a"]
         refd = {(r["entity_code"], r["cost_centre_code"], r["account_code"], r["period"]): r["a"] or 0.0
                 for r in (q("select entity_code, cost_centre_code, account_code, period, sum(amount) a from plan.opex_schedule where version_id = ? group by all", ref)

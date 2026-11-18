@@ -133,20 +133,24 @@ def main() -> None:
     lab = c.get(f"/revenue?version={V}&measure=unit_cost&part=uc_labour").data.decode().split("<main", 1)[-1]
     rows_lab = re.findall(r'<tbody id="fin-r-(?!ALL)[^"]+">(.*?)</tbody>', lab, re.S)
     assert rows_lab and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["labour / case"] for b in rows_lab)
-    # the year: the plan periods' cost per case weighted by their cases; actual periods hold none
+    # the year reads across (DEC-20261117-01 point 7): actual and plan periods' cost per case weighted by their cases — an
+    # actual period's the ledger's through the pools, apportioned to the material
     with app.test_request_context():
         g = FL.base(V, M.FINANCE)[1]
         vp = M.reads.version_periods(V)
         plan_in_fy = [p["period"] for p in vp["periods"] if not p["actual"] and p["fiscal_year"] == vp["fy"]]
+        act_in_fy = [p["period"] for p in vp["periods"] if p["actual"] and p["fiscal_year"] == vp["fy"]]
         costed = [g.cells[k] for p in plan_in_fy for k in g.by_period.get((V, p), ()) if g.cells[k]["unit_cost"] is not None]
-        want = sum(x["cogs"] for x in costed) / sum(x["cases"] for x in costed)
+        ac = M.reads.actual_costs(act_in_fy)
+        act = [(r["cases"], ac[(r["material_code"], r["period"])]["unit_cost"]) for r in M.reads.finance_actuals(act_in_fy) if (r["material_code"], r["period"]) in ac]
+        want = (sum(x["cogs"] for x in costed) + sum(n * u for n, u in act)) / (sum(x["cases"] for x in costed) + sum(n for n, _ in act))
     cells = re.findall(r'<td class="n ([^"]*)"[^>]*>([^<]*)', top.split("</tr>")[0])
     year = next(v for k, v in cells if "tot" in k)
-    assert vp["actual"] and all(v == "" for k, v in cells if "actual" in k) and year == f"{want:,.2f}", (year, want)
+    assert vp["actual"] and act and all(v != "" for k, v in cells if "actual" in k) and year == f"{want:,.2f}", (year, want)
     tile = re.search(r'Cost of a case · FY\d+[^<]*</span><b>([^<]+)</b>', body).group(1)
     assert tile == year, (tile, year)
     print(f"cost per case   opens first; {len(beneath)} rows beneath, one line each (labour when chosen); tiles per case, each component opening its model; "
-          f"the year {year} = the plan periods weighted by cases, {len(vp['actual'])} actual periods empty; no reading of money offered")
+          f"the year {year} = actual and plan periods weighted by cases, the {len(act_in_fy)} actual periods of FY{vp['fy']} apportioned from the ledger; no reading of money offered")
     h = c.get(f"/revenue?version={V}&measure=cogs").data.decode()
     top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', h, re.S).group(1)
     assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in ("volume", "unit_cost", "cogs")], top[:300]

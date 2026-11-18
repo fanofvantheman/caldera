@@ -66,9 +66,13 @@ def main() -> None:
     print(f"standard        set on {BP} for FY2027 only; {len(sample)} materials made again from the business plan's own inputs, hours, rates and fixed rate")
 
     # 2 · the lines sum to planned − standard; the business plan nets to nil over its year
-    bad = q("""select count(*) n from plan.cost_variance where abs(var_total - (coalesce(mat_price, 0) + coalesce(mat_usage, 0) + lab_rate + lab_eff + var_oh + fixed_oh)) > 1e-9
-               or abs(var_total - (unit_cost - std_cost)) > 1e-9 or abs(var_material - (coalesce(mat_price, 0) + coalesce(mat_usage, 0))) > 1e-9
-               or abs(var_labour - (lab_rate + lab_eff)) > 1e-9""")[0]["n"]
+    # a component typed over its drivers is read whole: its split lines are empty (DEC-20261116-02 point 7)
+    bad = q("""select count(*) n from plan.cost_variance where abs(var_total - (var_material + var_labour + var_oh + fixed_oh)) > 1e-9
+               or abs(var_total - (unit_cost - std_cost)) > 1e-9
+               or (not typed_material and abs(var_material - (coalesce(mat_price, 0) + coalesce(mat_usage, 0))) > 1e-9)
+               or (not typed_labour and abs(var_labour - (lab_rate + lab_eff)) > 1e-9)
+               or (typed_material and (mat_price is not null or mat_usage is not null or abs(var_material - (unit_cost - std_cost - var_labour - var_oh - fixed_oh)) > 1e-9))
+               or (typed_labour and (lab_rate is not null or lab_eff is not null))""")[0]["n"]
     n = q("select count(*) n from plan.cost_variance")[0]["n"]
     assert bad == 0 and n > 0, f"{bad} of {n} cells whose lines do not sum"
     assert q("select count(*) n from plan.cost_variance where abs(fixed_oh) > 1e-9")[0]["n"] == 0, "the fixed rate is held: no fixed variance per case"
