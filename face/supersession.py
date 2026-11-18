@@ -30,14 +30,14 @@ KINDS = {
     "temporary":    ("Temporary", "a bonus or promotional pack stands in for a window, then the baseline goes back to the standard item", "date"),
 }
 
-PAGE = """<h1>Supersession<small>{{ version }} · links between materials — this material's demand continues as that one's</small></h1>
+PAGE = """<h1>Supersession<small>{{ version|plan }} · links between materials — this material's demand continues as that one's</small></h1>
 <p class="hint">A link moves demand only: price, terms, the bill, the route and the standard are the successor's own. From the switch the predecessor's baseline moves onto each successor at its share — the rest is lost volume — and a declared uplift lands in the innovation layer. A new material that sits alongside the old one is a launch with cannibalisation, not a link. {% if may and is_open %}You keep the links.{% else %}Kept by {{ holders|join(', ') or 'nobody yet' }}.{% endif %} A link is in the plan after the next run.</p>
 <table><thead><tr><th>Link</th><th>Kind</th><th>From</th><th>To</th><th class="n">Share</th><th class="n">Uplift</th><th>Switch</th><th>End</th><th>Accounts</th><th class="n">Moved</th><th class="n">Lost</th><th>Why</th><th></th></tr></thead><tbody>
 {% for l in links %}<tr><td><code>{{ l.link_id }}</code></td><td>{{ l.kind_label }}</td><td>{{ l.from_material }}</td><td>{{ l.to_material }}</td><td class="n">{{ '{:.0%}'.format(l.share) }}</td>
 <td class="n">{{ '{:+.0f}%'.format(l.uplift_pct) if l.uplift_pct else '' }}</td><td class="small">{{ l.switch_says }}</td><td class="small">{{ l.end_week or '' }}</td><td class="small">{{ l.accounts or 'all' }}</td>
 <td class="n">{{ '{:,.0f}'.format(l.moved or 0) }}</td><td class="n">{{ '{:,.0f}'.format(l.lost or 0) if l.lost else '' }}</td><td class="small">{{ l.reason }}</td>
 <td>{% if may and is_open and l.first %}<form class="inline" method="post" action="{{ url_for('plan.supersession_withdraw') }}"><input type="hidden" name="link_id" value="{{ l.link_id }}"><input name="reason" required placeholder="why" size="10"> <button class="act">Withdraw</button></form>{% endif %}</td></tr>
-{% else %}<tr><td colspan="13" class="muted">No links on {{ version }}.</td></tr>{% endfor %}</tbody></table>
+{% else %}<tr><td colspan="13" class="muted">No links on {{ version|plan }}.</td></tr>{% endfor %}</tbody></table>
 {% if may and is_open %}<h2 id="link">Make a link<span class="count">choose a kind — it fills the settings; change any of them</span></h2>
 <form class="entry" method="post" action="{{ url_for('plan.supersession_set') }}">
 <label>kind<select name="kind">{% for k, v in kinds.items() %}<option value="{{ k }}">{{ v[0] }}</option>{% endfor %}</select></label>

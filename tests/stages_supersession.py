@@ -37,7 +37,7 @@ from face import stages as ST                         # noqa: E402
 from face import supersession as SU                   # noqa: E402
 
 chassis.configure(root=BUILD, db="data/caldera.duckdb", receipts="data/receipts", landing="data/landing")
-LV = "LV-2027P04"
+LV = "F202705"
 FINANCE, PORTFOLIO, PLANNER = "finance.manager@caldera", "portfolio.marketing@caldera", "planner.westbrook@caldera"
 RUN = [["uv", "run", "python", "-m", "ingest.pipeline"], ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "*", "--auto-apply", "--no-prompts"]]
 
@@ -55,10 +55,10 @@ def landing_files() -> set:
 def main() -> None:
     state = {r["stage"]: r["state"] for r in q("select stage, state from plan.stage_state where version_id = ?", LV)}
     assert [state[s] for s in ("demand", "valuation", "inventory", "production")] == ["handed over"] * 4 and state["materials"] == "open", state
-    assert {r["state"] for r in q("select state from plan.stage_state where version_id = 'BP-FY2027'")} == {"handed over"}
+    assert {r["state"] for r in q("select state from plan.stage_state where version_id = 'B202701'")} == {"handed over"}
     assert {r["read_as"] for r in q("select distinct read_as from plan.demand_handed_over where version_id = ?", LV)} == {"as it stands"}
-    print("seed            LV-2027P04: demand, valuation, inventory and production handed over at onboarding, taking no figures; the rest open; "
-          "BP-FY2027 closed, every stage handed over; inventory reads the demand plan as it stands")
+    print("seed            F202705: demand, valuation, inventory and production handed over at onboarding, taking no figures; the rest open; "
+          "B202701 closed, every stage handed over; inventory reads the demand plan as it stands")
 
     app = chassis_app.create_app(SHELL, session, roles, blueprints=[M.plan])
     c = app.test_client()

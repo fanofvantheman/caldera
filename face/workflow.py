@@ -24,7 +24,7 @@ DUE_VERB = "cycle.open"
 STATE_SAYS = {"nothing": "nothing yet", "open": "open", "submitted": "submitted", "accepted": "accepted", "sent_back": "sent back"}
 PROCESS_LABEL = {"ibp": "Integrated business planning", "finplan": "Financial planning", "strategic": "Strategic plan"}
 
-PAGE = """<h1>Workflow<small>{{ process_label }} · {{ version }} · each step at each node: nothing yet, open, submitted, accepted or sent back — who holds it, since when, and its due date</small></h1>
+PAGE = """<h1>Workflow<small>{{ process_label }} · {{ version|plan }} · each step at each node: nothing yet, open, submitted, accepted or sent back — who holds it, since when, and its due date</small></h1>
 {% if not steps %}<p class="lede">{{ process_label }} has no steps with a workflow yet.</p>{% else %}
 <div class="wfwrap"><table class="wf"><thead><tr><th class="sticky">{{ 'Cost centre' if org else 'Node' }}</th>{% for s in steps %}<th>{{ s.step_label }}{% if not s.built %} <span class="small muted">not built</span>{% endif %}
 <div class="small muted">{% if s.due_on %}due {{ s.due_on }}{% if s.late %} · <b class="no">late</b>{% endif %}{% else %}no due date{% endif %}{% if s.n %} · {{ s.n_in }} of {{ s.n }} in{% endif %}</div></th>{% endfor %}</tr></thead><tbody>

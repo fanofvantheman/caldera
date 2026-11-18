@@ -27,26 +27,26 @@ LANDING = LogLanding("plan", "reg_assumption_amend", COLUMNS)
 BOUNDS = {"rate": (0.0001, 1000.0), "pct": (-0.5, 1.0), "index": (1.0, 10000.0)}
 SAY_KIND = {"rate": "a rate", "pct": "a share — 0.032 is 3.2%", "index": "an index"}
 
-PAGE = """<h1>Assumptions<small>FY{{ fy }} · {{ version }} · the one set every plan on the version is valued with{% if ref %}, {{ ref }}'s beneath each{% endif %}</small></h1>
-<p class="hint">{% if may_edit and open %}You maintain the assumptions: an amendment is a value from a period on {{ version }} — the value in force is never edited — and takes effect on the next run.{% elif may_edit %}{{ version }} is {{ status }} — its assumptions are not changed.{% else %}You read the assumptions; they are maintained by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}
+PAGE = """<h1>Assumptions<small>FY{{ fy }} · {{ version|plan }} · the one set every plan on the version is valued with{% if ref %}, {{ ref }}'s beneath each{% endif %}</small></h1>
+<p class="hint">{% if may_edit and open %}You maintain the assumptions: an amendment is a value from a period on {{ version|plan }} — the value in force is never edited — and takes effect on the next run.{% elif may_edit %}{{ version|plan }} is {{ status }} — its assumptions are not changed.{% else %}You read the assumptions; they are maintained by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}
 A figure that differs from {{ ref or 'the reference' }} is marked ≠; one amended from a period is boxed. What a step sets for itself — a schedule line's driver, a history window — stays on that step's page.</p>
 {% if waiting %}<p class="hint"><b>{{ waiting|length }} amendment{{ 's' if waiting|length != 1 }} placed and waiting for the next run</b> — {% for w in waiting %}{{ w.assumption_code }} from {{ w.valid_from }} = {{ w.value }}{{ '; ' if not loop.last }}{% endfor %}. The grid shows the plan as last run.</p>{% endif %}
 <div class="finwrap"><table class="assume"><thead><tr><th>Assumption</th>{% for p in periods %}<th class="n {{ 'closed' if p.closed }}">{{ p.label }}{% if p.closed %}<div class="small muted">actual</div>{% endif %}</th>{% endfor %}<th>What reads it</th></tr></thead><tbody>
 {% for a in rows %}<tr><td class="node"><b>{{ a.name }}</b><div class="small muted">{{ a.code }} · {{ a.kind_said }}</div></td>
 {% for c in a.cells %}<td class="n {{ 'amended' if c.amended }} {{ 'differs' if c.differs }}"{% if c.title %} title="{{ c.title }}"{% endif %}>{{ c.show }}{% if c.differs %} <span class="small">≠</span>{% endif %}{% if c.ref is not none %}<span class="src">{{ c.ref_show }}</span>{% endif %}</td>{% endfor %}
 <td class="small reads">{% for r in a.readers %}<div>{% if r.href %}<a href="{{ r.href }}">{{ r.page_label }}</a>{% else %}{{ r.page_label }}{% endif %}{% if not r.built %} <span class="muted">(not yet built)</span>{% endif %} — {{ r.how }}{% if r.inputs %} ({{ r.inputs }} input material{{ 's' if r.inputs != 1 }}){% endif %}</div>{% else %}<span class="muted">Nothing reads it yet{% if a.code == 'WAGE_INDEX' %} — the labour model uses each agreement's own increase{% endif %}: a change here moves no figure.</span>{% endfor %}</td></tr>
-{% else %}<tr><td colspan="{{ periods|length + 2 }}" class="muted">{{ version }} carries no assumptions in FY{{ fy }}.</td></tr>{% endfor %}</tbody></table></div>
-{% if may_edit and open %}<h2 id="amend">Amend an assumption<span class="count">a value from a period on {{ version }} — what reads it is listed above</span></h2>
-<form class="entry" method="post" action="{{ url_for('plan.assumption_amend') }}"><input type="hidden" name="version" value="{{ version }}"><input type="hidden" name="fy" value="{{ fy }}">
+{% else %}<tr><td colspan="{{ periods|length + 2 }}" class="muted">{{ version|plan }} carries no assumptions in FY{{ fy }}.</td></tr>{% endfor %}</tbody></table></div>
+{% if may_edit and open %}<h2 id="amend">Amend an assumption<span class="count">a value from a period on {{ version|plan }} — what reads it is listed above</span></h2>
+<form class="entry" method="post" action="{{ url_for('plan.assumption_amend') }}"><input type="hidden" name="version" value="{{ version|plan }}"><input type="hidden" name="fy" value="{{ fy }}">
 <label>assumption<select name="assumption_code">{% for a in all_codes %}<option value="{{ a.code }}">{{ a.name }}</option>{% endfor %}</select></label>
 <label>from period<select name="valid_from">{% for p in amendable %}<option>{{ p }}</option>{% endfor %}</select></label>
 <label>value<input name="value" inputmode="decimal" required placeholder="0.035 for 3.5%; 0.66; 108"></label>
 <label class="wide">note — why<input name="note" required placeholder="the outlook, the contract, the source"></label>
 <div class="actions"><button class="primary">Place amendment</button><span class="hint">in force from the period chosen until a later amendment, after the next run</span></div></form>{% endif %}
-<h2>Amendments<span class="count">{{ version }} · each a value from a period; the latest for a period stands</span></h2>
+<h2>Amendments<span class="count">{{ version|plan }} · each a value from a period; the latest for a period stands</span></h2>
 <table><thead><tr><th>Assumption</th><th>From</th><th class="n">Value</th><th class="n">Was</th><th>Note</th><th>By</th><th>When</th></tr></thead><tbody>
 {% for m in amendments %}<tr><td>{{ m.assumption_name }}</td><td>{{ m.amended_from }}</td><td class="n">{{ m.value_show }}</td><td class="n">{{ m.was_show }}</td><td class="small">{{ m.amend_note or '' }}</td><td class="small">{{ m.amended_by }}</td><td class="small">{{ (m.amended_on or '')[:16].replace('T', ' ') }}</td></tr>
-{% else %}<tr><td colspan="7" class="muted">None on {{ version }}: every period reads the version's own values.</td></tr>{% endfor %}</tbody></table>
+{% else %}<tr><td colspan="7" class="muted">None on {{ version|plan }}: every period reads the version's own values.</td></tr>{% endfor %}</tbody></table>
 {% if last and last.act == 'assumption.amend' %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else '✕' }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 <style>.finwrap{overflow-x:auto}table.assume td.n{vertical-align:top;white-space:nowrap}table.assume td.node{min-width:13rem;vertical-align:top}table.assume td.reads{min-width:20rem;vertical-align:top}

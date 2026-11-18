@@ -126,9 +126,9 @@ RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_version_a
 
 PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its kind{{ '' if owned_kinds|length == 1 else 's' }} ({{ owned_kinds|join(', ') or 'none yet' }}) — named, open or closed; a closed version takes no entry and stays readable</small></h1>
 {% if not owned_kinds %}<p class="lede">{{ process_label }} has no kind of plan of its own yet: it reads the versions below, which other processes administer.</p>{% endif %}
-<p class="hint">{% if may %}You close and reopen versions: each is an act with a receipt; reopening asks why. A version another is read against is not reopened — a changed reference is a new version.{% else %}Versions are closed and reopened by {{ holders|join(', ') or 'nobody yet' }}.{% endif %} The actuals are closed by the period, not here.</p>
+<p class="hint">{% if may %}You close and reopen versions: each is an act with a receipt; reopening asks why. A Plan another is read against is not reopened — a changed reference is a new version.{% else %}Versions are closed and reopened by {{ holders|join(', ') or 'nobody yet' }}.{% endif %} The actuals are closed by the period, not here.</p>
 <table><thead><tr><th>Version</th><th>Kind</th><th>Cycle</th><th>Actual to</th><th>Horizon</th><th>Calculated</th><th>Read against</th><th>State</th><th>Last act</th>{% if may %}<th></th>{% endif %}</tr></thead><tbody>
-{% for v in versions %}<tr class="{{ 'off' if v.status == 'closed' or not v.owned }}"><td><b>{{ v.version_id }}</b>{% if v.is_latest_view %} <span class="state">the latest view</span>{% endif %}<div class="small muted">named {{ v.named_on }} · {{ v.owner }}{% if v.base_version %} · from {{ v.base_version }}{% endif %}</div>
+{% for v in versions %}<tr class="{{ 'off' if v.status == 'closed' or not v.owned }}"><td><b>{{ v.version_id|planfull }}</b> <span class="small muted">{{ v.version_id }}</span>{% if v.is_latest_view %} <span class="state">the latest view</span>{% endif %}<div class="small muted">named {{ v.named_on }} · {{ v.owner }}{% if v.base_version %} · from {{ v.base_version }}{% endif %}</div>
 {% if may_promote and v.owned and v.status == 'open' and v.version_kind == 'latest_view' and not v.is_latest_view %}<form class="inline" method="post" action="{{ url_for('plan.version_promote') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="16" required placeholder="why it becomes the latest view"> <button class="act" onclick="this.textContent='Promoting…'">promote</button></form>{% endif %}</td><td class="small">{{ v.version_kind.replace('_', ' ') }}</td><td class="small">{{ v.cycle or '' }}</td>
 <td class="small">{% if v.version_kind == 'actual' %}{{ v.from_period }}{% elif v.fiscal_year and v.from_period < v.fiscal_year ~ 'P01' %}<span class="muted">none in FY{{ v.fiscal_year }}</span>{% else %}{{ v.from_period }}{% endif %}</td>
 <td class="small">{% if v.horizon_periods %}{{ v.horizon_periods }} periods, to {{ v.plan_through }}{% if v.horizon_quarters %}; then {{ v.horizon_quarters }} quarters{% endif %}{% else %}<span class="muted">nothing planned</span>{% endif %}{% if v.named_horizon_periods is not none and v.named_horizon_periods != v.horizon_periods %}<div class="muted">named with {{ v.named_horizon_periods }}</div>{% endif %}
@@ -137,7 +137,7 @@ PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its 
 <td><span class="state">{{ v.status }}</span></td>
 <td class="small">{% if v.last_act %}{{ v.last_act }} by {{ v.last_act_by }}, {{ (v.last_act_on or '')[:16].replace('T', ' ') }}{% if v.last_act_reason %} — {{ v.last_act_reason }}{% endif %}{% elif v.version_kind == 'actual' %}closed by the period{% else %}as named{% endif %}</td>
 {% if may %}<td class="acts">{% if not v.owned %}<span class="small muted">{{ v.process_label }}'s — read only here</span>{% elif v.version_kind == 'actual' %}{% elif v.status == 'open' %}<form class="inline" method="post" action="{{ url_for('plan.version_close') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="18" placeholder="note (optional)"> <button class="act" onclick="this.textContent='Closing…'">close</button></form>
-{% elif v.is_reference %}<span class="small muted">not reopened — {{ v.reference_of }} {{ 'is' if ',' not in v.reference_of else 'are' }} read against it</span>
+{% elif v.is_reference %}<span class="small muted">not reopened — {{ v.reference_of.split(',')|map('trim')|map('plan')|join(', ') }} {{ 'is' if ',' not in v.reference_of else 'are' }} read against it</span>
 {% else %}<form class="inline" method="post" action="{{ url_for('plan.version_reopen') }}"><input type="hidden" name="version_id" value="{{ v.version_id }}"><input name="reason" size="18" required placeholder="why it reopens"> <button class="act" onclick="this.textContent='Reopening…'">reopen</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table>
 {% if last and last.act in ('version.close', 'version.reopen', 'version.horizon', 'version.name', 'version.promote') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else '✕' }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
@@ -172,8 +172,9 @@ def suggest_code(base: str, base_from: str | None, taken: list[str], from_period
     """A code for a version named from `base`: for a later from point, the base's code with its period replaced (the
     next cycle); for the same from point, the base's code with the first letter not yet taken (a what-if)."""
     import re
-    if from_period and base_from and from_period != base_from and re.search(r"\d{4}P\d{2}", base):
-        return re.sub(r"\d{4}P\d{2}", from_period, base, count=1)
+    if from_period and base_from and from_period != base_from and re.match(r"[A-Z]\d{6}", base):
+        fy, p = int(from_period[:4]), int(from_period[-2:])         # the next cycle: the kind and its first planned period
+        return base[0] + (f"{fy}{p + 1:02d}" if p < 12 else f"{fy + 1}01")
     for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
         if f"{base}-{c}" not in taken:
             return f"{base}-{c}"

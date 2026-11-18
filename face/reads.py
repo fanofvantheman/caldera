@@ -34,6 +34,17 @@ _VERSIONS = """select v.* replace (coalesce(s.state, case v.status when 'open' t
                from dims.ctl_version v left join plan.version_state s using (version_id)"""
 
 
+def plan_codes() -> dict[str, tuple[str, str]]:
+    """Each Plan's key → (its code, its code with the horizon beside it: `FY27 P05 | 4+18`) — what a person reads; the key
+    stays in the data and the address (DEC-20261118-03)."""
+    out = {}
+    for v in q("select version_id, plan_code, actual_months, horizon_periods, horizon_quarters, version_kind from dims.ctl_version"):
+        code = v["plan_code"] or v["version_id"]
+        hz = f"{v['actual_months'] or 0}+{v['horizon_periods'] or 0}" + (f"+{v['horizon_quarters']}Q" if v.get("horizon_quarters") else "")
+        out[v["version_id"]] = (code, code if v["version_kind"] == "actual" else f"{code} | {hz}")
+    return out
+
+
 def versions() -> list[dict]:
     return q(f"{_VERSIONS} order by case v.version_kind when 'actual' then 2 else 0 end, case s.state when 'open' then 0 else 1 end, v.version_id")
 

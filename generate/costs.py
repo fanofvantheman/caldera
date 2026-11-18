@@ -20,6 +20,8 @@ from __future__ import annotations
 import random
 from collections import defaultdict
 
+from .registers import bp_id, lv_id
+
 ENTITIES = [
     # code, name, ledger, state (payroll tax), joined (the fiscal period its ledger enters the plan), note
     ("CF",  "Caldera Foods",     "Caldera ledger",   "VIC", "2025P01", "every function, and the Echuca plant"),
@@ -229,7 +231,7 @@ def schedule_edits(version: str, actuals: list[dict], window: list[str]) -> list
 # holds 1 January 2027. Riverbend kept its own agreement, about 3% below Caldera's.
 def purchase_acts() -> list[dict]:
     """What the buyer typed over the purchase plan: one spot price quoted for the 120 g cup at Loxton. Draws nothing."""
-    return [{"act_id": "PUR-0001", "action": "set", "withdraws": "", "version_id": "LV-2027P04", "input_code": "CUP_120", "plant_code": "LOX",
+    return [{"act_id": "PUR-0001", "action": "set", "withdraws": "", "version_id": "F202705", "input_code": "CUP_120", "plant_code": "LOX",
              "period": "2027P06", "quantity": "", "price": 0.064, "reason": "quoted by the importer for the October shipment",
              "entered_by": "supply.planner@caldera", "entered_at": "2026-11-09T10:30:00"}]
 
@@ -242,7 +244,7 @@ def unit_cost_acts() -> list[dict]:
     """A planned unit cost component Finance typed where its drivers are missing (DEC-20261116-02 point 7): the chia cups
     launching at Loxton, whose bill is not yet released, carried at the co-packer's quoted material cost in their first
     full period. Draws nothing."""
-    return [{"act_id": "UCA-0001", "action": "set", "withdraws": "", "version_id": "LV-2027P04", "material_code": "CUP_ADULT-CUP_2x170",
+    return [{"act_id": "UCA-0001", "action": "set", "withdraws": "", "version_id": "F202705", "material_code": "CUP_ADULT-CUP_2x170",
              "plant_code": "LOX", "period": "2027P08", "component": "material", "per_case": 3.05,
              "reason": "bill for the chia line not yet released — the co-packer's quoted material cost", "entered_by": "finance.manager@caldera",
              "entered_at": "2026-11-12T15:20:00"}]
@@ -471,7 +473,7 @@ def capex_reference() -> dict[str, list[dict]]:
 
 def capex_items(plan_fy: int, latest_closed: str) -> list[dict]:
     """The capital plan's items on each version, as entered. Draws nothing."""
-    vid = {"BP": f"BP-FY{plan_fy}", "LV": f"LV-{latest_closed}"}
+    vid = {"BP": bp_id(plan_fy), "LV": lv_id(latest_closed)}
     rows, n = [], 0
     for vs, kind, item, name, pk, cls, ent, cc, pl, spend, sf, st, ins, life, lu, rate, charge, to, tier, note, by, on in CAPEX_ITEMS:
         for v in vs:
@@ -536,7 +538,7 @@ def capex_actuals(shipments: list[dict], routes: list[dict], periods: list[dict]
             units[(plant[s["material_code"]], s["period"])] += float(s["cases"])
     classes = {c: {"method": m, "life_years": l, "residual_pct": r} for c, _, m, l, r in ASSET_CLASSES}
     assets = capex_reference()["reg_asset"]
-    leases = [i for i in items if i["kind"] == "lease" and i["version_id"].startswith("LV-") and i["in_service_period"] <= latest_closed]
+    leases = [i for i in items if i["kind"] == "lease" and i["version_id"].startswith("F") and i["in_service_period"] <= latest_closed]
     closed = [p["period"] for p in periods if p["period"] <= latest_closed]
     ledger = {}
     for e, cc, _, to in LEDGER_COST_CENTRES:

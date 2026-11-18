@@ -31,8 +31,8 @@ RECORD = {"demand": "demand plan", "finance": "Finance's plan", "schedule": "ope
 FIN_VERB = "overlay.finance.enter"
 SHOWN = 40                                                 # changed figures listed on the confirmation; the rest counted
 
-CONFIRM = """<h1>Withdraw<small>{{ grid_label }} · {{ version }} · {{ 'a whole save' if is_save else 'one figure' }} — taken out of force by a later act, never deleted</small></h1>
-{% if not acts %}<p class="lede">{{ subject }} is not on {{ version }}{% if waiting %} — or the warehouse has not seen it yet: a save is withdrawn after the run that took it in{% endif %}.</p>{% else %}
+CONFIRM = """<h1>Withdraw<small>{{ grid_label }} · {{ version|plan }} · {{ 'a whole save' if is_save else 'one figure' }} — taken out of force by a later act, never deleted</small></h1>
+{% if not acts %}<p class="lede">{{ subject }} is not on {{ version|plan }}{% if waiting %} — or the warehouse has not seen it yet: a save is withdrawn after the run that took it in{% endif %}.</p>{% else %}
 <table><thead><tr><th>Act</th><th>When</th><th>By</th><th>What</th><th>Why</th><th>Standing</th></tr></thead><tbody>
 {% for a in acts[:20] %}<tr class="{{ 'off' if a.standing != 'stands' }}"><td><code>{{ a.act_id }}</code></td><td class="small">{{ a.at_shown }}</td><td class="small">{{ a.by_whom }}</td><td class="small">{{ a.what }}</td><td class="small">{{ a.why or '' }}</td><td><span class="state">{{ a.standing }}</span></td></tr>{% endfor %}
 {% if acts|length > 20 %}<tr><td colspan="6" class="muted">and {{ acts|length - 20 }} more in the save</td></tr>{% endif %}</tbody></table>
@@ -42,13 +42,13 @@ CONFIRM = """<h1>Withdraw<small>{{ grid_label }} · {{ version }} · {{ 'a whole
 {% if effect.rows|length > shown %}<tr><td colspan="{{ effect.head|length }}" class="muted">and {{ effect.rows|length - shown }} more</td></tr>{% endif %}</tbody>
 {% if effect.total %}<tfoot><tr>{% for x in effect.total %}<td class="{{ 'n' if loop.index > effect.nkeys }}"><b>{{ x }}</b></td>{% endfor %}</tr></tfoot>{% endif %}</table>{% endif %}
 {% if refusals %}<p class="flash no">Not withdrawn: {{ refusals|join('; ') }}.</p>{% else %}
-<form method="post" action="{{ url_for('plan.withdrawal_do') }}" class="form-row"><input type="hidden" name="grid" value="{{ grid }}"><input type="hidden" name="id" value="{{ subject }}"><input type="hidden" name="version" value="{{ version }}">
+<form method="post" action="{{ url_for('plan.withdrawal_do') }}" class="form-row"><input type="hidden" name="grid" value="{{ grid }}"><input type="hidden" name="id" value="{{ subject }}"><input type="hidden" name="version" value="{{ version|plan }}">
 <label class="small grow">why it is withdrawn <input name="reason" required placeholder="the reason goes on record with the act"></label>
 <button class="primary" onclick="this.textContent='Withdrawing…'">Withdraw {{ 'the save' if is_save else 'the figure' }}</button> <a href="{{ back }}">keep it</a></form>
 <p class="hint">{{ when }} The act stays on record, struck through, with yours beside it; the plan is calculated again from what remains.</p>{% endif %}{% endif %}
 <style>.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}</style>"""
 
-HISTORY = """<h1>Change history<small>{{ version }} · every act on the plan in order — who, when, why, and whether it stands; nothing is removed from the record</small></h1>
+HISTORY = """<h1>Change history<small>{{ version|plan }} · every act on the plan in order — who, when, why, and whether it stands; nothing is removed from the record</small></h1>
 <form class="toolbar" method="get">{{ context_fields() }}<label>record<select name="record" onchange="this.form.submit()"><option value="">every record</option>{% for r in records %}<option value="{{ r.record }}" {{ 'selected' if r.record == record }}>{{ r.record }} ({{ r.n }})</option>{% endfor %}</select></label>
 <label>standing<select name="standing" onchange="this.form.submit()"><option value="">any</option>{% for s in ('stands', 'withdrawn', 'overwritten', 'refused') %}<option {{ 'selected' if s == standing }}>{{ s }}</option>{% endfor %}</select></label></form>
 <div class="cards tiles">{% for s in tally %}<div class="card stat"><span>{{ s.standing }}</span><b>{{ '{:,}'.format(s.n) }}</b></div>{% endfor %}</div>
@@ -57,7 +57,7 @@ HISTORY = """<h1>Change history<small>{{ version }} · every act on the plan in 
 {% for a in acts %}<tr class="{{ 'off' if a.standing not in ('stands',) }}"><td class="small">{{ a.at_shown }}</td><td class="small">{{ a.record }}</td><td class="small">{{ a.act }}<div class="muted"><code>{{ a.act_id }}</code></div></td><td class="small">{{ a.by_whom or '' }}</td>
 <td class="small">{{ a.what }}{% if a.save_id and a.save_id != a.act_id %}<div class="muted">in save {{ a.save_id }}</div>{% endif %}</td><td class="small">{{ a.why or '' }}</td><td><span class="state">{{ a.standing }}</span></td>
 <td class="acts small">{% if a.can_withdraw %}<a href="{{ url_for('plan.withdrawal', grid=a.grid, id=a.withdraw_id, version=version) }}">withdraw…</a>{% if a.save_id and a.save_id != a.withdraw_id %}<br><a href="{{ url_for('plan.withdrawal', grid=a.grid, id=a.save_id, version=version) }}">the save…</a>{% endif %}{% endif %}</td></tr>
-{% else %}<tr><td colspan="8" class="muted">No act on {{ version }}{% if record %} in {{ record }}{% endif %}.</td></tr>{% endfor %}</tbody></table>
+{% else %}<tr><td colspan="8" class="muted">No act on {{ version|plan }}{% if record %} in {{ record }}{% endif %}.</td></tr>{% endfor %}</tbody></table>
 {% if more %}<p class="hint">The {{ '{:,}'.format(acts|length) }} latest shown of {{ '{:,}'.format(total) }} — choose a record or a standing to narrow it.</p>{% endif %}"""
 
 

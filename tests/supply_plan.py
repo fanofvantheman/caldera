@@ -36,7 +36,7 @@ from face import __main__ as M                        # noqa: E402
 from face import supply as FS                         # noqa: E402
 
 chassis.configure(root=BUILD, db="data/caldera.duckdb", receipts="data/receipts", landing="data/landing")
-LV = "LV-2027P04"
+LV = "F202705"
 PLANNER, FINANCE = "supply.planner@caldera", "finance.manager@caldera"
 
 

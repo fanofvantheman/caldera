@@ -37,8 +37,8 @@ SEAMS = {
                    "select material_code, plant_code, period, quantity from plan.production_requirement where version_id = ?"),
 }
 
-PAGE = """<h1>Stages<small>{{ version }} · eight handovers between owners, in order — each stage reads what the stage before handed over, never its latest figures</small></h1>
-<p class="hint">A stage proposes its figures from what was handed to it; its owner may type over a proposal, with a reason, the proposal kept beside it; nothing reaches the next stage until the owner hands over — always an act, never a side effect of a run. A shortfall goes back: the stage before changes its plan and hands over again, and the stages after it read <b>behind</b> until their owners hand over in turn. {{ version }} is {{ plan_state }}.</p>
+PAGE = """<h1>Stages<small>{{ version|plan }} · eight handovers between owners, in order — each stage reads what the stage before handed over, never its latest figures</small></h1>
+<p class="hint">A stage proposes its figures from what was handed to it; its owner may type over a proposal, with a reason, the proposal kept beside it; nothing reaches the next stage until the owner hands over — always an act, never a side effect of a run. A shortfall goes back: the stage before changes its plan and hands over again, and the stages after it read <b>behind</b> until their owners hand over in turn. {{ version|plan }} is {{ plan_state }}.</p>
 <table><thead><tr><th>#</th><th>Stage</th><th>Hands over</th><th>Owner</th><th>State</th><th>Last act</th><th>The stage after reads</th><th></th></tr></thead><tbody>
 {% for s in stages %}<tr class="{{ 'off' if s.folded }}"><td>{{ s.ord }}</td><td><b>{{ s.stage_name }}</b></td><td class="small">{{ s.hands_over }}</td><td class="small">{{ s.owners|join(', ') or '—' }}</td>
 <td>{% if s.folded %}<span class="small muted">one with {{ s.folded }} — handed over with it</span>{% else %}<span class="state {{ s.state|replace(' ', '-') }}">{{ s.state }}</span>{% endif %}</td>

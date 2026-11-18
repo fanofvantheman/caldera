@@ -35,7 +35,7 @@ from face import __main__ as M                        # noqa: E402
 from face import purchases as FP                      # noqa: E402
 
 chassis.configure(root=BUILD, db="data/caldera.duckdb", receipts="data/receipts", landing="data/landing")
-LV = "LV-2027P04"
+LV = "F202705"
 BUYER, FINANCE = "supply.planner@caldera", "finance.manager@caldera"
 
 
@@ -131,7 +131,7 @@ def main() -> None:
     c.post("/supply/purchases/type", data={"key": "CUP_120|LOX", "period": "2027P08", "price": "0.07", "reason": "a quote"})
     new = set(FP.ACTS.files()) - before
     try:
-        assert len(new) == 1 and re.search(r"set,,LV-2027P04,CUP_120,LOX,2027P08,,0\.07,a quote,supply\.planner@caldera", next(iter(new)).read_text())
+        assert len(new) == 1 and re.search(r"set,,F202705,CUP_120,LOX,2027P08,,0\.07,a quote,supply\.planner@caldera", next(iter(new)).read_text())
     finally:
         for p in new:
             p.unlink()

@@ -11,6 +11,8 @@ is derived; the plan is units and a price, from which revenue is derived.
 
 from __future__ import annotations
 
+from .registers import lv_id
+
 import math
 import random
 from collections import defaultdict
@@ -174,6 +176,6 @@ def forecast_snapshots(shipments: list[dict], materials: list[Material], period_
         for lag, sd in LAG_SD.items():
             cycle = period_order[p - lag]
             f = cases * (1 + CATEGORY_BIAS[cat_of[mat]] + rng.gauss(0.0, sd * acct_sd[acct]))
-            rows.append({"forecast_version": f"LV-{cycle}", "cycle_period": cycle, "lag": lag, "period": per,
+            rows.append({"forecast_version": lv_id(cycle), "cycle_period": cycle, "lag": lag, "period": per,
                          "material_code": mat, "account_code": acct, "cases": max(0, round(f / 5) * 5)})
     return rows

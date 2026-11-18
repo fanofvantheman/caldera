@@ -5,13 +5,15 @@ a scope on each dimension, a time window, a value that is either cases or a rate
 and the rule that spreads it to the storage grain. The models spread, sum and value; this file is
 what the people typed.
 
-Two versions carry entries. BP-FY2027 is the frozen business plan: its baseline was entered in June
+Two versions carry entries. B202701 (FY27 BUD) is the frozen business plan: its baseline was entered in June
 as cases by material × account × period (run-rate × trend × a little optimism) and it does not move.
-LV-2027P04 is the open latest view: its baseline is computed by the models from history at the
+F202705 (FY27 P05) is the open latest view: its baseline is computed by the models from history at the
 cycle; the people enter adjustments, listings, launches and exits over the top.
 """
 
 from __future__ import annotations
+
+from .registers import bp_id, lv_id
 
 from collections import defaultdict
 
@@ -51,7 +53,7 @@ def _entry(version: str, layer: int, by: str, on: str, reason: str, effect: str,
 
 
 def business_plan_entries(materials: list[Material], shipments: list[dict], plan_fy: int) -> list[dict]:
-    """BP-FY2027 layer 1: FY2026 run-rate by material × account × fiscal period, trended, +3% optimism."""
+    """The business plan's layer 1: FY2026 run-rate by material × account × fiscal period, trended, +3% optimism."""
     by_cell: dict[tuple[str, str, int], float] = defaultdict(float)
     for r in shipments:
         fy, p = int(r["period"][:4]), int(r["period"][-2:])
@@ -66,19 +68,19 @@ def business_plan_entries(materials: list[Material], shipments: list[dict], plan
         value = round(cases * (1 + trend[mat]) * 1.03 / 10) * 10
         if value <= 0:
             continue
-        rows.append(_entry(f"BP-FY{plan_fy}", 1, "head.demand@caldera", "2026-06-10", "BUDGET", "primary",
+        rows.append(_entry(bp_id(plan_fy), 1, "head.demand@caldera", "2026-06-10", "BUDGET", "primary",
                            mat, acct, f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases", value, "history_shape"))
     # the budget assumed the adult cups launch from P05 at the two majors; it has since slipped to P07
     for p in range(5, 13):
         for acct in ("WES", "CAR"):
-            rows.append(_entry(f"BP-FY{plan_fy}", 7, "portfolio.marketing@caldera", "2026-06-10", "LAUNCH", "primary",
+            rows.append(_entry(bp_id(plan_fy), 7, "portfolio.marketing@caldera", "2026-06-10", "LAUNCH", "primary",
                                "CUP_ADULT-CUP_2x170", acct, f"{plan_fy}P{p:02d}", f"{plan_fy}P{p:02d}", "cases",
                                min(1000 + 250 * (p - 5), 2500), "catchment", "AOP launch assumption"))
     return rows
 
 
 def latest_view_entries(plan_fy: int, latest_closed: str) -> list[dict]:
-    v = f"LV-{latest_closed}"
+    v = lv_id(latest_closed)
     dp, pm = "head.demand@caldera", "portfolio.marketing@caldera"
     kam_of = {"WES": "kam.westbrook@caldera", "CAR": "kam.carters@caldera", "MER": "kam.merritt@caldera"}
     planner_of = {"WES": "planner.westbrook@caldera", "CAR": "planner.carters@caldera"}
@@ -127,7 +129,7 @@ def promo_events(weeks: list[Week], plan_fy: int, latest_closed: str, materials:
     two display-only gondola ends (one funded from the co-op envelope), a Christmas seasonal display on the family-size
     fruit cans, a points offer with retail-media funding, and a clearance run-out of the 825 g fruit salad ahead of its
     delisting at Westbrook. Sampling and bonus packs are on the register with no event — rare on cans."""
-    v = f"LV-{latest_closed}"
+    v = lv_id(latest_closed)
     mat = {m.material_code: m for m in materials}
     def avg_list(group: str) -> float:
         ms = [mat[c] for c in PROMO_GROUPS[group][1]]
@@ -222,7 +224,7 @@ def submissions(latest_closed: str) -> list[dict]:
     row, never a flag; the run derives every state from the latest act per subject and node. Seeded so the demo opens
     mid-cycle: Carters is closed through to its unit; Westbrook's contributors are in but its planner is still working;
     Merritt's account manager has not submitted; the smaller units have nothing to submit yet."""
-    v = f"LV-{latest_closed}"
+    v = lv_id(latest_closed)
     acts = [
         # subject, node, by, on, note
         ("layer:4", "CAR",    "kam.carters@caldera",         "2026-11-04", "Range review outcomes in; Redgum relay volumes agreed with the buyer"),
@@ -285,7 +287,7 @@ def finance_edits(shipments: list[dict], materials: list[Material], plan_fy: int
     label) is folded into the material it rolls to, since a figure there spans its variants. Each figure is typed at the
     grain where nothing stood, so the one cell it wrote is itself. Draws nothing from the random stream."""
     standard = {m.material_code: (m.parent_material or m.material_code) for m in materials}
-    v, by = f"LV-{latest_closed}", "finance.manager@caldera"
+    v, by = lv_id(latest_closed), "finance.manager@caldera"
     last = int(latest_closed[-2:])
     ly: dict[tuple[str, str, int], list[float]] = defaultdict(lambda: [0.0, 0.0])
     built = {(BUILT_ACCOUNT, None)} | {(a, m) for a, ms in BUILT_MATERIALS.items() for m in ms}

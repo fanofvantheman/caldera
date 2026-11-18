@@ -14,7 +14,7 @@ from . import calendar as cal
 from .structures import (build_materials, build_bom, build_routes, INPUT_MATERIALS, CATEGORIES, PRODUCTS, FORMATS,
                          PROMO_GROUPS, ACCOUNTS, PROMOTIONS_MASTER, BASELINE_SOURCE, PROMO_WEEK_START, SHIP_TOS, UNIT_OF, NODES, PLANT_AREAS, LINES, LANES, COST_CENTRES)
 from .history import forecast_snapshots, generate_demand, generate_prices, value_shipments
-from .registers import versions, period_control, roles, verbs, composed_roles, reports, capacity_register, assumptions, assumption_amendments, version_acts, strategic_plan, strategic_growth, version_kinds, step_horizons
+from .registers import lv_id, versions, period_control, roles, verbs, composed_roles, reports, capacity_register, assumptions, assumption_amendments, version_acts, strategic_plan, strategic_growth, version_kinds, step_horizons
 from .plan import business_plan_entries, latest_view_entries, promo_events, promo_neighbours, terms_register, reason_codes, submissions, finance_edits, finance_sources
 from .emit import emit_all, dataclass_rows, header_only
 from . import sender
@@ -104,7 +104,7 @@ def main() -> None:
     for name in COPIED:                     # a row copied onto a version named from a base names the act it came from
         plan[name] = [{**r, "copied_from": ""} for r in plan[name]]
     fcst, fcst_waiting = forecaster.run(shipments, materials, weeks, LATEST_CLOSED, {a[0]: BASELINE_SOURCE.get(a[0], "PLAN") for a in ACCOUNTS},
-                                        f"LV-{LATEST_CLOSED}")       # after the last draw on rng above: it draws nothing
+                                        lv_id(LATEST_CLOSED))       # after the last draw on rng above: it draws nothing
     plan.update({**fcst, "reg_door_act": plan["reg_door_act"] + fcst["reg_door_act"]})     # one act register for every door
     waiting = sender.next_export(events, {p["period"]: p["period_start"] for p in cal.periods(weeks)}, PLAN_FY)
     periods = cal.periods(weeks)
@@ -113,7 +113,7 @@ def main() -> None:
     tables["ref_entitlement_kind"] = costs.entitlement_kinds()
     plan["reg_entitlement"] = tables.pop("reg_entitlement")      # the agreements' entitlements, each with its clause: a register People keeps
     history["cost_actual"] = costs.cost_actuals(shipments, tables["ref_route"], periods, LATEST_CLOSED, args.seed)   # a stream of its own
-    plan["reg_schedule_edit"] = costs.schedule_edits(f"LV-{LATEST_CLOSED}", history["cost_actual"],
+    plan["reg_schedule_edit"] = costs.schedule_edits(lv_id(LATEST_CLOSED), history["cost_actual"],
                                                      [p["period"] for p in periods if p["period"] <= LATEST_CLOSED][-12:])   # the opex schedule's acts; draws nothing
     plan["reg_schedule_edit"] = [{**r, "copied_from": ""} for r in plan["reg_schedule_edit"]]
     tables.update(costs.capex_reference())              # the asset classes and the fixed-asset register as loaded
@@ -131,7 +131,7 @@ def main() -> None:
     # the stages (DEC-20261118-04): the latest view's first four handed over at onboarding, taking no figures; the rest open
     from .emit import _write
     _write(Path(args.out) / "plan" / "reg_stage_act.csv", [
-        {"act_id": f"STG-ONB-{i}", "version_id": f"LV-{LATEST_CLOSED}", "stage": st, "action": "hand_over", "reason": "handed over at onboarding",
+        {"act_id": f"STG-ONB-{i}", "version_id": lv_id(LATEST_CLOSED), "stage": st, "action": "hand_over", "reason": "handed over at onboarding",
          "snapshot": "", "entered_by": by, "entered_at": f"2026-11-06T{8 + i:02d}:00:00"}
         for i, (st, by) in enumerate([("demand", "head.demand@caldera"), ("valuation", "finance.manager@caldera"),
                                       ("inventory", "supply.planner@caldera"), ("production", "supply.planner@caldera")], start=1)])

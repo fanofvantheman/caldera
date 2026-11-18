@@ -22,7 +22,7 @@ from calc import purchases as P
 
 SHOCKS = {"sales": "sales against plan", "intake": "campaign intake above plan"}
 
-PAGE = """<h1>Storage<small>{{ version }} · pallet positions against capacity by node and class, at each period's peak</small></h1>
+PAGE = """<h1>Storage<small>{{ version|plan }} · pallet positions against capacity by node and class, at each period's peak</small></h1>
 <p class="hint">Finished goods are the inventory plan's projected stock at each node; key raw materials the material stock at the plant that holds them. Each is read at the period's peak — a campaign business peaks after intake, and a period end never shows it — over the node's own positions; the line beneath each own tier is the working limit, full enough to hurt; past the own tier, the overflow tier at its rate. A class with nothing declared is shown empty.</p>
 <div class="cards">{% for c in cards %}<div class="card stat"><span>{{ c.label }}</span><b>{{ c.show }}</b><div class="small muted">{{ c.says }}</div></div>{% endfor %}</div>
 <form class="entry" method="get" action="{{ url_for('plan.storage') }}"><b class="small">Stress test — a reading, nothing saved</b>

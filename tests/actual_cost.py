@@ -35,7 +35,7 @@ from face import __main__ as M                        # noqa: E402
 from face import typed_cost as TC                     # noqa: E402
 
 chassis.configure(root=BUILD, db="data/caldera.duckdb", receipts="data/receipts", landing="data/landing")
-LV = "LV-2027P04"
+LV = "F202705"
 FINANCE, BUYER = "finance.manager@caldera", "supply.planner@caldera"
 
 
@@ -80,8 +80,8 @@ def main() -> None:
     new = set(TC.ACTS.files()) - before
     try:
         text = "".join(p.read_text() for p in new)
-        assert len(new) == 2 and re.search(r",set,,LV-2027P04,CUP_ADULT-CUP_2x170,LOX,2027P09,labour,0\.9,route not timed,", text), text
-        assert re.search(rf",withdraw,{a0['act_id']},LV-2027P04,", text), text
+        assert len(new) == 2 and re.search(r",set,,F202705,CUP_ADULT-CUP_2x170,LOX,2027P09,labour,0\.9,route not timed,", text), text
+        assert re.search(rf",withdraw,{a0['act_id']},F202705,", text), text
     finally:
         for p in new:
             p.unlink()

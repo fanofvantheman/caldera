@@ -34,7 +34,7 @@ def step_horizons() -> list[dict]:
 
 def versions(weeks: list[Week], plan_fy: int, latest_closed: str) -> list[dict]:
     """Every forward view is a version, named by the cycle that produced it, with a reach and a horizon.
-    ACTUAL is the closed history; BP is the business plan for the year; LV-<period> the latest view
+    ACTUAL is the closed history; B<year>01 the business plan for the year (FY27 BUD); F<first planned period> the latest view
     produced by a cycle, calculated 36 periods from the period after the one it closed; scenarios hang off the version they were read against.
     The from point is the last period a version treats as actual, fixed when it is named: the business plan has none in
     its year (it was made before the year began), the latest view the period its cycle closed. The horizon — periods by
@@ -44,12 +44,12 @@ def versions(weeks: list[Week], plan_fy: int, latest_closed: str) -> list[dict]:
         {"version_id": "ACTUAL", "version_kind": "actual", "cycle": "", "fiscal_year": "", "horizon_start": weeks[0].period,
          "horizon_end": latest_closed, "calendar_variant": "4-4-5", "standard_version": "STD-FY2027", "reference_version": "",
          "status": "closed", "owner": "finance", "named_on": "2026-10-26", "from_period": latest_closed},
-        {"version_id": f"BP-FY{plan_fy}", "version_kind": "business_plan", "cycle": f"AOP FY{plan_fy}", "fiscal_year": plan_fy,
+        {"version_id": bp_id(plan_fy), "version_kind": "business_plan", "cycle": f"AOP FY{plan_fy}", "fiscal_year": plan_fy,
          "horizon_start": f"{plan_fy}P01", "horizon_end": f"{plan_fy}P12", "calendar_variant": "4-4-5", "standard_version": "STD-FY2027",
          "reference_version": "", "status": "frozen", "owner": "finance", "named_on": "2026-06-15", "from_period": f"{plan_fy - 1}P12"},
-        {"version_id": f"LV-{latest_closed}", "version_kind": "latest_view", "cycle": f"IBP {latest_closed}", "fiscal_year": plan_fy,
+        {"version_id": lv_id(latest_closed), "version_kind": "latest_view", "cycle": f"IBP {latest_closed}", "fiscal_year": plan_fy,
          "horizon_start": f"{plan_fy}P05", "horizon_end": f"{plan_fy + 3}P04", "calendar_variant": "4-4-5", "standard_version": "STD-FY2027",
-         "reference_version": f"BP-FY{plan_fy}", "status": "open", "owner": "finance", "named_on": "2026-11-02", "from_period": latest_closed},
+         "reference_version": bp_id(plan_fy), "status": "open", "owner": "finance", "named_on": "2026-11-02", "from_period": latest_closed},
     ]
     for r in rows:
         r["horizon_periods"], r["horizon_quarters"] = kind[r["version_kind"]]
@@ -62,6 +62,16 @@ def period_control(weeks: list[Week], latest_closed: str) -> list[dict]:
         state = "CLOSED" if p["period"] <= latest_closed else ("OPEN" if p["period"] == _next(latest_closed) else "FUTURE")
         rows.append({**p, "period_start": p["period_start"].isoformat(), "period_end": p["period_end"].isoformat(), "state": state})
     return rows
+
+
+def lv_id(latest_closed: str) -> str:
+    """A forecast's key: its kind and its first planned period — the plan from that period on (DEC-20261118-03 point 5)."""
+    return "F" + _next(latest_closed).replace("P", "")
+
+
+def bp_id(plan_fy: int) -> str:
+    """A budget's key: its kind and its first planned period, the year's first."""
+    return f"B{plan_fy}01"
 
 
 def _next(period: str) -> str:
@@ -195,7 +205,7 @@ REPORT_COLUMNS = ["report_id", "owner", "report_name", "measures", "rows_axis", 
 def reports(plan_fy: int, latest_closed: str) -> list[dict]:
     return [{"report_id": "RP-00001", "owner": "finance.manager@caldera", "report_name": "Net sales by category and year, the latest view against the business plan",
              "measures": "valued.net_sales;finance.revenue", "rows_axis": "material", "rows_level": "category", "columns_axis": "fiscal_year",
-             "versions": f"LV-{latest_closed};BP-FY{plan_fy}", "compare": "Y", "filter_material": "", "filter_customer": "", "saved_on": "2026-11-04T09:00:00"}]
+             "versions": f"{lv_id(latest_closed)};{bp_id(plan_fy)}", "compare": "Y", "filter_material": "", "filter_customer": "", "saved_on": "2026-11-04T09:00:00"}]
 
 
 def composed_roles() -> list[dict]:
@@ -254,7 +264,7 @@ def assumptions() -> list[dict]:
         "RETURNS_RATE":("Returns and ullage, share of invoice value (history rate)", "pct", 0.004),
         "CLAIMS_RATE": ("Shortage and damage claims, share of invoice value (history rate)", "pct", 0.003),
     }
-    for version_id, note in (("BP-FY2027", "flat across the horizon in the business plan"), ("LV-2027P04", "carried from the business plan; no change this cycle")):
+    for version_id, note in (("B202701", "flat across the horizon in the business plan"), ("F202705", "carried from the business plan; no change this cycle")):
         for code, (name, kind, value) in series.items():
             rows.append({"assumption_code": code, "assumption_name": name, "kind": kind, "version_id": version_id,
                          "period": "", "value": value, "owner": "finance.manager@caldera", "note": note})
@@ -269,7 +279,7 @@ ASSUMPTION_AMEND_COLUMNS = ["amend_id", "version_id", "assumption_code", "valid_
 def assumption_amendments(latest_closed: str) -> list[dict]:
     """One amendment on the latest view, as Finance placed it this cycle: the energy index from the period the new contract
     starts (January 2027). Nothing calculated reads the energy index yet — the standard it values is not built."""
-    return [{"amend_id": "AA-00001", "version_id": f"LV-{latest_closed}", "assumption_code": "ENERGY_IDX", "valid_from": "2027P07", "value": 108.0,
+    return [{"amend_id": "AA-00001", "version_id": lv_id(latest_closed), "assumption_code": "ENERGY_IDX", "valid_from": "2027P07", "value": 108.0,
              "note": "new energy contract from 1 January 2027", "entered_by": "finance.manager@caldera", "entered_on": "2026-11-02T10:00:00"}]
 
 
@@ -279,7 +289,7 @@ VERSION_ACT_COLUMNS = ["act_id", "version_id", "act", "reason", "entered_by", "e
 
 def version_acts(plan_fy: int) -> list[dict]:
     """The acts the business took before the build: the business plan closed when the board agreed it."""
-    row = {"act_id": "VA-00001", "version_id": f"BP-FY{plan_fy}", "act": "close", "reason": "agreed by the board — the year's reference",
+    row = {"act_id": "VA-00001", "version_id": bp_id(plan_fy), "act": "close", "reason": "agreed by the board — the year's reference",
            "entered_by": "finance.manager@caldera", "entered_on": "2026-06-30T17:00:00", "horizon_periods": ""}
     return [{**{c: "" for c in VERSION_ACT_COLUMNS}, **row}]
 
@@ -294,7 +304,7 @@ VERSION_ACT_COLUMNS = ["act_id", "version_id", "act", "reason", "entered_by", "e
 
 # the strategic plan: one plan over five years, reading the latest view inside its reach and growing by category beyond
 def strategic_plan(plan_fy: int, latest_closed: str) -> list[dict]:
-    return [{"plan_id": f"SP-FY{plan_fy}", "plan_name": f"Five-year plan FY{plan_fy}–FY{plan_fy + 4}", "latest_view": f"LV-{latest_closed}",
+    return [{"plan_id": f"SP-FY{plan_fy}", "plan_name": f"Five-year plan FY{plan_fy}–FY{plan_fy + 4}", "latest_view": lv_id(latest_closed),
              "first_year": plan_fy, "last_year": plan_fy + 4, "owner": "finance.manager@caldera", "named_on": "2026-11-02"}]
 
 

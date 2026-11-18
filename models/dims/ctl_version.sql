@@ -31,12 +31,28 @@ h AS (SELECT version_id::TEXT AS version_id, NULLIF(horizon_periods::TEXT, '')::
        QUALIFY ROW_NUMBER() OVER (PARTITION BY version_id ORDER BY entered_on::TEXT DESC, source_file DESC, file_row_number DESC) = 1),
 p AS (SELECT period::TEXT AS period, ROW_NUMBER() OVER (ORDER BY period) AS seq FROM bronze.ctl_period),
 last_closed AS (SELECT MAX(period::TEXT) AS period FROM bronze.ctl_period WHERE state = 'CLOSED')
-SELECT v.* REPLACE (COALESCE(h.horizon_periods, v.horizon_periods) AS horizon_periods), v.horizon_periods AS named_horizon_periods,
+SELECT v.* REPLACE (COALESCE(h.horizon_periods, v.horizon_periods) AS horizon_periods,
+                   CASE WHEN v.version_kind = 'latest_view' AND t.period IS NOT NULL
+                        THEN CAST(CEIL((SELECT COUNT(*) FROM p WHERE p.period > t.period AND p.period <= q.quarters_through) / 3.0) AS INT)
+                        ELSE v.horizon_quarters END AS horizon_quarters),
+       v.horizon_periods AS named_horizon_periods,
+       -- the Plan's code: the fiscal year and its first planned period, a budget BUD, a what-if's suffix after it; the horizon
+       -- beside it as actual + planned periods — neither horizon nor state is in the name (DEC-20261118-03 points 2–4)
+       CASE v.version_kind WHEN 'actual' THEN 'Actuals'
+            WHEN 'business_plan' THEN 'FY' || SUBSTR(v.fiscal_year, 3, 2) || ' BUD'
+            ELSE 'FY' || SUBSTR(n.first_planned, 3, 2) || ' P' || SUBSTR(n.first_planned, 6, 2) END
+         || CASE WHEN REGEXP_MATCHES(v.version_id, '-[A-Z]$') THEN ' ' || RIGHT(v.version_id, 1) ELSE '' END AS plan_code,
+       CASE WHEN v.fiscal_year IS NOT NULL AND SUBSTR(v.from_period, 1, 4) = v.fiscal_year THEN CAST(SUBSTR(v.from_period, 6, 2) AS INT) ELSE 0 END AS actual_months,
+       q.quarters_through,
        t.period AS plan_through,
        v.from_period IS NOT NULL AND v.from_period <= l.period AS from_not_after_closed,
        t.period IS NOT NULL AND (v.horizon_periods = 0 OR t.period <= v.horizon_end) AS horizon_inside_reach
 FROM v
 CROSS JOIN last_closed l
 LEFT JOIN h ON h.version_id = v.version_id
+LEFT JOIN (SELECT version_id, CASE WHEN CAST(SUBSTR(from_period, 6, 2) AS INT) < 12 THEN SUBSTR(from_period, 1, 5) || LPAD(CAST(CAST(SUBSTR(from_period, 6, 2) AS INT) + 1 AS TEXT), 2, '0')
+                                   ELSE CAST(CAST(SUBSTR(from_period, 1, 4) AS INT) + 1 AS TEXT) || 'P01' END AS first_planned FROM v) n ON n.version_id = v.version_id
+-- past eighteen periods, quarters to the end of the second fiscal year after the from point (point 7)
+LEFT JOIN (SELECT version_id, CAST(CAST(SUBSTR(from_period, 1, 4) AS INT) + 2 AS TEXT) || 'P12' AS quarters_through FROM v WHERE version_kind = 'latest_view') q ON q.version_id = v.version_id
 LEFT JOIN p f ON f.period = v.from_period
 LEFT JOIN p t ON t.seq = f.seq + COALESCE(h.horizon_periods, v.horizon_periods)

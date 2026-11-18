@@ -94,7 +94,7 @@ PROCESSES = [
         Area("management", "Management", [
             # plan administration: the plans of the kinds this process owns, each process its own (DEC-20261115-03 a)
             Section("versions", "Plan administration", "plan.versions", verbs=VERSION_VERBS + ["read.plan"], tabs=[
-                Tab("versions", "Versions", "plan.versions", verbs=VERSION_VERBS),
+                Tab("versions", "Plans", "plan.versions", verbs=VERSION_VERBS),
                 # each stage handed over by its owner (DEC-20261118-04)
                 Tab("stages", "Stages", "plan.stages", verbs=VERSION_VERBS + ["read.plan", "demand.plan.submit", "delta.supply.enter", "register.supply_plan.maintain"], uses=("version",)),
                 # the record of acts read as a page: every act on the version, who, when, why, whether it stands (DEC-20261114-01 c)
@@ -112,7 +112,7 @@ PROCESSES = [
                 Tab("fin_volume", "Volume", "plan.revenue", {"measure": "volume"}, verbs=FIN_READ),
                 Tab("fin_price", "Price", "plan.revenue", {"measure": "price"}, verbs=FIN_READ),
                 Tab("fin_revenue", "Revenue", "plan.revenue", {"measure": "revenue"}, verbs=FIN_READ),
-                Tab("fin_versions", "Versions", "plan.revenue_versions", verbs=FIN_READ)]),
+                Tab("fin_versions", "Plans", "plan.revenue_versions", verbs=FIN_READ)]),
             # the same page as Demand's, listed here too: the menu stays in Financial planning (via), and whoever holds the
             # maintain right amends it from either process — nothing says where it lives
             Section("rev_prices", "Prices and terms", "plan.terms", {"via": "finplan"}, uses=("customer",), tabs=[
@@ -176,7 +176,7 @@ PROCESSES = [
         Area("setup", "Set-up", [
             # the financial plan's own administration and workflow: the same pages, listed here (via) and scoped to its kinds and steps
             Section("fp_admin", "Plan administration", "plan.versions", {"via": "finplan"}, verbs=VERSION_VERBS + ["read.plan"], tabs=[
-                Tab("fp_versions", "Versions", "plan.versions", {"via": "finplan"}, verbs=VERSION_VERBS + FIN_READ),
+                Tab("fp_versions", "Plans", "plan.versions", {"via": "finplan"}, verbs=VERSION_VERBS + FIN_READ),
                 Tab("fp_history", "Change history", "plan.change_history", {"via": "finplan"}, verbs=VERSION_VERBS + FIN_READ, uses=("version",))]),
             Section("fp_workflow", "Workflow", "plan.workflow", {"via": "finplan"}, uses=("version",),
                     verbs=["schedule.line.enter", "headcount.enter", "capex.project.enter", "overlay.finance.enter", "review.opex.close", "read.proof"]),
@@ -259,7 +259,7 @@ MAP_NODES = [
          surfaces=["plan.worklist_entry_refused", "plan.worklist_withdrawal_refused", "plan.worklist_entry_unresolved", "plan.worklist_reason_unknown",
                    "plan.worklist_entry_after_submission"]),
     Node("submissions", "plan", "Submissions", "by unit, then the plan", "plan.submissions", surfaces=["plan.worklist_open_submissions"]),
-    Node("versions", "plan", "Versions", "open or closed, the reference", "plan.versions"),
+    Node("versions", "plan", "Plans", "open or closed, the reference", "plan.versions"),
     Node("rates", "plan", "Prices and terms", "lists and terms in force", "plan.terms"),
     Node("assumptions", "plan", "Assumptions", "one set by period; what reads each", "plan.assumptions"),
     Node("costcentres", "plan", "Cost centres", "ours over each entity's own", "plan.cost_centres", surfaces=["plan.worklist_cost_centre_unmapped", "plan.worklist_cost_pool_unmapped"]),
@@ -271,7 +271,7 @@ MAP_NODES = [
     Node("capital", "plan", "Capital plan", "projects, sustaining, leases; depreciation", "plan.capex"),
     Node("accuracy", "read", "Forecast accuracy", "the plan judged as a forecast", "plan.accuracy"),
     Node("gap", "read", "Gap to reference", "what the cycle exists to close", "plan.gap"),
-    Node("revenue", "read", "Versions in net sales", "the versions over one another", "plan.revenue_versions"),
+    Node("revenue", "read", "Plans in net sales", "the Plans over one another", "plan.revenue_versions"),
     Node("finance", "read", "Revenue", "volume × price, fed or built", "plan.revenue"),
     Node("strategic", "read", "Five-year plan", "category × channel × year; the few capacities", "plan.strategic"),
     Node("statements", "read", "Statements", "the P&L read across the chain; the balance sheet", "plan.rung", {"slug": "pnl"}, built=False),
@@ -301,7 +301,8 @@ def _bounded(who: str | None, dimension: str, opts: list[dict]) -> str | None:
 
 def _versions(who, chosen) -> list[dict]:
     """The plan versions — the actuals are not a version a page plans or reads a plan on, so they are not offered."""
-    return [{"value": v["version_id"], "label": f"{v['version_id']} · {v['status']}"} for v in reads.versions() if v.get("version_kind") != "actual"]
+    codes = reads.plan_codes()
+    return [{"value": v["version_id"], "label": f"{codes.get(v['version_id'], (v['version_id'], ''))[1]} · {v['status']}"} for v in reads.versions() if v.get("version_kind") != "actual"]
 
 
 def _known_customer(code: str) -> bool:
@@ -398,7 +399,7 @@ def _locations(who, chosen) -> list[dict]:
 
 
 CONTEXT = [
-    Choice("version", "Version", _versions, default=lambda who, chosen, opts: reads.default_version() or (opts[0]["value"] if opts else None), strict=True),
+    Choice("version", "Plan", _versions, default=lambda who, chosen, opts: reads.default_version() or (opts[0]["value"] if opts else None), strict=True),
     Choice("fy", "Year", _years, default=_year_default, strict=True),
     Choice("customer", "Customer", _customers, default=_customer_default, note=lambda who, opts: _bounded(who, "customer", opts), known=_known_customer),
     Choice("material", "Material", _materials, note=lambda who, opts: _bounded(who, "material", opts), known=_known_material),

@@ -355,7 +355,7 @@ def home():
 
 # ---- the demand plan ----
 DEMAND = TOOLBAR + """
-<h1>Demand plan<small>{{ version }} · unconstrained · cases by standard material · {{ where }} · {{ d.n_actual }} actual periods, then the plan for {{ d.n_plan }} · totals by fiscal year with comparatives</small></h1>
+<h1>Demand plan<small>{{ version|plan }} · unconstrained · cases by standard material · {{ where }} · {{ d.n_actual }} actual periods, then the plan for {{ d.n_plan }} · totals by fiscal year with comparatives</small></h1>
 {% if editable %}<p class="hint">Cells are open: click one, type the total you want, Enter, give a reason. What is placed is an entry on layer {{ layer }} for the difference; the cell shows the run's number until the next run takes it in.</p>
 {% elif can_enter %}<p class="hint">Choose an account as the customer in the context to open the cells for input.</p>{% endif %}
 <div class="wide"><table class="plan tree" {% if editable %}data-cells-post="{{ url_for('plan.cell') }}" data-cells-reasons="reasons"{% endif %}><thead>
@@ -364,14 +364,14 @@ DEMAND = TOOLBAR + """
 <tr>{% for pp in d.periods %}<th class="n {{ 'actual' if d.source_of[pp] == 'actual' }}" title="{{ pp }}{{ ' · actual' if d.source_of[pp] == 'actual' }}">{{ pp[2:4] }}·{{ pp[5:] }}</th>{% endfor %}
 {% for c in d.comps %}<th class="n" style="border-left:1px solid var(--rule)">Total</th>{% if c.py %}<th class="n" title="same periods, prior fiscal year: shipments where closed, else this view">PY</th>{% endif %}{% if c.ref %}<th class="n" title="{{ d.ref_id }}">{{ d.ref_id }}</th>{% endif %}{% endfor %}</tr></thead><tbody>
 {% macro row(r, cls, parent, tog, id, label) %}<tr class="{{ cls }}"{% if parent %} data-parent="{{ parent }}"{% endif %}><td class="sticky">{% if tog %}<button type="button" class="tog" data-id="{{ id }}"></button>{% endif %}{{ label }}{% if cls == 'l2' %} <span class="muted">{{ r.material }}</span>{% endif %}</td>{% for c in r.cells %}{% set pp = d.periods[loop.index0] %}{% set key = r.material ~ '|' ~ pp %}
-<td class="n {{ 'actual' if d.source_of[pp] == 'actual' }} {{ 'has-pending' if key in pending }}" {% if editable and cls == 'l2' and d.source_of[pp] != 'actual' %}data-cell='{"version": "{{ version }}", "layer": {{ layer }}, "material": "{{ r.material }}", "account": "{{ account }}", "period": "{{ pp }}"}' data-current="{{ c or 0 }}"{% endif %}>{{ c|n }}{% if key in pending %}<span class="pending" title="placed, not yet run">{{ pending[key]|signed }} pending</span>{% endif %}</td>{% endfor %}
+<td class="n {{ 'actual' if d.source_of[pp] == 'actual' }} {{ 'has-pending' if key in pending }}" {% if editable and cls == 'l2' and d.source_of[pp] != 'actual' %}data-cell='{"version": "{{ version|plan }}", "layer": {{ layer }}, "material": "{{ r.material }}", "account": "{{ account }}", "period": "{{ pp }}"}' data-current="{{ c or 0 }}"{% endif %}>{{ c|n }}{% if key in pending %}<span class="pending" title="placed, not yet run">{{ pending[key]|signed }} pending</span>{% endif %}</td>{% endfor %}
 {% for b in r.blocks %}<td class="n" style="border-left:1px solid var(--rule);font-weight:500">{{ b.total|n }}</td>{% if d.comps[loop.index0].py %}<td class="n muted">{{ b.py|n }}</td>{% endif %}{% if d.comps[loop.index0].ref %}<td class="n muted">{{ b.ref|n }}</td>{% endif %}{% endfor %}<td class="n" style="font-weight:600">{{ r.total|n }}</td></tr>{% endmacro %}
 {% for c in d.groups %}{{ row(c, 'l0', None, True, c.code, c.material) }}
 {% for p in c.children %}{{ row(p, 'l1', c.code, True, p.code, p.material) }}
 {% for m in p.children %}{{ row(m, 'l2', p.code, False, None, m.label) }}{% endfor %}{% endfor %}{% endfor %}
 {{ row(d.totals, 'total', None, False, None, 'Total') }}
 </tbody></table></div>
-<p class="hint">Categories and products are sums of the standard materials beneath them and are read-only; open a category, then a product, to reach its materials{% if editable %} — only a material's open periods take input{% endif %}. Shaded periods are {{ version }}'s actual periods, read from shipments, and take no input; the rest is the plan, for the version's horizon — past the year end, where a year it cuts is totalled to where it stops. PY is the same periods a year earlier — shipments where that year is closed, otherwise this view; {{ d.ref_id }} is the reference version where its horizon overlaps.</p>
+<p class="hint">Categories and products are sums of the standard materials beneath them and are read-only; open a category, then a product, to reach its materials{% if editable %} — only a material's open periods take input{% endif %}. Shaded periods are {{ version|plan }}'s actual periods, read from shipments, and take no input; the rest is the plan, for the version's horizon — past the year end, where a year it cuts is totalled to where it stops. PY is the same periods a year earlier — shipments where that year is closed, otherwise this view; {{ d.ref_id }} is the reference version where its horizon overlaps.</p>
 <h2>Plan by layer and fiscal year</h2>
 <table><thead><tr><th>Fiscal year</th><th class="n">1 Baseline</th><th class="n">2 Adjustment</th><th class="n">4 Distribution</th><th class="n">6 Promotions</th><th class="n">7 Innovation</th><th class="n">8 Exit</th><th class="n">Plan</th></tr></thead><tbody>
 {% for r in layers %}<tr><td>FY{{ r.fiscal_year }}</td><td class="n">{{ r.l1|n }}</td><td class="n">{{ r.l2|n }}</td><td class="n">{{ r.l4|n }}</td><td class="n">{{ r.l6|n }}</td><td class="n">{{ r.l7|n }}</td><td class="n">{{ r.l8|n }}</td><td class="n">{{ r.cases|n }}</td></tr>{% endfor %}
@@ -426,7 +426,7 @@ def demand():
 
 # ---- entries ----
 ENTRIES_PAGE = TOOLBAR + """
-<h1>{{ title }}<small>{{ version }} · {{ lede }}</small></h1>
+<h1>{{ title }}<small>{{ version|plan }} · {{ lede }}</small></h1>
 <table><thead><tr><th>Layer</th><th>Entry</th><th>By</th><th>On</th><th>Reason</th><th>Material</th><th>Customer</th><th>Window</th><th class="n">Value</th><th>Spread</th><th>Note</th><th></th></tr></thead><tbody>
 {% for e in rows %}<tr id="{{ e.entry_id }}" class="{{ 'off' if e.withdrawn and e.withdrawn_by_owner }}">
 <td>{{ e.layer_no }}</td><td><code>{{ e.entry_id }}</code>{% if not e.entered_by_owner %} <span class="state">refused</span>{% endif %}{% if e.withdrawn and not e.withdrawn_by_owner %} <span class="state">withdrawal refused</span>{% endif %}</td>
@@ -597,11 +597,11 @@ def cell():
 
 # ---- submissions: the matrix, and the acts ----
 SUBMISSIONS_PAGE = TOOLBAR + """
-<h1>Submissions<small>{{ version }} · who has declared what complete, where — every state derived by the run from the acts and the entries</small></h1>
+<h1>Submissions<small>{{ version|plan }} · who has declared what complete, where — every state derived by the run from the acts and the entries</small></h1>
 <table class="matrix"><thead><tr><th>Subject</th>{% for u in units %}<th class="stage">{{ u.unit_name }}</th>{% endfor %}<th class="stage">Demand plan</th></tr></thead><tbody>
 {% for row in rows %}<tr><td>{{ row.label }}</td>{% for cell in row.cells %}<td class="stage {{ 'can' if cell.can }}" title="{{ cell.title }}">
 <span class="state {{ cell.state }} {{ 'gap' if 'beneath' in cell.show }}">{{ cell.show }}</span>{% if cell.can %}<form class="inline" method="post" action="{{ url_for('plan.submit') }}">
-<input type="hidden" name="version" value="{{ version }}"><input type="hidden" name="subject" value="{{ row.subject }}"><input type="hidden" name="node" value="{{ cell.node }}">
+<input type="hidden" name="version" value="{{ version|plan }}"><input type="hidden" name="subject" value="{{ row.subject }}"><input type="hidden" name="node" value="{{ cell.node }}">
 <input type="hidden" name="act" value="{{ cell.can }}"><button class="act">{{ cell.can }}</button></form>{% endif %}
 {% if cell.by %}<div class="small muted">{{ cell.by.split('@')[0] }} · {{ cell.on }}</div>{% endif %}</td>{% endfor %}</tr>{% endfor %}
 </tbody></table>
@@ -609,7 +609,7 @@ SUBMISSIONS_PAGE = TOOLBAR + """
 {% if unit %}<h2>{{ unit_name }} by account<span class="count">the account-facing layers</span></h2>
 <table class="matrix"><thead><tr><th>Layer</th>{% for a in accounts %}<th class="stage">{{ a.code }}</th>{% endfor %}</tr></thead><tbody>
 {% for row in acct_rows %}<tr><td>{{ row.label }}</td>{% for cell in row.cells %}<td class="stage" title="{{ cell.title }}"><span class="state {{ cell.state }}">{{ cell.show }}</span>{% if cell.can %}<form class="inline" method="post" action="{{ url_for('plan.submit') }}">
-<input type="hidden" name="version" value="{{ version }}"><input type="hidden" name="subject" value="{{ row.subject }}"><input type="hidden" name="node" value="{{ cell.node }}">
+<input type="hidden" name="version" value="{{ version|plan }}"><input type="hidden" name="subject" value="{{ row.subject }}"><input type="hidden" name="node" value="{{ cell.node }}">
 <input type="hidden" name="act" value="{{ cell.can }}"><button class="act">{{ cell.can }}</button></form>{% endif %}{% if cell.by %}<div class="small muted">{{ cell.by.split('@')[0] }} · {{ cell.on }}</div>{% endif %}</td>{% endfor %}</tr>{% endfor %}
 </tbody></table>{% endif %}
 <h2>Acts on file<span class="count">latest per subject and node</span></h2>
@@ -702,7 +702,7 @@ def submit():
 
 # ---- the revenue bridge ----
 MONEY = TOOLBAR + """
-<h1>Revenue bridge<small>{{ version }} · every line valued through the gross-to-net at the list and terms in force</small></h1>
+<h1>Revenue bridge<small>{{ version|plan }} · every line valued through the gross-to-net at the list and terms in force</small></h1>
 {% if b.gap %}<div class="cards">
 <div class="card stat"><b>{{ b.gap.plan_net_sales|n }}</b><span>net sales, this version</span></div>
 <div class="card stat"><b>{{ b.gap.reference_net_sales|n }}</b><span>net sales, {{ b.gap.reference_version }}</span></div>
@@ -729,8 +729,8 @@ def money():
 
 # ---- reconciliation: the gap to the reference version ----
 GAP = TOOLBAR + """
-<h1>Gap to reference<small>{% if g.reference %}{{ version }} against {{ g.reference }}{% else %}{{ version }} has no reference{% endif %} · the difference the cycle exists to close</small></h1>
-{% if not g.reference %}<p class="lede">{{ version }} is read against nothing — it is itself the reference a later version is read against. Choose a version that names one (a latest view) to see its gap.</p>{% else %}
+<h1>Gap to reference<small>{% if g.reference %}{{ version|plan }} against {{ g.reference }}{% else %}{{ version|plan }} has no reference{% endif %} · the difference the cycle exists to close</small></h1>
+{% if not g.reference %}<p class="lede">{{ version|plan }} is read against nothing — it is itself the reference a later version is read against. Choose a version that names one (a latest view) to see its gap.</p>{% else %}
 <h2>By period</h2>
 <table><thead><tr><th>Period</th><th class="n">Plan cases</th><th class="n">Reference cases</th><th class="n">Gap</th><th class="n">Plan net sales</th><th class="n">Reference net sales</th><th class="n">Gap</th></tr></thead><tbody>
 {% for r in g.by_period %}<tr><td>{{ r.period }}</td><td class="n">{{ r.plan_cases|n }}</td><td class="n">{{ r.reference_cases|n }}</td><td class="n">{{ r.cases_gap|n }}</td><td class="n">{{ r.plan_net_sales|n }}</td><td class="n">{{ r.reference_net_sales|n }}</td><td class="n">{{ r.net_sales_gap|n }}</td></tr>{% endfor %}
@@ -857,7 +857,7 @@ FIN_MACROS = """{% macro fin_tiles(fin) %}{% if fin.case %}<div id="fin-tiles" c
 {% for e in fin.edits %}<tr class="{{ 'off' if e.state != 'in_force' }}"><td>{{ e.scope_material }}</td><td>{{ e.period }}</td><td>{{ e.measure }}</td><td class="n">{{ e.typed }}</td><td class="n">{{ e.now }}</td><td class="n">{{ e.then }}</td><td class="n">{{ e.src_now }}{% if e.source_moved %} <span class="moved">◆</span>{% endif %}</td>
 <td>{% if e.standing == 'unsaved' %}<span class="state unsaved">unsaved</span>{% elif e.standing == 'held' %}held{% elif e.standing == 'overwritten' %}<span class="state">changed</span> <span class="small muted">by a later figure</span>{% else %}<span class="state">{{ e.standing }}</span>{% endif %}{% if e.state == 'in_force' and e.edit_id and fin.may and fin.open %} <a class="small" tabindex="-1" href="{{ url_for('plan.withdrawal', grid='finance', id=e.edit_id, version=fin.post_keep.version) }}">withdraw…</a>{% endif %}</td><td class="small">{{ e.reason }}</td><td class="small">{{ e.entered_by }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>{% endmacro %}"""
 
-FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ version }} · {{ fin.tab_label }} · {% if fin.measure == 'unit_cost' %}the planned unit cost of a case in four components — rolled up each period at each material's plant — beside the standard set on the business plan of the year{% elif fin.measure == 'against' %}the planned unit cost against the standard, line by line — calculated, never entered; A adverse, F favourable{% elif fin.entry == 'Revenue' %}Finance's volume × price = revenue, the demand plan beneath every figure{% else %}the volume typed under Revenue × the cost per case = cost of goods; margin = revenue − cost of goods, the demand plan beneath every figure{% endif %}</small></h1>
+FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ version|planfull }} · {{ fin.tab_label }} · {% if fin.measure == 'unit_cost' %}the planned unit cost of a case in four components — rolled up each period at each material's plant — beside the standard set on the business plan of the year{% elif fin.measure == 'against' %}the planned unit cost against the standard, line by line — calculated, never entered; A adverse, F favourable{% elif fin.entry == 'Revenue' %}Finance's volume × price = revenue, the demand plan beneath every figure{% else %}the volume typed under Revenue × the cost per case = cost of goods; margin = revenue − cost of goods, the demand plan beneath every figure{% endif %}</small></h1>
 {{ fin_tiles(fin) }}
 <div class="toolbar"><span class="small muted">{{ fin.customer_label }}{% if fin.source_of.get(fin.fc) == 'built' %} · built by Finance{% endif %} ×</span>
 <span class="crumbs">{% for n in fin.path %}{% if loop.last %}<b>{{ n.label }}</b>{% else %}<a href="{{ n.href }}">{{ n.label }}</a> ▸ {% endif %}{% endfor %}</span>
@@ -867,10 +867,10 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 {{ fin_status(fin) }}
 {% if fin.editable %}<form method="post" id="fin-one">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}</form>{% endif %}
 <form method="post" action="{{ url_for('plan.finance_cell') }}" id="fin-grid">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
-<div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}{% if p.total %}<th class="n tot"{% if fin.year_says %} title="{{ fin.year_says }}"{% endif %}>{{ p.label }}{% if fin.year_says %}<div class="small muted">{{ fin.year_says }}</div>{% endif %}</th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="an actual period of {{ version }} — what was shipped and invoiced; nothing is typed here"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>
+<div class="finwrap"><table class="fin"><thead><tr><th>{{ fin.row_head }}</th><th></th>{% for p in fin.periods %}{% if p.total %}<th class="n tot"{% if fin.year_says %} title="{{ fin.year_says }}"{% endif %}>{{ p.label }}{% if fin.year_says %}<div class="small muted">{{ fin.year_says }}</div>{% endif %}</th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="an actual period of {{ version|plan }} — what was shipped and invoiced; nothing is typed here"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>
 {% for r in fin.rows %}{{ fin_row(fin, r) }}{% else %}<tbody><tr><td colspan="{{ fin.periods|length + 2 }}" class="muted">Nothing in Finance's plan at {{ fin.customer_label }} × {{ fin.path[-1].label }} in FY{{ fy }}.</td></tr></tbody>{% endfor %}
 </table></div>{% if fin.editable %}<noscript><p class="hint"><button class="act">Recalculate</button> this page's script is off: every changed figure is applied at once.</p></noscript>{% endif %}</form>
-<p class="hint">{% if fin.n_actual %}{{ version }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.measure in ('unit_cost', 'against') %}{{ fin.row_head }} carries {{ 'the planned unit cost, the standard and the difference, for the total and for each component' if fin.measure == 'unit_cost' else 'every line, per case and in money' }}; each row beneath it is one figure a period — {{ fin.part_says }} — indented one level, product then material, so the products read against each other down the page; a name with ▸ opens one level down. At a node, a period's figure is its cost ÷ its cases. The year is its actual and plan periods together, each period's cost per case weighted by its cases. An actual period's cost is the ledger's, read through the cost pools at each plant — the standard absorbed on the cases made and the variance by pool — and a material's figure there is its standard plus its share of each pool's variance at its plant, in proportion to the standard it absorbed: marked <i>apportioned</i>. An actual period splits nothing into price and usage or rate and efficiency: there are no actual quantities to split. Cases are on Revenue's Volume tab and on Cost of goods.{% if fin.typed_uc %} {{ fin.typed_uc }} component figure{{ 's' if fin.typed_uc != 1 }} on {{ version }} {{ 'are' if fin.typed_uc != 1 else 'is' }} typed over the drivers — listed on <a href="{{ url_for('plan.unit_cost_typed') }}">Standard by plant → Typed</a>; a typed figure's variance is read whole.{% endif %}
+<p class="hint">{% if fin.n_actual %}{{ version|plan }} treats {{ fin.n_actual }} period{{ 's' if fin.n_actual != 1 }} as actual, to {{ fin.from }}: shaded, what was shipped and invoiced, never typed. {% endif %}{% if fin.n_plan %}The plan runs {{ fin.n_plan }} periods from there{% if fin.past_fy %}, past the year end to {{ fin.through }}{% endif %}{% if fin.n_actual %}; FY{{ fin.fy }} is its actual periods and its plan periods together{% endif %}. {% endif %}{% if fin.measure in ('unit_cost', 'against') %}{{ fin.row_head }} carries {{ 'the planned unit cost, the standard and the difference, for the total and for each component' if fin.measure == 'unit_cost' else 'every line, per case and in money' }}; each row beneath it is one figure a period — {{ fin.part_says }} — indented one level, product then material, so the products read against each other down the page; a name with ▸ opens one level down. At a node, a period's figure is its cost ÷ its cases. The year is its actual and plan periods together, each period's cost per case weighted by its cases. An actual period's cost is the ledger's, read through the cost pools at each plant — the standard absorbed on the cases made and the variance by pool — and a material's figure there is its standard plus its share of each pool's variance at its plant, in proportion to the standard it absorbed: marked <i>apportioned</i>. An actual period splits nothing into price and usage or rate and efficiency: there are no actual quantities to split. Cases are on Revenue's Volume tab and on Cost of goods.{% if fin.typed_uc %} {{ fin.typed_uc }} component figure{{ 's' if fin.typed_uc != 1 }} on {{ version|plan }} {{ 'are' if fin.typed_uc != 1 else 'is' }} typed over the drivers — listed on <a href="{{ url_for('plan.unit_cost_typed') }}">Standard by plant → Typed</a>; a typed figure's variance is read whole.{% endif %}
 {% elif fin.reading == 'finance' %}Each row beneath {{ fin.row_head }} is indented one level — product, then material; a name with ▸ opens one level down and its rows become the grid, a name without has nothing beneath it. The small figure under each is the demand plan it is fed from{% if fin.any_built %}; a built figure has none, and where a node holds both the built part is shown on its own line{% endif %}. ◆ marks a figure whose demand plan has moved since it was typed — the figure keeps its value. A boxed figure was typed at that node; a hatched one is typed and not yet saved. ↶ on a boxed figure takes it out: at once if it is not saved, by a withdrawal — shown first — if it is.{% elif fin.reading == 'source' %}The demand plan valued, where it feeds Finance's plan. Built figures have no demand plan beneath them.{% else %}Finance's plan less the demand plan, on the fed part only — a built figure has no source to differ from.{% endif %}
 {% if fin.measure == 'against' %} Each line is calculated, never entered: <b>material price</b> = Σ inputs (planned price − standard price) × planned usage; <b>material usage</b> = Σ (planned usage − standard usage) × standard price; <b>labour rate</b> = (planned rate − standard rate) × planned hours; <b>labour efficiency</b> = (planned hours − standard hours) × standard rate; <b>variable overhead</b> and <b>fixed overhead</b> per case = planned − standard. They add to the planned unit cost less the standard; in money each is cases × it, so a volume typed under Revenue moves it. Positive is adverse (A): the case costs more than the standard. A year with no standard has nothing to read against and is left out.{% endif %}{% if fin.measure not in ('unit_cost', 'against') %}{% for r in fin.measures %} <b>{{ r.name }}</b>{% if r.formula %} = {{ r.formula }}{% endif %}; at a total, {{ r.rollup_says }}{% if r.typed %}; typed at a total, {{ r.breakback_says }}{% endif %}.{% endfor %}{% endif %}{% if fin.measure == 'cogs' %} At the year, the cost per case is its actual and plan periods' cost per case weighted by their cases; an actual period's is the ledger's, apportioned.{% endif %} <a href="{{ url_for('plan.rules') }}#finance">How each figure is calculated</a></p>
 {% if fin.may and fin.open and version %}<form method="post" action="{{ url_for('plan.finance_save') }}" class="form-row" id="fin-save">{% for k, val in fin.post_keep.items() %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
@@ -881,27 +881,27 @@ FINANCE_PAGE = FIN_MACROS + """<h1>{{ fin.entry }}<small>FY{{ fy }} · {{ versio
 <label class="small">material <select name="add_material"><option value="">—</option>{% for a in fin.add_materials %}<option value="{{ a.code }}">{{ a.code }} · {{ a.label }}</option>{% endfor %}</select></label>
 <label class="small">period <select name="add_period">{% for p in fin.open_in_fy %}<option>{{ p }}</option>{% endfor %}</select></label>
 <label class="small">cases <input name="add_volume" inputmode="decimal" size="8"></label><label class="small">net per case <input name="add_price" inputmode="decimal" size="8"></label><button class="act">Add to the grid</button></form>{% endif %}
-{% elif not fin.may %}<p class="hint">Finance's figures are typed by {{ fin.holders|join(', ') or 'nobody yet' }}.</p>{% elif not fin.open %}<p class="hint">{{ version }} is {{ fin.status }} — nothing is typed on it.</p>{% endif %}
+{% elif not fin.may %}<p class="hint">Finance's figures are typed by {{ fin.holders|join(', ') or 'nobody yet' }}.</p>{% elif not fin.open %}<p class="hint">{{ version|plan }} is {{ fin.status }} — nothing is typed on it.</p>{% endif %}
 </div>
 {% if last and last.act and last.act.startswith('finance') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
-{% if fin.pools %}<h2>By pool<span class="count">FY{{ fy }} · {{ version }} against the standard set on {{ fin.pools.set_on or 'the business plan' }} · at each plant</span></h2>
+{% if fin.pools %}<h2>By pool<span class="count">FY{{ fy }} · {{ version|plan }} against the standard set on {{ fin.pools.set_on or 'the business plan' }} · at each plant</span></h2>
 <table><thead><tr><th>Plant</th><th>Variable pool</th><th class="n">Planned a case</th><th class="n">Standard a case</th><th class="n">Against</th></tr></thead><tbody>
 {% for r in fin.pools.variable %}<tr><td>{{ r.plant_name }}</td><td>{{ r.pool_name }}</td><td class="n">{{ '%.4f'|format(r.planned) if r.planned is not none else '' }}</td><td class="n">{{ '%.4f'|format(r.standard) if r.standard is not none else '' }}</td><td class="n">{{ r.vs }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No standard here for FY{{ fy }}.</td></tr>{% endfor %}</tbody></table>
 <table><thead><tr><th>Plant</th><th>Fixed pool</th><th class="n">Incurred</th><th class="n">Business plan</th><th class="n">Spending</th><th class="n">Absorbed at the rate</th><th class="n">Volume</th></tr></thead><tbody>
 {% for r in fin.pools.fixed %}<tr class="{{ 'total' if r.total }}"><td>{{ r.plant_name }}</td><td>{{ r.pool_name }}</td><td class="n">{{ r.incurred|aud }}</td><td class="n">{{ r.budget|aud }}</td><td class="n">{{ r.spending_s }}</td><td class="n">{{ r.absorbed|aud }}</td><td class="n">{{ r.volume_s }}</td></tr>{% else %}<tr><td colspan="7" class="muted">The fixed rate is not held from a business plan here.</td></tr>{% endfor %}</tbody></table>
 <p class="hint">Fixed overhead is a plant's money, not a case's: <b>spending</b> is this plan's pool cost less the business plan's in the same periods; <b>volume</b> is the business plan's pool cost less what the standard rate absorbs on this plan's cases. They add to the fixed overhead not absorbed on <a href="{{ url_for('plan.standard') }}">Standard by plant</a>. Over the plan periods of FY{{ fy }}; every plant, whatever the material shown.</p>{% endif %}
-{% if fin.recon %}<h2>At standard, each variance, as reported<span class="count">FY{{ fy }} · {{ version }} · by plant — actual periods from the ledger, plan periods from the plan</span></h2>
+{% if fin.recon %}<h2>At standard, each variance, as reported<span class="count">FY{{ fy }} · {{ version|plan }} · by plant — actual periods from the ledger, plan periods from the plan</span></h2>
 {% for pl in fin.recon.plants %}<div class="finwrap"><table class="fin recon"><thead><tr><th>{{ pl.plant_name }}</th>{% for p in fin.recon.periods %}<th class="n {{ 'actual' if p.actual }}">{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endfor %}<th class="n tot">FY{{ fy }}</th></tr></thead><tbody>
 {% for l in pl.lines %}<tr class="{{ 'total' if l.total }}"><td class="small{{ '' if l.total else ' muted' }}">{{ l.label }}</td>{% for x in l.cells %}<td class="n small {{ x.cls }}">{{ x.show }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endfor %}
 <p class="hint">Reported cost of goods = cases × the standard + the variances recognised in the period. <b>Plan periods</b>: cases made are cases sold, so every variance is recognised in the period it arises and none is retained in stock; material price variance is carried through the stock's weighted average and recognised as the stock is consumed. Fixed overhead's spending and volume are the plant's (as on Against standard); a year with no standard reads the planned cost and the fixed overhead not absorbed, unsplit. <b>Actual periods</b>: the ledger read through the cost pools — the standard absorbed on the cases made, each variance whole by component, fixed split into spending and volume — so <i>as reported</i> is the ledger's cost to the dollar. A dash: nothing to split. Positive is adverse. Finished goods and work in progress at a weighted average, with variances held in stock, wait on production being valued.</p>{% endif %}
 {{ fin_typed(fin) }}{{ fin_toast(fin) }}
-<h2>Saves<span class="count">{{ version }} · each save is one reason; withdrawing it returns its figures to the demand plan — or withdraw one figure from the list above · <a href="{{ url_for('plan.change_history', version=version, record="Finance's plan") }}">change history</a></span></h2>
+<h2>Saves<span class="count">{{ version|plan }} · each save is one reason; withdrawing it returns its figures to the demand plan — or withdraw one figure from the list above · <a href="{{ url_for('plan.change_history', version=version, record="Finance's plan") }}">change history</a></span></h2>
 <table><thead><tr><th>Save</th><th>When</th><th>By</th><th>Reason</th><th>Customers</th><th>Periods</th><th class="n">Figures</th><th class="n">Held</th><th class="n">◆ moved</th><th>Note</th><th></th></tr></thead><tbody>
 {% for s in fin.saves %}<tr class="{{ 'off' if s.released }}"><td><code>{{ s.save_id }}</code></td><td class="small">{{ s.entered_on[:16].replace('T', ' ') }}</td><td class="small">{{ s.entered_by }}</td><td class="small">{{ s.reason or s.reason_code }}</td><td>{{ s.customers }}</td><td class="small">{{ s.period_from }}{% if s.period_to != s.period_from %} – {{ s.period_to }}{% endif %}</td>
 <td class="n">{{ s.figures }}</td><td class="n">{{ s.held }}</td><td class="n">{{ s.moved or '' }}</td><td class="small">{{ s.note or '' }}</td>
 <td class="acts">{% if s.released %}<span class="state">released</span>{% elif fin.may and fin.open %}<a class="small" href="{{ url_for('plan.withdrawal', grid='finance', id=s.save_id, version=version) }}">withdraw…</a>{% endif %}</td></tr>
-{% else %}<tr><td colspan="11" class="muted">Nothing typed on {{ version }}: Finance's plan is the demand plan valued{% if fin.any_built %}, and the built accounts are empty{% endif %}.</td></tr>{% endfor %}</tbody></table>
+{% else %}<tr><td colspan="11" class="muted">Nothing typed on {{ version|plan }}: Finance's plan is the demand plan valued{% if fin.any_built %}, and the built accounts are empty{% endif %}.</td></tr>{% endfor %}</tbody></table>
 <style>.finwrap{overflow-x:auto;margin-bottom:.6rem}table.fin td.small.muted{white-space:nowrap}table.fin td.n{vertical-align:top;white-space:nowrap}table.fin td.node{vertical-align:top;min-width:11rem}
 table.fin tr.first td{border-top:1px solid var(--rule)}table.fin td.node .nm{font-weight:400}table.fin td.node.d0 .nm{font-weight:700}table.fin td.node.lv-product .nm,table.fin td.node.lv-category .nm{font-weight:600}
 table.fin td.node.d1 .nm{margin-left:.2rem;padding-left:.7rem;border-left:1px solid var(--rule)}table.fin td.node.d2 .nm{margin-left:1.4rem;padding-left:.7rem;border-left:1px solid var(--rule)}table.fin td.node .opens{color:var(--muted)}table.fin td.node .small{font-weight:400}
@@ -963,6 +963,31 @@ OPENS_TO = {"category": "product", "product": "material"}        # what a node o
 _TOASTS: dict[str, str] = {}                                      # what an undo took out, said once on the next page the person sees (caldera ambiguity #57)
 PAGE_KEYS = ("version", "fy", "customer", "material", "reading", "measure", "part")      # where the financial forecast stands
 _FIN_MODULE: dict = {}
+
+
+def _plan_code(vid, full: bool = False):
+    """A Plan as a person reads it: its code (FY27 P05), or with its horizon beside it (FY27 P05 | 4+18+5Q)."""
+    if not vid or not has_request_context():
+        return vid
+    codes = g.get("_plan_codes")
+    if codes is None:
+        try:
+            codes = reads.plan_codes()
+        except Busy:
+            codes = {}
+        g._plan_codes = codes
+    c = codes.get(vid)
+    return (c[1] if full else c[0]) if c else vid
+
+
+@plan.app_template_filter("plan")
+def _plan_filter(vid):
+    return _plan_code(vid)
+
+
+@plan.app_template_filter("planfull")
+def _planfull_filter(vid):
+    return _plan_code(vid, True)
 
 
 def _fin_macros():
@@ -1645,7 +1670,7 @@ SLOTS = """<h1>Where each number comes from<small>the financial plan is one chai
 <td>{% if s.declared == 'model' %}the model{% elif s.declared == 'assumption' %}an assumption{% else %}<span class="state">not yet filled</span>{% endif %}</td>
 <td class="small">{{ s.today or '' }}{% if s.says %}<div class="muted">{{ s.says }}</div>{% endif %}</td></tr>{% endfor %}</tbody></table>
 <p class="hint">A business early in its planning runs the right-hand column — a rate on last year, a standard per material, weeks of cover — and each move replaces one assumption with its model; nothing downstream changes, because downstream reads the step. Where both exist, the assumption is read against the model.</p>
-<h2 id="fed">Fed or built<span class="count">Finance's volume and price, declared per account × material · FY{{ fy }} on {{ version }}</span></h2>
+<h2 id="fed">Fed or built<span class="count">Finance's volume and price, declared per account × material · FY{{ fy }} on {{ version|plan }}</span></h2>
 <table><thead><tr><th>Account</th><th>Materials</th><th>Source</th><th>Declared</th><th class="n">Finance's plan</th><th class="n">Demand plan beneath</th><th>Note</th></tr></thead><tbody>
 {% for d in sources %}<tr><td>{{ d.account_code }} <span class="small muted">{{ d.account_name }}</span></td><td>{% if d.material_code == 'ALL' %}<span class="small muted">the account's default</span>{% else %}{{ d.material_code }} <span class="small muted">{{ d.material_name }}</span>{% endif %}</td>
 <td>{% if d.source == 'built' %}<b>built by Finance</b>{% else %}fed by the demand plan{% endif %}</td><td class="small">{{ d.declared_by }} · {{ d.declared_on }}</td>
@@ -1876,7 +1901,7 @@ def _table(rows: list[dict], cols: list[str]) -> str:
 
 
 # ---- promotions: one calendar, two doors ----
-EVENTS = """<h1>Promotions<small>{{ version }} · one calendar, two doors — the promotions system sends the events of the accounts it keeps, in its own codes; every other account's events are typed here</small></h1>
+EVENTS = """<h1>Promotions<small>{{ version|plan }} · one calendar, two doors — the promotions system sends the events of the accounts it keeps, in its own codes; every other account's events are typed here</small></h1>
 <div class="cards"><div class="card stat"><b>{{ cal|length }}</b><span>events in the calendar · {{ n_sender }} sent, {{ n_plan }} typed</span></div>
 <div class="card stat"><b>{{ held_events|length }}</b><span>held — waiting for a mapping</span></div>
 <div class="card stat"><b>{{ refused|length }}</b><span>refused at the door</span></div>
@@ -1911,7 +1936,7 @@ The mix by family: {% for f, n in families %}{{ f.replace('_', ' ') }} {{ n }}{{
 {% if nbs %}<table><thead><tr><th>Event</th><th>Neighbour</th><th>Effect</th><th class="n">Rate on its baseline</th><th class="n">Materials</th><th>By</th><th>At</th><th>Note</th></tr></thead><tbody>
 {% for n in nbs %}<tr class="{{ '' if n.event_in_calendar else 'off' }}"><td>{{ n.event_id }}</td><td>{{ n.scope_material }}</td><td>{{ n.effect_type }}</td><td class="n">{{ n.rate|pct1s }}</td><td class="n">{{ n.materials }}</td><td>{{ n.entered_by }}</td><td class="small">{{ n.entered_at }}</td><td class="small">{{ n.note or '' }}</td></tr>{% endfor %}
 </tbody></table>{% else %}<p class="muted">No neighbour line is declared.</p>{% endif %}
-{% if may %}<form class="entry" method="post" action="{{ url_for('plan.neighbour_new') }}" style="margin-top:1rem"><input type="hidden" name="version" value="{{ version }}">
+{% if may %}<form class="entry" method="post" action="{{ url_for('plan.neighbour_new') }}" style="margin-top:1rem"><input type="hidden" name="version" value="{{ version|plan }}">
 <label>event<select name="event_id">{% for e in cal %}{% if e.owner == who %}<option value="{{ e.event_id }}">{{ e.event_id }} · {{ e.account_code }} · {{ e.promo_group_code }} · {{ e.window_start }}</option>{% endif %}{% endfor %}</select></label>
 <label>neighbour (a promo group or a material of ours)<input name="scope_material" list="nb_scopes" required placeholder="PG_VALLEY_825"><datalist id="nb_scopes">{% for g in groups %}<option value="{{ g.promo_group_code }}">{{ g.promo_group_name }}</option>{% endfor %}</datalist></label>
 <label>effect<select name="effect_type"><option value="cannibalisation">cannibalisation — takes from it</option><option value="halo">halo — lends to it</option></select></label>
@@ -1934,7 +1959,7 @@ The mix by family: {% for f, n in families %}{{ f.replace('_', ' ') }} {{ n }}{{
 {% for c in cancelled %}<tr><td>{{ c.event_id }}</td><td class="small">{{ c.local_account }} · {{ c.local_product_group }}</td><td>{{ c.window_start }} – {{ c.window_end }}</td><td><code>{{ c.sender_file }}</code></td></tr>{% endfor %}</tbody></table>{% endif %}
 {% if pending %}<p class="hint">{{ pending|length }} file{{ '' if pending|length == 1 else 's' }} placed since the last run — the calendar shows them after the run.</p>{% endif %}
 {% if may %}<h2 id="new">New event<span class="count">for an account whose promotions are typed here — the window defaults to the account's promotional week; the plan supplies the response from the mechanic unless you override it, with a note</span></h2>
-<form class="entry" method="post" action="{{ url_for('plan.event_new') }}" id="newevent"><input type="hidden" name="version" value="{{ version }}">
+<form class="entry" method="post" action="{{ url_for('plan.event_new') }}" id="newevent"><input type="hidden" name="version" value="{{ version|plan }}">
 <label>account<select name="account_code" id="ne_account">{% for a in accounts %}<option value="{{ a.account_code }}" data-week="{{ a.promo_week_start or '' }}" data-next="{{ next_start[a.account_code] }}">{{ a.account_code }} · {{ a.account_name }}{{ ' (promotions system)' if a.promotions_master == 'TPM' }}{{ ' · weeks start ' + a.promo_week_start if a.promo_week_start }}</option>{% endfor %}</select></label>
 <label>promo group<select name="promo_group_code">{% for g in groups %}<option value="{{ g.promo_group_code }}">{{ g.promo_group_code }} · {{ g.promo_group_name }}</option>{% endfor %}</select></label>
 <label>shopper window from<input name="window_start" id="ne_start" type="date" required></label>
@@ -1950,7 +1975,7 @@ The mix by family: {% for f, n in families %}{{ f.replace('_', ' ') }} {{ n }}{{
 <label>uplift (blank: the mechanic's)<input name="uplift_pct" type="number" step="0.01" min="0" placeholder="e.g. 0.6 for +60%"></label>
 <label>dip (blank: the mechanic's)<input name="dip_pct" type="number" step="0.01" min="0" placeholder="e.g. 0.15"></label>
 <label class="wide">note<textarea name="note" rows="2" placeholder="required when the response is overridden"></textarea></label>
-<div class="actions"><button class="primary">Place event</button><span class="hint">on {{ version }} by {{ who }} as at today — in the calendar after the next run; a window off the account's promotional week is placed and flagged</span></div></form>
+<div class="actions"><button class="primary">Place event</button><span class="hint">on {{ version|plan }} by {{ who }} as at today — in the calendar after the next run; a window off the account's promotional week is placed and flagged</span></div></form>
 <script>(()=>{const a=document.getElementById('ne_account'),s=document.getElementById('ne_start'),w=document.getElementById('ne_weeks'),e=document.getElementById('ne_end');
 const end=()=>{if(!s.value)return;const d=new Date(s.value+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+7*Math.max(1,+w.value||1)-1);e.value=d.toISOString().slice(0,10)};
 const pick=()=>{const o=a.selectedOptions[0];if(o&&o.dataset.next){s.value=o.dataset.next;end()}};a.addEventListener('change',pick);s.addEventListener('change',end);w.addEventListener('input',end);pick()})()</script>{% endif %}
@@ -2041,7 +2066,7 @@ def take_in():
     return redirect(url_for("plan.events") + "#sender")
 
 
-CALENDAR = """<h1>Promotions calendar<small>{{ version }} · our trading weeks as the grid, each event as a bar on its true dates · {{ where }}</small></h1>
+CALENDAR = """<h1>Promotions calendar<small>{{ version|plan }} · our trading weeks as the grid, each event as a bar on its true dates · {{ where }}</small></h1>
 <form class="toolbar" method="get">{{ context_fields() }}<label>promo group<select name="group" onchange="this.form.submit()"><option value="">every group</option>{% for g in groups %}<option value="{{ g }}" {{ 'selected' if g == group }}>{{ g }}</option>{% endfor %}</select></label></form>
 <p class="lede">Our weeks run Monday to Sunday, every week in one period. A customer's promotional week need not: {% for a in weeks_of %}{{ a.account_code }} from {{ a.promo_week_start }}{{ ', ' if not loop.last }}{% else %}none of these accounts keeps one{% endfor %}{% if no_week %}; {{ no_week|join(', ') }} keep{{ 's' if no_week|length == 1 }} none{% endif %}. So a grocer's event starts mid-week and straddles two of our weeks — the plan cuts it by days, never snaps it.</p>
 {% if not rows %}<p class="muted">No event in the calendar for {{ where }}.</p>{% else %}
@@ -2377,7 +2402,7 @@ def mapping_propose():
     return redirect(url_for("plan.mapping"))
 
 
-FORECAST = """<h1>Statistical forecast<small>{{ version }} · the baseline each account's plan stands on, where it is made, and where the forecasting system's structures and ours disagree</small></h1>
+FORECAST = """<h1>Statistical forecast<small>{{ version|plan }} · the baseline each account's plan stands on, where it is made, and where the forecasting system's structures and ours disagree</small></h1>
 {% if mine %}<p class="small">{% if showing_all %}All accounts · <a href="{{ url_for('plan.forecast') }}">only yours ({{ mine|join(', ') }})</a>{% else %}Your accounts: {{ mine|join(', ') }} · <a href="{{ url_for('plan.forecast', accounts='all') }}">all accounts</a>{% endif %} — each planner takes in the run for their own accounts and decides what disagrees there.</p>{% endif %}
 {% if pending %}<p class="hint">{{ pending }} file{{ '' if pending == 1 else 's' }} placed since the last run — this page shows {{ 'it' if pending == 1 else 'them' }} after the run.</p>{% endif %}
 {% if run %}<div class="cards"><div class="card stat"><span>run{{ 's' if in_force_ids|length > 1 }} in force</span><b>{{ in_force_ids|join(' · ') }}</b><div class="small muted">{{ runs_in_force|length }} account{{ '' if runs_in_force|length == 1 else 's' }}{% if in_force_ids|length > 1 %} · not every account has taken the latest{% endif %}</div></div>
@@ -2518,7 +2543,7 @@ MAINTAINED = """<p class="hint">{% if may_edit %}You maintain {{ what }}: an ame
 
 TERMS = """<h1>Terms<small>the instruments in force, by account — effective-dated; an amendment is a new row from its date</small></h1>
 """ + MAINTAINED + """
-{% if envelopes %}<h2 id="envelopes">Co-op envelopes<span class="count">{{ version }} · committed for the year, drawn by the events in the calendar, remaining</span></h2>
+{% if envelopes %}<h2 id="envelopes">Co-op envelopes<span class="count">{{ version|plan }} · committed for the year, drawn by the events in the calendar, remaining</span></h2>
 <table><thead><tr><th>Envelope</th><th>Account</th><th>Year</th><th class="n">Committed</th><th class="n">Drawn</th><th class="n">Remaining</th><th>Drawn by</th></tr></thead><tbody>
 {% for e in envelopes %}<tr><td>{{ e.instrument_code }}</td><td>{{ e.account_code }}</td><td>{{ e.valid_from }} – {{ e.valid_to or 'open' }}</td><td class="n">{{ e.committed|n }}</td><td class="n">{{ e.drawn|n }}</td>
 <td class="n">{{ e.remaining|n }}{% if e.remaining < 0 %} <span class="state">over</span>{% endif %}</td><td class="small">{{ e.drawn_by or '' }}</td></tr>{% endfor %}</tbody></table>

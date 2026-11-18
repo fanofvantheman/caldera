@@ -63,7 +63,7 @@ def main() -> None:
         # 1 · administration per process
         fin = c.get("/versions?via=finplan").data.decode()
         ibp = c.get("/versions").data.decode()
-        assert "Financial planning" in fin and "not reopened — LV-" in fin and "not reopened — LV-" not in ibp      # the business plan's own act, offered only where it is administered
+        assert "Financial planning" in fin and "not reopened — FY27 P" in fin and "not reopened — FY27 P" not in ibp      # the business plan's own act, offered only where it is administered
         assert "Integrated business planning's — read only here" in fin
         assert "Financial planning's — read only here" in ibp
         print(f"administration  Financial planning acts on {BP} and reads {V}; Integrated business planning the reverse")

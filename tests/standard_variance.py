@@ -33,7 +33,7 @@ from face import __main__ as M                        # noqa: E402
 
 chassis.configure(root=BUILD, db="data/caldera.duckdb", receipts="data/receipts", landing="data/landing")
 FINANCE = "finance.manager@caldera"
-LV, BP = "LV-2027P04", "BP-FY2027"
+LV, BP = "F202705", "B202701"
 
 
 def close(a, b, tol=1e-6) -> bool:
