@@ -1,6 +1,7 @@
 /* The stack: every layer line at the storage grain, keyed by version. Layer 1 as computed or entered; layers 2–9 as the
    entries spread — a rate on the version's own baseline, or cases spread by the baseline's shape within the slice, by the
-   history shape, or by catchment where nothing was there before; layer 6 from the promotions calendar. The unconstrained
+   history shape, or by catchment where nothing was there before; layer 6 from the promotions calendar; a supersession link
+   moves the baseline from one material to another (and its uplift into layer 7). The unconstrained
    demand plan is the sum. A line knows its source, so every case traces to the row that put it there. */
 MODEL (name plan.demand_stack, kind FULL, grain (version_id, layer_no, line_source, effect_type, material_code, ship_to_code, week_id),
        audits (stack_cells_non_negative));
@@ -27,7 +28,11 @@ promo AS (
   SELECT version_id, 6 AS layer_no, event_id AS line_source, effect_type, 'PROMOTION' AS reason_code, material_code, ship_to_code, account_code, week_id, cases
   FROM plan.promo_line
 ),
-lines AS (SELECT * FROM layer1 UNION ALL SELECT * FROM upper UNION ALL SELECT * FROM promo)
+supersession AS (                                    -- links between materials: the baseline moved, the uplift in innovation (DEC-20261118-01)
+  SELECT version_id, layer_no, link_id AS line_source, 'primary' AS effect_type, 'SUPERSESSION' AS reason_code, material_code, ship_to_code, account_code, week_id, SUM(cases) AS cases
+  FROM plan.supersession_line GROUP BY ALL
+),
+lines AS (SELECT * FROM layer1 UNION ALL SELECT * FROM upper UNION ALL SELECT * FROM promo UNION ALL SELECT * FROM supersession)
 SELECT l.version_id, l.layer_no, n.layer_name, n.owner_role, l.line_source, l.effect_type, l.reason_code,
        l.material_code, m.standard_material, l.ship_to_code, l.account_code, l.week_id, w.period, w.fiscal_year,
        l.cases, l.cases * m.case_net_kg / 1000 AS tonnes

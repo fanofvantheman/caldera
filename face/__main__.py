@@ -38,6 +38,8 @@ from . import purchases
 from . import typed_cost
 from . import supply
 from . import storage
+from . import stages
+from . import supersession
 from . import assumptions
 from . import versions as versions_page
 from . import strategic
@@ -2788,6 +2790,8 @@ purchases.register(plan, _page, _who, _ctx, _busy, session, roles)
 typed_cost.register(plan, _page, _who, _ctx, _busy, session, roles)
 supply.register(plan, _page, _who, _ctx, _busy, session, roles)
 storage.register(plan, _page, _who, _ctx, _busy, session, roles)
+stages.register(plan, _page, _who, _ctx, _busy, session, roles)
+supersession.register(plan, _page, _who, _ctx, _busy, session, roles)
 
 
 def main() -> None:

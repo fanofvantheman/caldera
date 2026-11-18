@@ -81,7 +81,10 @@ PROCESSES = [
             Section("storage", "Storage", "plan.storage", uses=("version",), verbs=["register.capacity.storage.maintain", "delta.supply.enter", "register.supply_plan.maintain", "read.plan", "read.proof"]),
         ]),
         Area("innovation", "Innovation", [
-            Section("launches", "Launches", "plan.launches", verbs=["layer.7.enter", "structure.material.maintain", "read.drill"], uses=("version",)),
+            Section("launches", "Launches", "plan.launches", verbs=["layer.7.enter", "structure.material.maintain", "read.drill"], uses=("version",), tabs=[
+                Tab("launches", "Launches", "plan.launches", verbs=["layer.7.enter", "structure.material.maintain", "read.drill"]),
+                # links between materials: one link, five presets (DEC-20261118-01)
+                Tab("supersession", "Supersession", "plan.supersession", verbs=["layer.7.enter", "structure.material.maintain", "read.drill", "read.plan"])]),
             Section("exits", "Exits", "plan.exits", verbs=["layer.8.enter", "structure.material.maintain", "read.drill"], uses=("version",)),
         ]),
         Area("reconciliation", "Reconciliation", [
@@ -92,6 +95,8 @@ PROCESSES = [
             # plan administration: the plans of the kinds this process owns, each process its own (DEC-20261115-03 a)
             Section("versions", "Plan administration", "plan.versions", verbs=VERSION_VERBS + ["read.plan"], tabs=[
                 Tab("versions", "Versions", "plan.versions", verbs=VERSION_VERBS),
+                # each stage handed over by its owner (DEC-20261118-04)
+                Tab("stages", "Stages", "plan.stages", verbs=VERSION_VERBS + ["read.plan", "demand.plan.submit", "delta.supply.enter", "register.supply_plan.maintain"], uses=("version",)),
                 # the record of acts read as a page: every act on the version, who, when, why, whether it stands (DEC-20261114-01 c)
                 Tab("version_history", "Change history", "plan.change_history", verbs=VERSION_VERBS + ["read.plan"], uses=("version",))]),
             Section("workflow", "Workflow", "plan.workflow", uses=("version",), verbs=["demand.plan.submit", "review.demand.close", "read.plan"]),

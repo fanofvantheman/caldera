@@ -110,6 +110,11 @@ PLAN = {
     "reg_unit_cost_act": ("per_case",),
     "reg_sourcing": ("share",),
     "reg_production_act": ("quantity",),
+    "reg_stage_act": (),
+    "reg_stage_setting": (),
+    "reg_stage_snap_demand": ("cases",),
+    "reg_stage_snap_production": ("quantity",),
+    "reg_supersession": ("share", "uplift_pct"),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})

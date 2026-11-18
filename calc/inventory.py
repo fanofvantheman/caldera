@@ -4,7 +4,8 @@ supply pages and the storage page's stress test call the same function, so a rea
 
 Two tiers, the default topology (`location_and_drp.md`): ship-to → its serving DC → the plant that supplies the DC.
 
-  demand at a DC      the plan's cases at the ship-tos it serves, by week
+  demand at a DC      the plan's cases at the ship-tos it serves, by week, as the stage before last handed them over
+                      (plan.demand_handed_over, DEC-20261118-04) — never the demand plan's latest release
   safety stock        solved for the declared fill rate of the material's class: z such that σ√(L+R) × G(z) ÷ Q = 1 − target,
                       Q a review period's demand; safety stock = z × σ√(L+R). σ is the weekly variability of what the node
                       shipped over the last 52 closed weeks — the note's fallback (demand variability, an upper bound):
@@ -163,8 +164,7 @@ def read_inputs(fetch, T, version: str) -> dict:
     period_of = {r["week_id"]: r["period"] for r in wk}
     fy_of = {r["period"]: int(r["fiscal_year"]) for r in wk}
     demand = {(r["node_code"], r["material_code"], r["week_id"]): float(r["cases"] or 0) for r in fetch(
-        f"""select s.node_code, d.material_code, d.week_id, sum(d.cases) cases from {T('plan.unconstrained_demand')} d
-            join {T('dims.ref_serving_node')} s using (ship_to_code) where d.version_id = '{v}' group by all""")}
+        f"""select node_code, material_code, week_id, cases from {T('plan.demand_handed_over')} where version_id = '{v}'""")}
     sourcing: dict[tuple, list] = defaultdict(list)
     for r in fetch(f"select node_code, material_code, plant_code, share from {T('plan.sourcing_rule')}"):
         sourcing[(r["node_code"], r["material_code"])].append((r["plant_code"], float(r["share"])))
