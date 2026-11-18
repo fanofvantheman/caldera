@@ -1,16 +1,16 @@
-/* Each stage's state on each Plan (DEC-20261118-04 points 2, 5, 6): read from the register of acts — hand over, reopen —
-   by the holder of the stage's right. A run of stages whose handovers are compressed is one unit, handed over by its last
-   stage. A unit is
+/* Each stage's state on each Plan (DEC-20261118-04 point 1, DEC-20261119-01 point 6): read from the register of acts —
+   hand over, reopen — by the holder of the stage's right. The state records that the stage's owner has put their work in
+   the Plan; it does not gate what the next stage reads: a Plan has one number for each figure, and every stage reads the
+   stage before it as it stands. A run of stages whose handovers are compressed is one unit, handed over by its last stage.
      open          never handed over, or reopened since
      handed over   its latest act is a handover
-     behind        handed over, and the unit before it has been handed over again since — its proposal is new, its
-                   owner's interventions stand beside it, nothing typed is recalculated over
-   A closed Plan reads every stage handed over. `snapshot` says whether the latest handover or reopen took the figures the
-   stage after reads (the onboarding handover took none: until it is handed over again the stage after reads it as it stands). */
+   A closed Plan reads every stage handed over. Whether a stage is behind — not yet recalculated since an override or a
+   port upstream of it, under manual recalculation — is not a state of the stage's owner and is read on the Stages page
+   from what waits for a run (face/overrides.py). */
 MODEL (name plan.stage_state, kind FULL, grain (version_id, stage));
 WITH acts AS (
   SELECT act_id::TEXT AS act_id, version_id::TEXT AS version_id, stage::TEXT AS stage, action::TEXT AS action, reason::TEXT AS reason,
-         entered_by::TEXT AS entered_by, entered_at::TEXT AS entered_at, COALESCE(snapshot::TEXT, '') <> '' AS snapshot, source_file, file_row_number
+         entered_by::TEXT AS entered_by, entered_at::TEXT AS entered_at, source_file, file_row_number
   FROM bronze.reg_stage_act
 ),
 set AS (SELECT * FROM plan.stage_setting),
@@ -24,23 +24,11 @@ versions AS (SELECT v.version_id, s.state AS plan_state FROM dims.ctl_version v 
 last AS (
   SELECT a.*, r.ord FROM acts a JOIN dims.ref_stage r USING (stage)
   QUALIFY ROW_NUMBER() OVER (PARTITION BY a.version_id, a.stage ORDER BY a.entered_at DESC, a.source_file DESC, a.file_row_number DESC) = 1
-),
-handed AS (                                            -- each unit's last handover, read at its last stage
-  SELECT a.version_id, r.ord, MAX(a.entered_at) AS handed_at FROM acts a JOIN dims.ref_stage r USING (stage) WHERE a.action = 'hand_over' GROUP BY ALL
-),
-grid AS (
-  SELECT v.version_id, v.plan_state, u.*, l.action AS last_action, l.entered_at AS last_at, l.entered_by AS last_by, l.reason AS last_reason, l.snapshot,
-         h.handed_at
-  FROM versions v CROSS JOIN unit u
-  LEFT JOIN last l ON l.version_id = v.version_id AND l.ord = u.unit_to
-  LEFT JOIN handed h ON h.version_id = v.version_id AND h.ord = u.unit_to
 )
-SELECT g.version_id, g.ord, g.stage, g.stage_name, g.handover_kept, g.unit_from, g.unit_to,
-       CASE WHEN g.plan_state = 'closed' THEN 'handed over'
-            WHEN g.last_action IS NULL OR g.last_action = 'reopen' THEN 'open'
-            WHEN p.handed_at IS NOT NULL AND p.handed_at > g.handed_at THEN 'behind'
+SELECT v.version_id, u.ord, u.stage, u.stage_name, u.handover_kept, u.unit_from, u.unit_to,
+       CASE WHEN v.plan_state = 'closed' THEN 'handed over'
+            WHEN l.action IS NULL OR l.action = 'reopen' THEN 'open'
             ELSE 'handed over' END AS state,
-       g.last_action, g.last_at, g.last_by, g.last_reason, g.handed_at, COALESCE(g.snapshot, FALSE) AS snapshot,
-       p.handed_at AS before_handed_at
-FROM grid g
-LEFT JOIN grid p ON p.version_id = g.version_id AND p.unit_to = g.unit_from - 1 AND p.ord = p.unit_to
+       l.action AS last_action, l.entered_at AS last_at, l.entered_by AS last_by, l.reason AS last_reason
+FROM versions v CROSS JOIN unit u
+LEFT JOIN last l ON l.version_id = v.version_id AND l.ord = u.unit_to

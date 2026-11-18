@@ -128,16 +128,16 @@ def main() -> None:
     manifest = emit_all(Path(args.out), tables, history, plan, args.seed, outbox={**waiting, **fcst_waiting})
     # registers with nothing in them yet: the sourcing rules declared over the primary route, production typed over the
     # requirement (DEC-20261117-02 points 3, 8) — their headers alone
-    # the stages (DEC-20261118-04): the latest view's first four handed over at onboarding, taking no figures; the rest open
+    # the stages (DEC-20261118-04, DEC-20261119-01): the latest view's first four handed over at onboarding; the rest open
     from .emit import _write
     _write(Path(args.out) / "plan" / "reg_stage_act.csv", [
         {"act_id": f"STG-ONB-{i}", "version_id": lv_id(LATEST_CLOSED), "stage": st, "action": "hand_over", "reason": "handed over at onboarding",
-         "snapshot": "", "entered_by": by, "entered_at": f"2026-11-06T{8 + i:02d}:00:00"}
+         "entered_by": by, "entered_at": f"2026-11-06T{8 + i:02d}:00:00"}
         for i, (st, by) in enumerate([("demand", "head.demand@caldera"), ("valuation", "finance.manager@caldera"),
                                       ("inventory", "supply.planner@caldera"), ("production", "supply.planner@caldera")], start=1)])
     header_only(Path(args.out) / "plan" / "reg_stage_setting.csv", ["stage", "kept", "reason", "entered_by", "entered_at"])
-    header_only(Path(args.out) / "plan" / "reg_stage_snap_demand.csv", ["act_id", "version_id", "node_code", "material_code", "week_id", "cases"])
-    header_only(Path(args.out) / "plan" / "reg_stage_snap_production.csv", ["act_id", "version_id", "material_code", "plant_code", "period", "quantity"])
+    # how the models after an override or a port are recalculated (DEC-20261119-01 point 5): no act yet — manual, the default
+    header_only(Path(args.out) / "plan" / "reg_recalc_setting.csv", ["act_id", "mode", "reason", "entered_by", "entered_at"])
     header_only(Path(args.out) / "plan" / "reg_supersession.csv", ["act_id", "link_id", "action", "version_id", "kind", "from_material", "to_material", "share",
                                                                    "uplift_pct", "uplift_reason", "switch", "switch_week", "end_week", "accounts", "reason",
                                                                    "entered_by", "entered_at"])

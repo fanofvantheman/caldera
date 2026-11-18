@@ -97,6 +97,8 @@ PROCESSES = [
                 Tab("versions", "Plans", "plan.versions", verbs=VERSION_VERBS),
                 # each stage handed over by its owner (DEC-20261118-04)
                 Tab("stages", "Stages", "plan.stages", verbs=VERSION_VERBS + ["read.plan", "demand.plan.submit", "delta.supply.enter", "register.supply_plan.maintain"], uses=("version",)),
+                # overrides ported from a sandbox into its Plan, or from a Plan into the next (DEC-20261119-01)
+                Tab("port", "Port", "plan.port", verbs=VERSION_VERBS + ["delta.supply.enter", "register.supply_plan.maintain", "overlay.finance.enter"], uses=("version",)),
                 # the record of acts read as a page: every act on the version, who, when, why, whether it stands (DEC-20261114-01 c)
                 Tab("version_history", "Change history", "plan.change_history", verbs=VERSION_VERBS + ["read.plan"], uses=("version",))]),
             Section("workflow", "Workflow", "plan.workflow", uses=("version",), verbs=["demand.plan.submit", "review.demand.close", "read.plan"]),

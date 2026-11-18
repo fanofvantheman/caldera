@@ -70,6 +70,8 @@ COPIES = [
      """select b.* from bronze.reg_unit_cost_act b join plan.unit_cost_act a on a.act_id = b.act_id where b.version_id = ?"""),
     ("reg_production_act", "production quantities typed", ["act_id"],
      """select b.* from bronze.reg_production_act b join plan.production_act a on a.act_id = b.act_id where b.version_id = ?"""),
+    ("reg_purchase_act", "purchases typed", ["act_id"],
+     """select b.* from bronze.reg_purchase_act b join plan.purchase_act a on a.act_id = b.act_id where b.version_id = ?"""),
     ("reg_promo_neighbour", "neighbour lines", ["neighbour_id"],
      """select b.* from bronze.reg_promo_neighbour b where b.version_id = ?
         and b.neighbour_id in (select neighbour_id from plan.promo_neighbour where version_id = b.version_id)"""),
@@ -161,9 +163,9 @@ PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its 
 <div class="card"><table><thead><tr><th>Step</th><th class="n">Periods</th><th>Window</th></tr></thead><tbody>
 {% for s in steps %}<tr><td>{{ s.step_label }}</td><td class="n">{{ s.horizon_periods }}</td><td class="small">{{ s.says }}</td></tr>{% endfor %}</tbody></table>
 <p class="hint">A step may plan a shorter window than the version, never a longer one: it plans the lesser of the two.</p></div></div>
-<h2>Acts<span class="count">every close, reopen, change of horizon, naming and promotion, newest first — the register the states and horizons above are read from · <a href="{{ url_for('plan.change_history') }}">change history</a></span></h2>
+<h2>Acts<span class="count">every close, reopen, change of horizon, naming, port and promotion, newest first — the register the states and horizons above are read from · <a href="{{ url_for('plan.change_history') }}">change history</a></span></h2>
 <table><thead><tr><th>When</th><th>Version</th><th>Act</th><th>By</th><th>Why</th></tr></thead><tbody>
-{% for a in acts %}<tr><td class="small">{{ (a.entered_on or '')[:16].replace('T', ' ') }}</td><td>{{ a.version_id }}</td><td>{{ a.act }}{% if a.act == 'horizon' %} to {{ a.horizon_periods }} periods{% elif a.act == 'name' %} from {{ a.base_version }}, actual to {{ a.from_period }}{% if takes.get(a.version_id) %} <span class="small muted">· reads {{ takes[a.version_id] }} arrivals of its base's</span>{% endif %}{% elif a.act == 'promote' %} to the latest view{% endif %}</td><td class="small">{{ a.entered_by }}</td><td class="small">{{ a.reason or '' }}</td></tr>
+{% for a in acts %}<tr><td class="small">{{ (a.entered_on or '')[:16].replace('T', ' ') }}</td><td>{{ a.version_id }}</td><td>{{ a.act }}{% if a.act == 'horizon' %} to {{ a.horizon_periods }} periods{% elif a.act == 'name' %} from {{ a.base_version }}, actual to {{ a.from_period }}{% if takes.get(a.version_id) %} <span class="small muted">· reads {{ takes[a.version_id] }} arrivals of its base's</span>{% endif %}{% elif a.act == 'promote' %} to the latest view{% elif a.act == 'port' %} from {{ a.base_version }}{% endif %}</td><td class="small">{{ a.entered_by }}</td><td class="small">{{ a.reason or '' }}</td></tr>
 {% else %}<tr><td colspan="5" class="muted">No version has been closed or reopened.</td></tr>{% endfor %}
 {% for w in waiting %}<tr><td class="small">{{ w.entered_on[:16].replace('T', ' ') }}</td><td>{{ w.version_id }}</td><td>{{ w.act }} <span class="small muted">placed, waiting for the run</span></td><td class="small">{{ w.entered_by }}</td><td class="small">{{ w.reason }}</td></tr>{% endfor %}</tbody></table>"""
 

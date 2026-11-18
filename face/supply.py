@@ -16,6 +16,7 @@ from chassis.landing import LogLanding
 from chassis.warehouse import Busy, q
 from flask import redirect, request, url_for
 
+from . import overrides
 from .words import said
 
 VERB = "delta.supply.enter"
@@ -168,7 +169,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             ACTS.place([{"act_id": f"PRD-{now:%Y%m%d%H%M%S%f}", "action": "set", "withdraws": "", "version_id": version, "material_code": mat, "plant_code": plant,
                          "period": period, "quantity": qty, "reason": reason, "entered_by": who, "entered_at": now.isoformat(timespec="seconds")}], who)
         session.last = receipts.write("production.type", who, f"{mat}:{plant}:{period}", checks, placed)
-        session.say(f"{mat} at {plant} in {period} placed — in the plan after the next run" if placed else "refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), placed)
+        if overrides.released(who, "production", session, f"{mat} at {plant} in {period} placed", placed):
+            return redirect(url_for("plan.run"))
+        if not placed:
+            session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
         return redirect(url_for("plan.supply_plan") + "#type")
 
     @bp.post("/supply/plan/withdraw")
@@ -189,5 +193,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             ACTS.place([{"act_id": f"PRD-{now:%Y%m%d%H%M%S%f}", "action": "withdraw", "withdraws": a["act_id"], "version_id": a["version_id"], "material_code": a["material_code"],
                          "plant_code": a["plant_code"], "period": a["period"], "quantity": "", "reason": reason, "entered_by": who, "entered_at": now.isoformat(timespec="seconds")}], who)
         session.last = receipts.write("production.withdraw", who, f.get("act_id") or "", checks, placed)
-        session.say("withdrawn — the proposal stands again after the next run" if placed else "refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), placed)
+        if overrides.released(who, "production", session, "withdrawn — the proposal stands again", placed):
+            return redirect(url_for("plan.run"))
+        if not placed:
+            session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
         return redirect(url_for("plan.supply_plan"))

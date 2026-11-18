@@ -39,6 +39,7 @@ from . import typed_cost
 from . import supply
 from . import storage
 from . import stages
+from . import overrides
 from . import supersession
 from . import assumptions
 from . import versions as versions_page
@@ -252,8 +253,9 @@ def _mine(who: str, held: set[str]) -> list[dict]:
 
 def _pending() -> list[pathlib.Path]:
     """Every file any act has placed since the last run, across the landing's tables."""
-    return ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending() + FINANCE.pending() + assumptions.LANDING.pending() \
+    files = ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending() + FINANCE.pending() + assumptions.LANDING.pending() \
         + [f for scope in SCOPED.values() for f in scope["pending"]() if scope["pending"] is not FINANCE.pending]
+    return list(dict.fromkeys(files))                  # two scopes may watch the same register (an override's, the port's)
 
 
 def _d(a: float | None, b: float | None) -> float | None:
@@ -2816,6 +2818,7 @@ typed_cost.register(plan, _page, _who, _ctx, _busy, session, roles)
 supply.register(plan, _page, _who, _ctx, _busy, session, roles)
 storage.register(plan, _page, _who, _ctx, _busy, session, roles)
 stages.register(plan, _page, _who, _ctx, _busy, session, roles)
+overrides.register(plan, _page, _who, _ctx, _busy, session, roles, _run_plan, SCOPED)
 supersession.register(plan, _page, _who, _ctx, _busy, session, roles)
 
 

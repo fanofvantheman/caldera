@@ -22,7 +22,7 @@ def _records(df: pd.DataFrame) -> list[dict]:
     "plan.inventory_flow",
     kind="FULL",
     grain=["version_id", "node_code", "material_code", "period"],
-    depends_on=["plan.demand_handed_over", "dims.ref_serving_node", "plan.sourcing_rule", "dims.ref_lane", "plan.demand_variability",
+    depends_on=["plan.unconstrained_demand", "dims.ref_serving_node", "plan.sourcing_rule", "dims.ref_lane", "plan.demand_variability",
                 "plan.service_class", "dims.ref_replenishment", "plan.production_act", "dims.dim_node", "dims.dim_week", "dims.ctl_version"],
     columns={c: TYPES[c] for c in COLUMNS},
     description="The inventory plan: demand, target, receipts and projected stock by node, material and period; a plant's receipts are its production.",

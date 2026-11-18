@@ -2,12 +2,12 @@
 
     uv run python -m tests.stages_supersession        # from build/, with the warehouse built; takes three runs
 
-Stages (DEC-20261118-04):
-1. The seed: the latest view's first four stages handed over at onboarding, taking no figures; the rest open; the business
-   plan, closed, reads every stage handed over; inventory reads the demand plan as it stands.
-2. Handing over demand valuation takes the demand plan's cases (a snapshot keyed by the act); refused to a person without
-   the stage's right. After a run, inventory reads the snapshot; a demand entry placed after the handover moves the demand
-   plan and not what inventory reads; inventory, handed over before, reads behind.
+Stages (DEC-20261118-04 point 1, DEC-20261119-01):
+1. The seed: the latest view's first four stages handed over at onboarding; the rest open; the business plan, closed,
+   reads every stage handed over.
+2. Handing over demand valuation is one act and takes no figures (no copy is kept between stages); refused to a person
+   without the stage's right. A demand entry and two links placed after it: after the run inventory reads the demand plan
+   as it stands — one number — and its demand moves by exactly what the demand plan moved at the DCs.
 Supersession (DEC-20261118-01):
 3. A Replace with a gain at run-out and a Temporary on weeks at one account, placed through Launches → Supersession
    (refused without the launch right): after the run the predecessor's baseline from the switch is off it and on the
@@ -56,27 +56,22 @@ def main() -> None:
     state = {r["stage"]: r["state"] for r in q("select stage, state from plan.stage_state where version_id = ?", LV)}
     assert [state[s] for s in ("demand", "valuation", "inventory", "production")] == ["handed over"] * 4 and state["materials"] == "open", state
     assert {r["state"] for r in q("select state from plan.stage_state where version_id = 'B202701'")} == {"handed over"}
-    assert {r["read_as"] for r in q("select distinct read_as from plan.demand_handed_over where version_id = ?", LV)} == {"as it stands"}
-    print("seed            F202705: demand, valuation, inventory and production handed over at onboarding, taking no figures; the rest open; "
-          "B202701 closed, every stage handed over; inventory reads the demand plan as it stands")
+    print("seed            F202705: demand, valuation, inventory and production handed over at onboarding; the rest open; B202701 closed, every stage handed over")
 
     app = chassis_app.create_app(SHELL, session, roles, blueprints=[M.plan])
     c = app.test_client()
     before = landing_files()
     try:
-        # 2 · a handover takes the figures; refused without the right
+        # 2 · a handover is an act and takes no figures; refused without the right
         session.become(PLANNER)
         c.post(f"/stages/act?version={LV}", data={"stage": "valuation", "action": "hand_over"})
         assert landing_files() == before, "a handover by someone without the stage's right"
         session.become(FINANCE)
         h = c.get(f"/stages?version={LV}").data.decode()
-        assert "Demand valuation" in h and "Hand over" in h and "not settled" in h
+        assert "Demand valuation" in h and "Reopen" in h and "not settled" in h and "Recalculation" in h
         c.post(f"/stages/act?version={LV}", data={"stage": "valuation", "action": "hand_over", "reason": "net sales agreed"})
         new = landing_files() - before
-        acts = [p for p in new if "reg_stage_act" in str(p)]
-        snaps = [p for p in new if "reg_stage_snap_demand" in str(p)]
-        n_live = q("select count(*) n from (select n.node_code, d.material_code, d.week_id from plan.unconstrained_demand d join dims.ref_serving_node n using (ship_to_code) where d.version_id = ? group by all)", LV)[0]["n"]
-        assert len(acts) == 1 and len(snaps) == 1 and sum(1 for _ in snaps[0].open()) - 1 == n_live, (len(acts), len(snaps))
+        assert len(new) == 1 and "reg_stage_act" in str(next(iter(new))), new
         dem_before = q("select sum(cases) s from plan.unconstrained_demand where version_id = ? and account_code = 'WES'", LV)[0]["s"]
         flow_before = q("select sum(demand) s from plan.inventory_flow where version_id = ? and node_kind <> 'plant'", LV)[0]["s"]
         # a demand entry after the handover: +20% on Westbrook's snack cups over four periods
@@ -96,14 +91,17 @@ def main() -> None:
         run()
 
         state = {r["stage"]: r for r in q("select * from plan.stage_state where version_id = ?", LV)}
-        assert state["valuation"]["state"] == "handed over" and state["valuation"]["snapshot"] and state["inventory"]["state"] == "behind", {k: v["state"] for k, v in state.items()}
-        assert {r["read_as"] for r in q("select distinct read_as from plan.demand_handed_over where version_id = ?", LV)} == {"handed over"}
+        assert state["valuation"]["state"] == "handed over" and state["inventory"]["state"] == "handed over", {k: v["state"] for k, v in state.items()}
         dem_after = q("select sum(cases) s from plan.unconstrained_demand where version_id = ? and account_code = 'WES'", LV)[0]["s"]
         flow_after = q("select sum(demand) s from plan.inventory_flow where version_id = ? and node_kind <> 'plant'", LV)[0]["s"]
-        # the snapshot was taken before the links and the entry: what inventory reads has not moved
-        assert dem_after != dem_before and abs(flow_after - flow_before) < 1e-6, (dem_before, dem_after, flow_before, flow_after)
-        print(f"stages          valuation handed over by Finance (refused to a planner), taking {n_live:,} rows; after the run inventory reads them — the demand plan moved "
-              f"{dem_after - dem_before:+,.0f} cases at Westbrook (an entry and two links placed after) and inventory's demand did not ({flow_after:,.0f}); inventory reads behind")
+        # one number: inventory reads the demand plan as it stands, so its demand moves by what the plan moved inside its weeks
+        plan_moved = q("""select sum(d.cases) s from plan.unconstrained_demand d join dims.ref_serving_node n using (ship_to_code)
+                          join dims.dim_week w using (week_id) join dims.ctl_version v using (version_id)
+                          where d.version_id = ? and w.period > v.from_period and w.period <= v.plan_through""", LV)[0]["s"]
+        assert dem_after != dem_before and abs(flow_after - plan_moved) < 1e-3 and abs(flow_after - flow_before) > 1, (dem_before, dem_after, flow_before, flow_after, plan_moved)
+        print(f"stages          valuation handed over by Finance (refused to a planner) — one act, no figures taken; the demand plan moved "
+              f"{dem_after - dem_before:+,.0f} cases at Westbrook (an entry and two links placed after) and inventory's demand with it ({flow_before:,.0f} → {flow_after:,.0f}), "
+              "equal to the demand plan at the DCs over the horizon")
 
         sw = {r["link_id"]: r for r in q("select s.*, l.kind from plan.supersession_switch s join plan.supersession_link l using (version_id, link_id) where s.version_id = ?", LV)}
         rep = next(r for r in sw.values() if r["kind"] == "replace_gain")
@@ -124,22 +122,21 @@ def main() -> None:
               f"{base:,.0f} cases of baseline off the predecessor and on the successor, +{up['c']:,.0f} uplift in innovation; the Temporary SAUCE_VEG → SAUCE_OLIVE "
               f"only at WES between {t_off['w0']} and {t_off['w1']}; refused without the launch right")
 
-        # reopen takes the figures again; a withdrawal names the link
+        # a reopen is one act; a withdrawal names the link
         session.become(FINANCE)
         mark = landing_files()
         c.post(f"/stages/act?version={LV}", data={"stage": "valuation", "action": "reopen", "reason": "a late price change"})
-        assert any("reg_stage_snap_demand" in str(p) for p in landing_files() - mark) and any("reg_stage_act" in str(p) for p in landing_files() - mark)
+        assert [p for p in landing_files() - mark if "reg_stage" in str(p)] and all("reg_stage_act" in str(p) for p in landing_files() - mark)
         session.become(PORTFOLIO)
         c.post(f"/launches/supersession/withdraw?version={LV}", data={"link_id": tmp["link_id"], "reason": "not running"})
         assert any("reg_supersession" in str(p) for p in landing_files() - mark)
-        print("reopen          a reopen takes the figures again (what was handed over stays read while the stage is worked); a link withdrawn as an act")
+        print("reopen          a reopen is one act and takes nothing; a link withdrawn as an act")
     finally:
         for p in landing_files() - before:
             p.unlink()
         run()
-        assert {r["read_as"] for r in q("select distinct read_as from plan.demand_handed_over where version_id = ?", LV)} == {"as it stands"}
         assert q("select count(*) n from plan.supersession_line")[0]["n"] == 0
-        print("cleaned up      every file the test placed removed and the plan run again — inventory reads as it stands, no link")
+        print("cleaned up      every file the test placed removed and the plan run again — no link")
 
 
 if __name__ == "__main__":

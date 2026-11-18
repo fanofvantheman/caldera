@@ -1,53 +1,53 @@
-"""Stages (DEC-20261118-04): a Plan is worked in eight stages, each handed over by its owner — demand, demand valuation,
-inventory, production, materials, cost, Finance's forecast, statements. Within an open Plan each stage is open, handed
-over or behind; a stage reads the last handed-over state of the stage before it, never its latest release; a handover is
-an act, never a side effect of a run. A deployment may compress adjacent stages into one (a set-up setting on this page).
+"""Stages (DEC-20261118-04 point 1, DEC-20261119-01): a Plan is worked in eight stages — demand, demand valuation,
+inventory, production, materials, cost, Finance's forecast, statements — in that order, each with its owner. A Plan has one
+number for each figure: every stage reads the stage before it as it stands, and nothing is copied between stages. A
+stage's state — open or handed over — records that its owner has put their work in the Plan; it gates nothing. A
+deployment may compress adjacent stages into one (a set-up setting on this page).
 
-The handover takes the figures the stage after reads, where this build reads across that seam by a handover: demand
-valuation → inventory (the demand plan's cases by stocking node × material × week) and production → materials (cases to
-make by material × plant × period). Every other seam reads the stage before as it stands, and the page says so.
+Whether a stage is **behind** — not yet recalculated since an override or a port before it — follows from the
+recalculation setting beside the compression (face/overrides.py): automatic recalculates at once and nothing is behind;
+manual leaves the stages after an override behind until someone recalculates, here.
 
-How soon one person's released figures must show for another is not settled (point 7) and nothing here assumes it.
+How soon one person's released figures must show for another is not settled (DEC-20261118-04 point 7) and nothing here
+assumes it.
 
 Registered on the plan's blueprint by `register(...)`, called once from `face/__main__.py`."""
 from __future__ import annotations
 
 import datetime as dt
 
-from chassis import CONFIG, receipts
+from chassis import receipts
 from chassis.landing import LogLanding
 from chassis.warehouse import Busy, q
 from flask import redirect, request, url_for
 
+from . import overrides
 from .words import said
 
-ACT_COLUMNS = ["act_id", "version_id", "stage", "action", "reason", "snapshot", "entered_by", "entered_at"]
+ACT_COLUMNS = ["act_id", "version_id", "stage", "action", "reason", "entered_by", "entered_at"]
 ACTS = LogLanding("plan", "reg_stage_act", ACT_COLUMNS)
 SETTING_COLUMNS = ["stage", "kept", "reason", "entered_by", "entered_at"]
 SETTINGS = LogLanding("plan", "reg_stage_setting", SETTING_COLUMNS)
-SNAP_DEMAND = LogLanding("plan", "reg_stage_snap_demand", ["act_id", "version_id", "node_code", "material_code", "week_id", "cases"])
-SNAP_PRODUCTION = LogLanding("plan", "reg_stage_snap_production", ["act_id", "version_id", "material_code", "plant_code", "period", "quantity"])
 SETTING_VERB = "version.name"
-# the seams read by a handover, and what the handover takes: the stage that hands over → (what it takes, its landing, its query)
-SEAMS = {
-    "valuation": ("the demand plan's cases by stocking node × material × week", SNAP_DEMAND,
-                  """select n.node_code, d.material_code, d.week_id, sum(d.cases) cases from plan.unconstrained_demand d
-                     join dims.ref_serving_node n using (ship_to_code) where d.version_id = ? group by all"""),
-    "production": ("cases to make by material × plant × period", SNAP_PRODUCTION,
-                   "select material_code, plant_code, period, quantity from plan.production_requirement where version_id = ?"),
-}
 
-PAGE = """<h1>Stages<small>{{ version|plan }} · eight handovers between owners, in order — each stage reads what the stage before handed over, never its latest figures</small></h1>
-<p class="hint">A stage proposes its figures from what was handed to it; its owner may type over a proposal, with a reason, the proposal kept beside it; nothing reaches the next stage until the owner hands over — always an act, never a side effect of a run. A shortfall goes back: the stage before changes its plan and hands over again, and the stages after it read <b>behind</b> until their owners hand over in turn. {{ version|plan }} is {{ plan_state }}.</p>
-<table><thead><tr><th>#</th><th>Stage</th><th>Hands over</th><th>Owner</th><th>State</th><th>Last act</th><th>The stage after reads</th><th></th></tr></thead><tbody>
+PAGE = """<h1>Stages<small>{{ version|plan }} · eight stages in order, each with its owner — one number for each figure: every stage reads the stage before it as it stands</small></h1>
+<p class="hint">A stage calculates its figures from the stage before it; at the points the model declares, its owner may type over a calculated figure, with a reason, the calculated figure kept beside it. Work is done in a sandbox and ported into the Plan (<a href="{{ url_for('plan.port') }}">Port</a>), so one person's working moves no one else's. <b>Handed over</b> records that the owner has put their work in the Plan; it does not hold anything back from the next stage. A shortfall goes back: the stage before changes its plan. Recalculation after an override or a port is <b>{{ mode }}</b>{{ ': every stage after it recalculates at once' if mode == 'automatic' else ': the stages after it read behind until someone recalculates' }}. {{ version|plan }} is {{ plan_state }}.</p>
+<table><thead><tr><th>#</th><th>Stage</th><th>Hands over</th><th>Owner</th><th>State</th><th>Last act</th><th>Recalculated</th><th></th></tr></thead><tbody>
 {% for s in stages %}<tr class="{{ 'off' if s.folded }}"><td>{{ s.ord }}</td><td><b>{{ s.stage_name }}</b></td><td class="small">{{ s.hands_over }}</td><td class="small">{{ s.owners|join(', ') or '—' }}</td>
 <td>{% if s.folded %}<span class="small muted">one with {{ s.folded }} — handed over with it</span>{% else %}<span class="state {{ s.state|replace(' ', '-') }}">{{ s.state }}</span>{% endif %}</td>
 <td class="small">{% if s.last_action %}{{ 'handed over' if s.last_action == 'hand_over' else 'reopened' }} {{ s.last_at[:16].replace('T', ' ') }} by {{ s.last_by }}{% if s.last_reason %} — {{ s.last_reason }}{% endif %}{% else %}—{% endif %}</td>
-<td class="small">{{ s.reads }}</td>
+<td class="small">{% if s.recalc == 'behind' %}<span class="state behind">behind</span> <span class="muted">— not yet recalculated since an override before it</span>{% elif s.recalc %}<span class="state">{{ s.recalc }}</span> <span class="muted">— placed, not yet run</span>{% else %}<span class="muted">yes</span>{% endif %}</td>
 <td>{% if s.may and is_open and not s.folded %}<form class="inline" method="post" action="{{ url_for('plan.stage_act') }}"><input type="hidden" name="stage" value="{{ s.stage }}">
-<input name="reason" placeholder="{{ 'why reopen (required)' if s.state != 'open' else 'note' }}" size="12"> {% if s.state == 'open' or s.state == 'behind' %}<button class="act" name="action" value="hand_over">Hand over</button>{% endif %}{% if s.state != 'open' %} <button class="act" name="action" value="reopen">Reopen</button>{% endif %}</form>{% endif %}</td></tr>{% endfor %}</tbody></table>
-<p class="hint">{{ waiting_says }} How soon one person's released figures must show for another is not settled; nothing here assumes a number. A handover is in force after the next run.</p>
-<h2 id="setting">Handovers kept<span class="count">a set-up setting — adjacent stages may be compressed into one owner's work, never reordered</span></h2>
+<input name="reason" placeholder="{{ 'why reopen (required)' if s.state != 'open' else 'note' }}" size="12"> {% if s.state == 'open' %}<button class="act" name="action" value="hand_over">Hand over</button>{% else %}<button class="act" name="action" value="reopen">Reopen</button>{% endif %}</form>{% endif %}</td></tr>{% endfor %}</tbody></table>
+{% if any_behind %}<p>{% if may_run %}<form class="inline" method="post" action="{{ url_for('plan.recalculate') }}"><button class="primary" onclick="this.textContent='Recalculating…'">Recalculate</button></form> {% endif %}<span class="hint">{{ waiting_n }} override{{ 's' if waiting_n != 1 }} placed on {{ version|plan }} and not yet run{% if not may_run %} — recalculated by {{ run_holders }}{% endif %}.</span></p>{% endif %}
+<p class="hint">How soon one person's released figures must show for another is not settled; nothing here assumes a number. A handover is in force after the next run.</p>
+<h2 id="setting">Recalculation<span class="count">a set-up setting, for every Plan — after an override or a port, the models after it recalculate at once, or are marked behind until asked</span></h2>
+<p>Recalculation is <b>{{ mode }}</b>{% if recalc.entered_by %} <span class="small muted">— set by {{ recalc.entered_by }}, {{ (recalc.entered_at or '')[:16].replace('T', ' ') }}: {{ recalc.reason }}</span>{% else %} <span class="small muted">— the default: a monthly cycle has no point recalculating the stages after one still being adjusted</span>{% endif %}</p>
+{% if may_set %}<form class="entry" method="post" action="{{ url_for('plan.recalc_setting') }}">
+<label>recalculation<select name="mode"><option value="automatic" {{ 'selected' if mode == 'manual' }}>automatic — at once, after every override and port</option><option value="manual" {{ 'selected' if mode == 'automatic' }}>manual — the stages after it behind until asked</option></select></label>
+<label class="wide">why<input name="reason" required placeholder="a weekly tactical cycle"></label>
+<div class="actions"><button class="primary">Set</button><span class="hint">applies to every Plan</span></div></form>{% endif %}
+<h2>Handovers kept<span class="count">a set-up setting — adjacent stages may be compressed into one owner's work, never reordered</span></h2>
 <table><thead><tr><th>After</th><th>Handover</th><th>Why</th><th>By</th></tr></thead><tbody>
 {% for s in settings if s.ord < 8 %}<tr><td>{{ s.stage_name }}</td><td>{{ 'kept' if s.handover_kept else 'compressed — runs straight through into the next' }}</td><td class="small">{{ s.reason or 'the default: the eight, separate' }}</td><td class="small">{{ s.entered_by or '' }}</td></tr>{% endfor %}</tbody></table>
 {% if may_set %}<form class="entry" method="post" action="{{ url_for('plan.stage_setting') }}">
@@ -58,12 +58,6 @@ PAGE = """<h1>Stages<small>{{ version|plan }} · eight handovers between owners,
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 <style>.state.behind{font-weight:600}.state.open{color:var(--muted)}</style>"""
-
-
-def _waiting() -> int:
-    """Files the face has placed that the warehouse has not yet taken in: a handover then would take figures a run has not made."""
-    built = CONFIG.db.stat().st_mtime if CONFIG.db.exists() else 0
-    return sum(1 for p in CONFIG.landing.rglob("*.csv") if p.stat().st_mtime > built)
 
 
 def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
@@ -79,28 +73,20 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             ref = {r["stage"]: r for r in q("select * from dims.ref_stage order by ord")}
             rows = q("select * from plan.stage_state where version_id = ? order by ord", version)
             names = {r["stage"]: r["stage_name"] for r in ref.values()}
+            recalc = overrides.behind(version) if overrides.mode() == "manual" else {}
             out = []
             for r in rows:
                 s = ref[r["stage"]]
                 last_of_unit = r["ord"] == r["unit_to"]
-                nxt = next((x for x in ref.values() if x["ord"] == r["ord"] + 1), None)
-                if not r["handover_kept"] and nxt:
-                    reads_as = f"{nxt['stage_name']} runs straight through from it"
-                elif r["stage"] in SEAMS and nxt:
-                    reads_as = (f"{nxt['stage_name']} reads {SEAMS[r['stage']][0]} as handed over" if r["snapshot"]
-                                else f"{nxt['stage_name']} reads it as it stands — this handover took no figures; it will at the next")
-                elif nxt:
-                    reads_as = f"{nxt['stage_name']} reads it as it stands — this build does not yet read across this seam by a handover"
-                else:
-                    reads_as = "—"
                 unit_last = next((x for x in rows if x["ord"] == r["unit_to"]), r)
-                out.append({**r, **s, "state": unit_last["state"], "owners": reads.holders(s["verb"]), "reads": reads_as,
+                out.append({**r, **s, "state": unit_last["state"], "owners": reads.holders(s["verb"]), "recalc": recalc.get(r["stage"], ""),
                             "folded": None if last_of_unit else names.get(unit_last["stage"]), "may": roles.may(who, s["verb"])})
-            n = _waiting()
+            setting = (q("select * from plan.recalc_setting") or [{}])[0]
             return page(PAGE, title="Stages", active="stages", width="none", version=version, stages=out, is_open=v.get("status") == "open",
                         plan_state=v.get("status", "unknown"), settings=q("select * from plan.stage_setting order by ord"),
-                        may_set=roles.may(who, SETTING_VERB),
-                        waiting_says=f"{n} file{'s' if n != 1 else ''} placed and not yet taken in by a run — a stage reading across a handover is handed over after it." if n else "",
+                        may_set=roles.may(who, SETTING_VERB), mode=overrides.mode(), recalc=setting,
+                        any_behind=any(recalc.values()), waiting_n=sum(overrides.waiting(version).values()),
+                        may_run=roles.may(who, overrides.RUN_VERB), run_holders=", ".join(reads.holders(overrides.RUN_VERB)) or "nobody yet",
                         last=session.last, receipt_acts=("stage",))
         except Busy as e:
             return busy("Stages", e)
@@ -112,8 +98,6 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         ref = (q("select * from dims.ref_stage where stage = ?", stage) or [None])[0]
         st = (q("select * from plan.stage_state where version_id = ? and stage = ?", version, stage) or [None])[0]
         may = bool(ref) and roles.may(who, ref["verb"])
-        waiting = _waiting()
-        seam = SEAMS.get(stage) if st and st["handover_kept"] else None
         checks = [
             {"check": "a stage", "ok": bool(ref and st), "says": ref["stage_name"] if ref else f"{stage or 'nothing'} is not a stage"},
             {"check": "who hands it over", "ok": may, "says": (f"{who} holds {said(ref['verb'])}" if may else f"{who} does not hold {said(ref['verb'])} — {ref['stage_name']} is handed over by {', '.join(reads.holders(ref['verb'])) or 'nobody yet'}") if ref else "—"},
@@ -121,23 +105,13 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             {"check": "the stage hands over", "ok": bool(st) and st["ord"] == st["unit_to"],
              "says": "it ends its unit" if st and st["ord"] == st["unit_to"] else "a compressed stage is handed over with the stage it runs into"},
             {"check": "the act", "ok": action in ("hand_over", "reopen") and (action == "hand_over" or bool(reason)),
-             "says": {"hand_over": "hand over", "reopen": f"reopen — {reason}" if reason else "a reopen says why"}.get(action, "hand over or reopen")},
-            {"check": "the figures it hands over are made", "ok": not (seam and waiting),
-             "says": f"{waiting} file{'s' if waiting != 1 else ''} not yet taken in by a run — run first, then hand over" if seam and waiting
-                     else (f"takes {seam[0]}" if seam else "the stage after reads it as it stands")},
+             "says": {"hand_over": "hand over — the owner's work is in the Plan; the next stage reads it as it stands, as it always does",
+                      "reopen": f"reopen — {reason}" if reason else "a reopen says why"}.get(action, "hand over or reopen")},
         ]
         placed = receipts.judge(checks)
         if placed:
             now = dt.datetime.now()
-            act_id = f"STG-{now:%Y%m%d%H%M%S%f}"
-            snap = ""
-            if seam:                                   # the figures the stage after reads, as handed over (or as they stood at a reopen)
-                _, landing, sql = seam
-                rows = q(sql, version)
-                if rows:
-                    landing.place([{**r, "act_id": act_id, "version_id": version} for r in rows], who)
-                    snap = f"{len(rows)} rows"
-            ACTS.place([{"act_id": act_id, "version_id": version, "stage": stage, "action": action, "reason": reason, "snapshot": snap,
+            ACTS.place([{"act_id": f"STG-{now:%Y%m%d%H%M%S%f}", "version_id": version, "stage": stage, "action": action, "reason": reason,
                          "entered_by": who, "entered_at": now.isoformat(timespec="seconds")}], who)
         session.last = receipts.write(f"stage.{action or 'act'}", who, f"{version}:{stage}", checks, placed)
         session.say(f"{ref['stage_name'] if ref else stage} {'handed over' if action == 'hand_over' else 'reopened'} — in force after the next run" if placed

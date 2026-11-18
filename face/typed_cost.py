@@ -14,6 +14,7 @@ from chassis.landing import LogLanding
 from chassis.warehouse import Busy, q
 from flask import redirect, request, url_for
 
+from . import overrides
 from .words import said
 
 VERB = "overlay.finance.enter"
@@ -103,8 +104,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                          "plant_code": cell[0]["plant_code"], "period": period, "component": comp, "per_case": per_case, "reason": reason,
                          "entered_by": who, "entered_at": now.isoformat(timespec="seconds")}], who)
         session.last = receipts.write("unit_cost.type", who, f"{mat}:{period}:{comp}", checks, placed)
-        session.say(f"{mat} {comp} in {period} placed — in the plan after the next run" if placed
-                    else "refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), placed)
+        if overrides.released(who, "unit_cost", session, f"{mat} {comp} in {period} placed", placed):
+            return redirect(url_for("plan.run"))
+        if not placed:
+            session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
         return redirect(url_for("plan.unit_cost_typed") + "#type")
 
     @bp.post("/standard/typed/withdraw")
@@ -127,5 +130,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                          "material_code": a["material_code"], "plant_code": a["plant_code"], "period": a["period"], "component": a["component"],
                          "per_case": "", "reason": reason, "entered_by": who, "entered_at": now.isoformat(timespec="seconds")}], who)
         session.last = receipts.write("unit_cost.withdraw", who, f.get("act_id") or "", checks, placed)
-        session.say("withdrawn — the driver-based figure stands again after the next run" if placed else "refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), placed)
+        if overrides.released(who, "unit_cost", session, "withdrawn — the driver-based figure stands again", placed):
+            return redirect(url_for("plan.run"))
+        if not placed:
+            session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
         return redirect(url_for("plan.unit_cost_typed"))

@@ -112,8 +112,7 @@ PLAN = {
     "reg_production_act": ("quantity",),
     "reg_stage_act": (),
     "reg_stage_setting": (),
-    "reg_stage_snap_demand": ("cases",),
-    "reg_stage_snap_production": ("quantity",),
+    "reg_recalc_setting": (),
     "reg_supersession": ("share", "uplift_pct"),
 }
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",

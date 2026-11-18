@@ -3,7 +3,7 @@
    100 until someone moves it). Cases made are the inventory plan's production requirement at each plant — a typed
    production quantity where one stands (DEC-20261117-02 point 6), in place of the demand plan's cases sold. */
 MODEL (name plan.material_requirement, kind FULL, grain (version_id, input_code, plant_code, period));
-WITH cases AS (SELECT version_id, material_code, plant_code, period, quantity AS cases FROM plan.production_handed_over)   -- as production last handed it over (DEC-20261118-04)
+WITH cases AS (SELECT version_id, material_code, plant_code, period, quantity AS cases FROM plan.production_requirement)   -- the Plan as it stands (DEC-20261119-01)
 SELECT c.version_id, b.component_material AS input_code, c.plant_code, c.period,
        SUM(c.cases * b.quantity_per_case * COALESCE(u.value, 100) / 100) AS quantity, ANY_VALUE(COALESCE(u.value, 100)) AS usage_pct
 FROM cases c
