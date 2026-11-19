@@ -12,7 +12,8 @@ reported — through the warehouse and the routes; the acts it places are remove
 3. An actual period: the ledger's factory cost read through the pools equals, at each plant and period, the pools' actual;
    a pool's variance is actual − absorbed and a fixed pool's spending + volume is its variance; direct labour carries none;
    the materials' apportioned cost × their cases sums to the plant's actual to the dollar; a year with no standard reads
-   its actual and no variance; the Cost per case tab shows the actual periods, marked apportioned.
+   its actual and no variance; the Cost per case tab shows the actual periods, apportioned said once in its header and not
+   on the cells (DEC-20261119-04).
 """
 from __future__ import annotations
 
@@ -130,11 +131,13 @@ def main() -> None:
     mat = q("select sum(actual) a, sum(absorbed) s from plan.actual_cost_pool where component = 'material' and fiscal_year = 2027")[0]
     h = c.get(f"/revenue?version={LV}&measure=unit_cost").data.decode()
     top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', h, re.S).group(1)
-    actual_cells = re.findall(r'<td class="n actual[^"]*"[^>]*>([^<]*)', top.split("</tr>")[0])
-    assert actual_cells and all(x.strip() for x in actual_cells) and "apportioned" in top
+    cost_line = next(tr for tr in top.split("</tr>") if '<td class="small muted">cost / case</td>' in tr)
+    actual_cells = re.findall(r'<td class="n actual[^"]*"[^>]*>([^<]*)', cost_line)
+    head = re.search(r"<h1>.*?</h1>", h, re.S).group(0)
+    assert actual_cells and all(x.strip() for x in actual_cells) and "apportioned" not in top and "apportioned" in head
     print(f"actual          {len(ledger)} plant × periods: the pools' actual is the ledger's; variance = actual − absorbed, fixed = spending + volume, direct labour none; "
           f"the materials' apportioned cost sums to the plant's on {len(with_std)} with a standard (FY2027 material {mat['a']:,.0f} against {mat['s']:,.0f} absorbed); "
-          f"FY2026 and before actual, no variance; the Cost per case tab shows the {len(actual_cells)} actual periods, apportioned")
+          f"FY2026 and before actual, no variance; the Cost per case tab shows the {len(actual_cells)} actual periods, apportioned said once in its header")
 
 
 if __name__ == "__main__":

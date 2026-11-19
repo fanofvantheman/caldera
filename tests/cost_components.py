@@ -123,16 +123,22 @@ def main() -> None:
     assert re.findall(r'>([^<]+)</a>', tabs) == ["Cost per case", "Cost of goods", "Margin", "Against standard"] and re.findall(r'class="active">([^<]+)', tabs) == ["Cost per case"], tabs
     body = h.split("<main", 1)[-1]
     top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', body, re.S).group(1)
-    assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == [rules[m]["unit"] for m in M.FIN_TABS["unit_cost"]], top[:300]
+    # the accounting leads, on the total and on every row: standard, variance, then cost (DEC-20261119-04)
+    three = ["standard / case", "variance / case", "cost / case"]
+    assert re.findall(r'<td class="small muted">([^<]+)</td>', top) == three, top[:300]
     beneath = re.findall(r'<tbody id="fin-r-(?!ALL)[^"]+">(.*?)</tbody>', body, re.S)
-    assert beneath and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["cost / case"] for b in beneath)
+    assert beneath and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == three for b in beneath)
+    opened = c.get(entry + "&open=ALL").data.decode().split("<main", 1)[-1]
+    top15 = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', opened, re.S).group(1)
+    assert re.findall(r'<td class="small muted">([^<]+)</td>', top15) == [M.THREE_SAYS.get(m, rules[m]["unit"]) for m in M.FIN_TABS["unit_cost"]], top15[:300]
+    assert M.FIN_TABS["unit_cost"][0] == "std_cost" and M.FIN_TABS["unit_cost"][5] == "vs_total" and M.FIN_TABS["unit_cost"][10] == "unit_cost"
     assert "Finance plan" not in body.split('class="finwrap"')[0].split('class="toolbar"')[1] and "the rows beneath show" in body
     for ep in ("plan.standard", "plan.assumptions", "plan.headcount_role", "plan.entitlements", "plan.schedule"):
         with app.test_request_context():
             assert f'href="{url_for(ep)}' in body.split('id="fin-tiles"')[1].split('class="toolbar"')[0], ep
     lab = c.get(f"/revenue?version={V}&measure=unit_cost&part=uc_labour").data.decode().split("<main", 1)[-1]
     rows_lab = re.findall(r'<tbody id="fin-r-(?!ALL)[^"]+">(.*?)</tbody>', lab, re.S)
-    assert rows_lab and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["labour / case"] for b in rows_lab)
+    assert rows_lab and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["standard labour / case", "± labour / case", "labour / case"] for b in rows_lab), rows_lab[0][:400]
     # the year reads across (DEC-20261117-01 point 7): actual and plan periods' cost per case weighted by their cases — an
     # actual period's the ledger's through the pools, apportioned to the material
     with app.test_request_context():
@@ -144,12 +150,13 @@ def main() -> None:
         ac = M.reads.actual_costs(act_in_fy)
         act = [(r["cases"], ac[(r["material_code"], r["period"])]["unit_cost"]) for r in M.reads.finance_actuals(act_in_fy) if (r["material_code"], r["period"]) in ac]
         want = (sum(x["cogs"] for x in costed) + sum(n * u for n, u in act)) / (sum(x["cases"] for x in costed) + sum(n for n, _ in act))
-    cells = re.findall(r'<td class="n ([^"]*)"[^>]*>([^<]*)', top.split("</tr>")[0])
+    cost_line = next(tr for tr in top.split("</tr>") if '<td class="small muted">cost / case</td>' in tr)
+    cells = re.findall(r'<td class="n ([^"]*)"[^>]*>([^<]*)', cost_line)
     year = next(v for k, v in cells if "tot" in k)
     assert vp["actual"] and act and all(v != "" for k, v in cells if "actual" in k) and year == f"{want:,.2f}", (year, want)
     tile = re.search(r'Cost of a case · FY\d+[^<]*</span><b>([^<]+)</b>', body).group(1)
     assert tile == year, (tile, year)
-    print(f"cost per case   opens first; {len(beneath)} rows beneath, one line each (labour when chosen); tiles per case, each component opening its model; "
+    print(f"cost per case   opens first; the total and {len(beneath)} rows beneath read standard, variance, cost (labour's three when chosen), the total opening to fifteen; tiles per case, each component opening its model; "
           f"the year {year} = actual and plan periods weighted by cases, the {len(act_in_fy)} actual periods of FY{vp['fy']} apportioned from the ledger; no reading of money offered")
     h = c.get(f"/revenue?version={V}&measure=cogs").data.decode()
     top = re.search(r'<tbody id="fin-r-ALL">(.*?)</tbody>', h, re.S).group(1)
@@ -157,7 +164,7 @@ def main() -> None:
     assert "Finance plan" in h and "Cost of a case" in h
     m = c.get(f"/revenue?version={V}&measure=margin").data.decode()
     assert "Margin" in m and "Waits for" not in m and "Cost of a case" in m
-    b = c.get(f"/revenue?version={BP['version_id']}&measure=unit_cost").data.decode()
+    b = c.get(f"/revenue?version={BP['version_id']}&measure=unit_cost&open=ALL").data.decode()      # the components open beneath the three
     assert "fixed overhead / case" in b and "Waits for" not in b
     print("tabs            Cost of goods shows cases, cost per case and cost of goods; Margin valued; both carry the per-case tiles; "
           f"Cost per case the same on {BP['version_id']}")

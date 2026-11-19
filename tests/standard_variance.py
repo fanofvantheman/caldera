@@ -105,8 +105,8 @@ def main() -> None:
     app = chassis_app.create_app(SHELL, session, roles, blueprints=[M.plan])
     c = app.test_client()
     session.become(FINANCE)
-    html = c.get(f"/revenue?measure=unit_cost&version={LV}").data.decode()
-    for unit in ("standard / case", "± total / case", "standard material / case", "± material / case", "± fixed / case"):
+    html = c.get(f"/revenue?measure=unit_cost&version={LV}&open=ALL").data.decode()      # the total opened to its components (DEC-20261119-04)
+    for unit in ("standard / case", "variance / case", "standard material / case", "± material / case", "± fixed / case"):
         assert unit in html, unit
     assert ">Against standard</a>" in html or "Against standard" in html.split("</aside>")[1]
     ag = c.get(f"/revenue?measure=against&version={LV}").data.decode()
