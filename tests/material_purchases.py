@@ -12,6 +12,9 @@ removed again.
    other input's the price in force; usage and efficiency at 100 leave the bill and the hours as they are.
 5. The pages: Material purchases under Supply (and its form only to the holder of the supply plan's right), Material stock
    under Cost of goods read only; a typed price placed as one act and refused without the right (the file removed).
+6. One table (DEC-20261119-05): a key material at its plant a row, the lead measure on each, a row opened to every measure,
+   filters that narrow rows and never change a figure; a price typed in its cell placed as one act with the one reason,
+   the table posted back unchanged or with no reason placing nothing (the file removed).
 """
 from __future__ import annotations
 
@@ -120,10 +123,10 @@ def main() -> None:
     c = app.test_client()
     session.become(BUYER)
     html = c.get(f"/supply/purchases?version={LV}").data.decode()
-    assert "Average cost" in html and "campaign intake" in html and 'action="/supply/purchases/type' in html
+    assert "average cost" in html and "campaign intake" in html and 'action="/supply/purchases/type' in html
     session.become(FINANCE)
     fin = c.get(f"/costs/material_stock?version={LV}").data.decode()
-    assert "read only" in fin and 'action="/supply/purchases/type' not in fin and "Average cost" in fin
+    assert "read only" in fin and 'action="/supply/purchases/type' not in fin and "average cost" in fin
     before = set(FP.ACTS.files())
     c.post("/supply/purchases/type", data={"key": "CUP_120|LOX", "period": "2027P08", "price": "0.07", "reason": "test"})
     assert set(FP.ACTS.files()) == before, "Finance's entry right planned a purchase"
@@ -136,6 +139,45 @@ def main() -> None:
         for p in new:
             p.unlink()
     print("pages           Material purchases with its form to the buyer; Material stock read only under Cost of goods; a typed price refused to Finance, placed by the buyer (removed again)")
+
+    # 6 · one table, typed in its cell
+    html = c.get(f"/supply/purchases?version={LV}").data.decode()
+    codes = re.findall(r'<tbody id="pur-r-([^"]+)">', html)
+    assert codes[0] == "ALL" and set(codes[1:]) == {f"{k['input_code']}~{k['plant_code']}" for k in keys} and '<table class="stock">' not in html, codes
+    assert all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["purchases"] for b in re.findall(r'<tbody id="pur-r-(?!ALL)[^"]+">(.*?)</tbody>', html, re.S))
+    one = codes[1]
+    opened = c.get(f"/supply/purchases?version={LV}&open={one}").data.decode()
+    body = re.search(rf'<tbody id="pur-r-{re.escape(one)}">(.*?)</tbody>', opened, re.S).group(1)
+    assert re.findall(r'<td class="small muted">([^<]+)</td>', body) == [m.label for m in FP.MEASURES], body[:300]
+    lox = c.get(f"/supply/purchases?version={LV}&f_plant=LOX").data.decode()
+    assert set(re.findall(r'<tbody id="pur-r-[^"]+~([A-Z]+)">', lox)) == {"LOX"}
+    def cell(h, code, period, m="purchase_quantity"):
+        return re.search(rf'name="{m}\|{re.escape(code)}\|{period}" value="([^"]*)"', h).group(1)
+    assert cell(lox, "CUP_120~LOX", "2027P08") == cell(html, "CUP_120~LOX", "2027P08"), "a filter changed a figure"
+    found = c.get(f"/supply/purchases?version={LV}&find=tomato").data.decode()
+    assert all("TOMATO" in x.upper() or "tomato" in x.lower() for x in re.findall(r'<tbody id="pur-r-(?!ALL)([^"]+)">', found))
+    stock = c.get(f"/supply/purchases?version={LV}&measure=closing_quantity").data.decode()
+    assert "<b>closing</b>" in stock and all(re.findall(r'<td class="small muted">([^<]+)</td>', b) == ["closing"]
+                                             for b in re.findall(r'<tbody id="pur-r-(?!ALL)[^"]+">(.*?)</tbody>', stock, re.S)), "the measure chosen leads"
+    form = {k: v for k, v in re.findall(r'<input class="cell" name="([^"]+)" value="([^"]*)"', html)}
+    assert form and all(k.split("|")[0] in ("purchase_quantity", "purchase_price") for k in form)
+    before = set(FP.ACTS.files())
+    c.post("/supply/purchases/type", data={**form, "version": LV, "reason": "unchanged"})
+    assert set(FP.ACTS.files()) == before, "a table posted back as drawn placed something"
+    changed = {**form, f"purchase_price|CUP_120~LOX|2027P08": "0.07", "version": LV}
+    c.post("/supply/purchases/type", data={**changed, "reason": ""})
+    assert set(FP.ACTS.files()) == before, "placed without a reason"
+    c.post("/supply/purchases/type", data={**changed, "reason": "a quote in the cell"})
+    new = set(FP.ACTS.files()) - before
+    try:
+        assert len(new) == 1
+        text = next(iter(new)).read_text()
+        assert len(text.strip().splitlines()) == 2 and re.search(r"set,,F202705,CUP_120,LOX,2027P08,,0\.07,a quote in the cell,supply\.planner@caldera", text), text
+    finally:
+        for p in new:
+            p.unlink()
+    print(f"one table       {len(codes) - 1} key materials at their plant a row and the money totalled; a row opens to its {len(FP.MEASURES)} measures; a plant filter and a name narrow rows and leave the figures; "
+          "a price typed in its cell placed as one act — posted back as drawn, or with no reason, nothing placed (removed again)")
 
 
 if __name__ == "__main__":
