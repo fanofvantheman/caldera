@@ -63,10 +63,11 @@ def qty(version: str, mat: str = MAT, per: str = PER) -> dict:
 
 def main() -> None:
     pts = OV.points()
-    assert [p["point"] for p in pts] == ["production", "purchase", "unit_cost", "finance", "schedule_lock"] and [p["point"] for p in pts if p["ports"]] == ["production", "purchase", "unit_cost"]
+    over = [p for p in pts if p["kind"] == "override"]          # the drivers beside them are tests/port_drivers.py's (DEC-20261119-03)
+    assert [p["point"] for p in over] == ["production", "purchase", "unit_cost", "finance", "schedule_lock"] and all(p["ports"] for p in over)
     assert OV.mode() == "manual"
     print("override points five declared — production quantity, a key material's purchase, a unit cost component, Finance's volume or price, an opex month locked; "
-          "the first three port; recalculation manual by default")
+          "every one ports; recalculation manual by default")
 
     app = chassis_app.create_app(SHELL, session, roles, blueprints=[M.plan])
     c = app.test_client()
@@ -79,7 +80,7 @@ def main() -> None:
         assert q("select 1 from dims.ctl_version where version_id = ?", SB), session.last
         assert q("select count(*) n from plan.purchase_act where version_id = ?", SB)[0]["n"] == 1, "the buyer's purchase act copied into the sandbox"
         h = c.get(f"/port?version={LV}").data.decode()
-        assert "Override points" in h and "Cases to make" in h and "not yet" in h
+        assert "What ports" in h and "Cases to make" in h and "driver" in h      # the override points beside the drivers (DEC-20261119-03)
         p0 = qty(LV)
         typed_from = landing_files()
         session.become(SUPPLY)

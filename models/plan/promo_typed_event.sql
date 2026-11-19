@@ -3,7 +3,9 @@
    co-op drawdown, status — and the response the plan supplies: uplift and dip from the mechanic register unless the
    person overrode them, with a note.
    An event typed at an account the sender masters is refused; the face refuses it before it is placed, and the run
-   refuses any that arrives another way. */
+   refuses any that arrives another way.
+   The latest row of an event stands whole — an event ported into a Plan that already held it, the clash taken
+   (DEC-20261119-03), is a later row under the same event. */
 MODEL (name plan.promo_typed_event, kind FULL, grain (version_id, event_id));
 SELECT e.event_id::TEXT AS event_id, e.version_id::TEXT AS version_id, e.account_code::TEXT AS account_code, e.promo_group_code::TEXT AS promo_group_code,
        e.window_start::DATE AS window_start, e.window_end::DATE AS window_end, e.mechanic::TEXT AS mechanic,
@@ -21,3 +23,4 @@ FROM bronze.reg_promo_event e
 LEFT JOIN dims.ref_mechanic m ON m.mechanic = e.mechanic
 LEFT JOIN dims.dim_account a ON a.account_code = e.account_code
 LEFT JOIN dims.ref_promo_status s ON s.status = e.status
+QUALIFY ROW_NUMBER() OVER (PARTITION BY e.version_id, e.event_id ORDER BY e.entered_on DESC, e.source_file DESC, e.file_row_number DESC) = 1
