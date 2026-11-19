@@ -134,7 +134,7 @@ def main() -> None:
             f.unlink()
         if ran:
             with app.test_request_context():
-                log = M.Runner(M.FINANCE_RUN).run() + M.Runner(S.RUN).run()
+                log = M.run_waiting()
             assert "✗" not in log, log[-800:]
         print("cleaned up: the test's files and receipts removed, Finance's and the schedule's parts of the plan run again")
 

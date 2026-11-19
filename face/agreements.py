@@ -34,9 +34,6 @@ COLUMNS = ["proposal_id", "document", "instrument", "instrument_name", "entity_c
            "confidence", "rationale", "refused_because", "taken_in_by", "taken_in_at"]
 PROPOSALS = LogLanding("plan", "reg_entitlement_proposal", COLUMNS)
 INSTRUMENT_KINDS = {"enterprise_agreement": "an enterprise agreement", "award": "an award", "statute": "a statute"}
-RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_entitlement_proposal", "reg_door_act"],
-       ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "dims.reg_entitlement+", "--restate-model", "plan.door_act+",
-        "--restate-model", "plan.worklist_entitlement_queue+", "--auto-apply", "--no-prompts"]]
 client = None                                                  # the model client; a test sets a stub, None means the real one
 
 SECTION = """<h2 id="door">Agreements in<span class="count">a copy of an agreement read into rows for a person to accept — the plan reads only what is accepted</span></h2>
@@ -98,7 +95,7 @@ def context(who: str, roles) -> dict:
 
 
 def register(bp, who_fn, session, roles, run_plan, scoped: dict) -> None:
-    scoped["agreements"] = {"commands": RUN, "pending": PROPOSALS.pending, "what": "agreements",
+    scoped["agreements"] = {"what": "agreements",
                             "says": "run completed — the agreement's proposed rows wait for a decision"}
 
     @bp.post("/labour/entitlements/take-in")

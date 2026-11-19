@@ -34,8 +34,6 @@ COLUMNS = ["edit_id", "save_id", "version_id", "entity_code", "cost_centre_code"
            "calc_at_entry", "reason_code", "note", "entered_by", "entered_on", "withdraws"]
 LANDING = LogLanding("plan", "reg_schedule_edit", COLUMNS)
 LABOUR_MODEL = True                  # the labour lines are filled by the labour model (plan.labour_cost)
-RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_schedule_edit"],
-       ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.schedule_edit+", "--auto-apply", "--no-prompts"]]
 COPIES = Copies()
 _CACHE: dict = {}
 _LOCK = threading.RLock()
@@ -382,7 +380,7 @@ def parts(s: dict) -> dict[str, str]:
 
 
 def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: dict) -> None:
-    scoped["schedule"] = {"commands": RUN, "pending": LANDING.pending, "what": "opex schedule",
+    scoped["schedule"] = {"what": "opex schedule",
                           "says": "run completed — the opex schedule reads what was saved"}
 
     def _page_args(src) -> dict:

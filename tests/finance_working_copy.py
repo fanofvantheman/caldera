@@ -187,7 +187,7 @@ def main() -> None:
         session.become(FINANCE_USER)
         with app.test_request_context():
             FL.discard(FINANCE_USER, V)
-            log = M.Runner(M.FINANCE_RUN).run()
+            log = M.run_waiting()
         assert "✗" not in log, log[-800:]
         print("cleaned up: the test's file and receipts removed, Finance's part of the plan run again")
 

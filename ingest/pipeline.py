@@ -115,6 +115,43 @@ PLAN = {
     "reg_recalc_setting": (),
     "reg_supersession": ("share", "uplift_pct"),
 }
+# The models that first read each register the face writes — the one map every run's scope is read from
+# (DEC-20261119-06 point 2). A run loads the registers waiting and evaluates these and everything after them.
+READ_BY = {
+    "layer_entry": ("plan.layer_entry",),
+    "reg_promo_event": ("plan.promo_typed_event", "plan.change_record"),
+    "reg_promo_neighbour": ("plan.promo_neighbour",),
+    "tpm_event": ("plan.promo_sender_event", "plan.promo_funding", "plan.version_sender_file"),
+    "tpm_funding": ("plan.promo_funding",),
+    "reg_terms": ("plan.terms",),
+    "reg_submission": ("plan.submission", "plan.step_state", "plan.change_record"),
+    "fcst_run": ("plan.forecast_run",),
+    "fcst_series": ("plan.forecast_series",),
+    "reg_door_act": ("plan.door_act", "dims.reg_entitlement"),
+    "reg_finance_overlay": ("plan.finance_edit", "plan.finance_edit_cell", "plan.change_record"),
+    "reg_finance_source": ("plan.finance_source",),
+    "reg_schedule_edit": ("plan.schedule_edit",),
+    "reg_assumption_amend": ("plan.assumption_in_force", "dims.reg_assumption", "plan.change_record"),
+    "reg_version_act": ("dims.ctl_version", "plan.version_act", "plan.version_run", "plan.version_sender_file"),
+    "reg_strategic_plan": ("plan.strategic_plan",),
+    "reg_strategic_growth": ("plan.strategic_growth",),
+    "reg_role": ("dims.ctl_role_definition", "dims.ctl_role_action"),
+    "reg_entitlement": ("dims.reg_entitlement",),
+    "reg_report": ("plan.report",),
+    "reg_entitlement_proposal": ("dims.reg_entitlement", "plan.worklist_entitlement_queue"),
+    "reg_capex": ("plan.capex_item",),
+    "reg_cost_pool_rule": ("plan.cost_pool_map",),
+    "reg_purchase_act": ("plan.purchase_act",),
+    "reg_unit_cost_act": ("plan.unit_cost_act",),
+    "reg_sourcing": ("plan.sourcing_rule",),
+    "reg_production_act": ("plan.production_act",),
+    "reg_stage_act": ("plan.stage_state",),
+    "reg_stage_setting": ("plan.stage_setting",),
+    "reg_recalc_setting": ("plan.recalc_setting",),
+    "reg_supersession": ("plan.supersession_link",),
+    "price_list": ("history.price_list",),
+}
+# a run's scope is read from the landing by ingest/scope.py; tests/run_scope.py checks this map against the models
 INTEGER = frozenset({"layer_no", "line_no", "lag", "fiscal_year", "fiscal_week", "fiscal_period", "quarter", "calendar_year", "calendar_month", "weeks",
            "size_g", "units_per_case", "stores_served", "transit_days", "shifts", "working_days", "payment_terms_days", "horizon_weeks", "horizon_periods", "horizon_quarters", "ord"})
 

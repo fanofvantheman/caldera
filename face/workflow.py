@@ -71,9 +71,7 @@ def locked(version: str, step: str, cc: str) -> str | None:
 def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: dict, landing) -> None:
     from . import reads
     from . import costs
-    RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_submission"],
-           ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.submission+", "--auto-apply", "--no-prompts"]]
-    scoped["workflow"] = {"commands": RUN, "pending": landing.pending, "what": "workflow",
+    scoped["workflow"] = {"what": "workflow",
                           "says": "run completed — the step's state is the act just taken"}
 
     def _process() -> str:

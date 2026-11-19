@@ -172,7 +172,7 @@ def main() -> None:
         assert decide(by_ref["cl. 15"], "leave_out", "", "not material to the roster's cost")["placed"]
         assert not decide(by_ref["cl. 10.3"], "alter", "bonus", "not a kind")["placed"]
         with app.test_request_context():
-            log = M.Runner(A.RUN).run()
+            log = M.run_waiting()
         assert "✗" not in log, log[-800:]
         taken = q("select entitlement_id, kind, clause_ref, clause from dims.reg_entitlement where instrument = ? order by clause_ref", D.INSTRUMENT)
         assert [(t["clause_ref"], t["kind"]) for t in taken] == [("Schedule A, item 1", "base_rate"), ("cl. 14.1", "one_off"), ("cl. 20", "leave_accrual")], taken
@@ -195,7 +195,7 @@ def main() -> None:
             f.unlink()
         if ran:
             with app.test_request_context():
-                log = M.Runner(A.RUN).run()
+                log = M.run_waiting()
             assert "✗" not in log, log[-800:]
             assert not q("select 1 from dims.reg_entitlement where instrument = ?", D.INSTRUMENT)
         print("cleaned up: the take-ins, decisions and receipts removed, the run taken again — the register as it was, the document waiting")

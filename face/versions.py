@@ -78,9 +78,6 @@ COPIES = [
 ]
 NOT_COPIED = "submissions (the new version's units start open), the base's own version acts, withdrawn, released and refused acts"
 HORIZON_VERB = "version.name"
-HORIZON_RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_version_act"],
-               ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "dims.ctl_version+", "--restate-model", "plan.version_act+",
-                "--auto-apply", "--no-prompts"]]
 LANDING = LogLanding("plan", "reg_version_act", COLUMNS)
 
 
@@ -123,9 +120,6 @@ def takes(base: str) -> list[dict]:
               "source_version": base} for r in runs]
             + [{"arrival": "sender_file", "arrival_id": f["sender_file"], "account_code": "", "arrival_taken_in_at": f["taken_in_at"],
                 "source_version": f["source_version"]} for f in files])
-RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_version_act"],
-       ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.version_act+", "--auto-apply", "--no-prompts"]]
-
 PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its kind{{ '' if owned_kinds|length == 1 else 's' }} ({{ owned_kinds|join(', ') or 'none yet' }}) — named, open or closed; a closed version takes no entry and stays readable</small></h1>
 {% if not owned_kinds %}<p class="lede">{{ process_label }} has no kind of plan of its own yet: it reads the versions below, which other processes administer.</p>{% endif %}
 <p class="hint">{% if may %}You close and reopen versions: each is an act with a receipt; reopening asks why. A Plan another is read against is not reopened — a changed reference is a new version.{% else %}Versions are closed and reopened by {{ holders|join(', ') or 'nobody yet' }}.{% endif %} The actuals are closed by the period, not here.</p>
@@ -186,9 +180,9 @@ def suggest_code(base: str, base_from: str | None, taken: list[str], from_period
 def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> None:
     from . import reads
     import csv
-    scoped["versions"] = {"commands": RUN, "pending": LANDING.pending, "what": "version state",
+    scoped["versions"] = {"what": "version state",
                           "says": "run completed — the version's state is the act just taken"}
-    scoped["version_horizon"] = {"commands": HORIZON_RUN, "pending": LANDING.pending, "what": "version horizon",
+    scoped["version_horizon"] = {"what": "version horizon",
                                  "says": "run completed — every grid on the version takes its new horizon"}
 
     def _waiting() -> list[dict]:

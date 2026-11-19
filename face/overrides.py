@@ -304,21 +304,11 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: d
         pts = points()
     except Exception:                                           # the warehouse is not built yet: the scopes come with it
         pts = []
+    # each act names itself; what the run takes in is read from the landing (DEC-20261119-06)
     for p in [p for p in pts if p["kind"] == "override"]:
-        scoped[f"override.{p['point']}"] = {
-            "commands": [["uv", "run", "python", "-m", "ingest.pipeline", "--only", p["register"]],
-                         ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", f"{p['act_model']}+", "--auto-apply", "--no-prompts"]],
-            "pending": LogLanding("plan", p["register"], []).pending, "what": p["point_name"].lower(),
-            "says": "run completed — every stage after the override reads it"}
-    ported = [p for p in pts if p["ports"]]
-    port_pending = lambda: [f for p in ported for f in LogLanding("plan", p["register"], []).pending()] + VERSION_ACTS.pending()
-    scoped["port"] = {"commands": [["uv", "run", "python", "-m", "ingest.pipeline", "--only", *[p["register"] for p in ported], "reg_version_act"],
-                                   ["uv", "run", "sqlmesh", "plan", "prod", *[x for p in ported for x in ("--restate-model", f"{p['act_model']}+")],
-                                    "--restate-model", "plan.version_act+", "--auto-apply", "--no-prompts"]],
-                      "pending": port_pending, "what": "port", "says": "run completed — the Plan reads the ported overrides and every stage after them is recalculated"}
-    scoped["recalc_setting"] = {"commands": [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_recalc_setting"],
-                                             ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.recalc_setting", "--auto-apply", "--no-prompts"]],
-                                "pending": SETTING.pending, "what": "recalculation setting", "says": "run completed — the setting is in force"}
+        scoped[f"override.{p['point']}"] = {"what": p["point_name"].lower(), "says": "run completed — every stage after the override reads it"}
+    scoped["port"] = {"what": "port", "says": "run completed — the Plan reads what was ported and every stage after it is recalculated"}
+    scoped["recalc_setting"] = {"what": "recalculation setting", "says": "run completed — the setting is in force"}
 
     def plans() -> list[dict]:
         return [v for v in reads.versions() if v.get("version_kind") != "actual"]

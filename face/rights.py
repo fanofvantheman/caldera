@@ -23,9 +23,6 @@ from .words import said
 VERB = "register.roles.maintain"
 COLUMNS = ["role_code", "role_name", "description", "action", "composed_by", "composed_on"]
 LANDING = LogLanding("plan", "reg_role", COLUMNS)
-RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_role"],
-       ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "dims.ctl_role_definition+", "--restate-model", "dims.ctl_role_action+",
-        "--auto-apply", "--no-prompts"]]
 CLASS_SAID = {"enter": "enters", "maintain": "keeps", "decide": "decides", "read": "reads", "run": "runs"}
 CLASS_ORDER = ["enter", "maintain", "decide", "run", "read"]
 
@@ -81,7 +78,7 @@ def grouped(rs: list[dict], by: str) -> list[dict]:
 
 def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> None:
     from . import reads
-    scoped["roles"] = {"commands": RUN, "pending": LANDING.pending, "what": "roles",
+    scoped["roles"] = {"what": "roles",
                        "says": "run completed — the role is in the register; it grants nothing until someone is assigned it"}
 
     @bp.get("/roles", endpoint="roles")

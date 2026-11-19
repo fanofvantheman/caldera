@@ -166,7 +166,7 @@ def main() -> None:
                 f.unlink()
         S.COPIES.drop(FINANCE, ("schedule", V))
         with app.test_request_context():
-            log = M.Runner(S.RUN).run()
+            log = M.run_waiting()
         assert "✗" not in log, log[-800:]
         print("cleaned up: the test's file and receipts removed, the schedule's part of the plan run again")
 

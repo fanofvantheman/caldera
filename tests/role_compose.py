@@ -103,7 +103,7 @@ def main() -> None:
             f.unlink()
         if ran:
             with app.test_request_context():
-                log = M.Runner(R.RUN).run()
+                log = M.run_waiting()
             assert "✗" not in log, log[-800:]
         print("cleaned up: the test's file and receipts removed, the role register run again")
 

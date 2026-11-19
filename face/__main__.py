@@ -14,7 +14,7 @@ from collections import defaultdict
 from flask import Blueprint, current_app, g, has_request_context, redirect, request, url_for
 
 from calc import finance as calc_finance
-from chassis import app as chassis_app, door, receipts, working
+from chassis import CONFIG, app as chassis_app, door, receipts, working
 from chassis.landing import LogLanding
 from chassis.run import Runner, attention, health
 from chassis import warehouse as _warehouse
@@ -27,6 +27,7 @@ from . import promotions
 from . import forecast as fcst
 from . import doors
 from . import finance_live
+from ingest import scope as run_scope
 from . import figures
 from . import costs
 from . import schedule
@@ -254,10 +255,21 @@ def _mine(who: str, held: set[str]) -> list[dict]:
 
 
 def _pending() -> list[pathlib.Path]:
-    """Every file any act has placed since the last run, across the landing's tables."""
-    files = ENTRIES.pending() + SUBMISSIONS.pending() + promotions.pending() + TERMS_LANDING.pending() + PRICES_LANDING.pending() + fcst.pending() + doors.ACTS.pending() + FINANCE.pending() + assumptions.LANDING.pending() \
-        + [f for scope in SCOPED.values() for f in scope["pending"]() if scope["pending"] is not FINANCE.pending]
-    return list(dict.fromkeys(files))                  # two scopes may watch the same register (an override's, the port's)
+    """Every file any act has placed that the tables do not yet hold, across the landing's registers (ingest/scope.py)."""
+    return run_scope.waiting(CONFIG.root, run_scope.held(q), files=True)
+
+
+def run_commands() -> list[list[str]]:
+    """The run that takes in what is waiting — read from the landing, never written a page at a time (DEC-20261119-06)."""
+    return run_scope.commands(CONFIG.root, run_scope.held(q))
+
+
+def run_waiting() -> str:
+    """The run that takes in what is waiting, run now, its log returned — for a test's own clean-up as for the pages."""
+    cmds = run_commands()
+    if has_request_context():
+        _close_warehouse(None)
+    return Runner(cmds).run()
 
 
 def _d(a: float | None, b: float | None) -> float | None:
@@ -2778,30 +2790,22 @@ def _may_run(who: str) -> bool:
     return roles.may(who, "run.plan")
 
 
-# A run scoped to what Finance's figures can reach: its two registers loaded, the financial forecast and what reads it
-# evaluated. Nothing else in the plan reads a Finance figure, so nothing is left behind by stopping here.
-FINANCE_RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_finance_overlay", "reg_finance_source"],
-               ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.finance_edit+", "--restate-model", "plan.finance_source+",
-                "--auto-apply", "--no-prompts"]]
-
-
-# A release scoped to one act's reach: the commands, what that act's own files waiting are, what the run is called and what
-# it says when done. The cost side adds its own (face/schedule.py).
+# What a release from a page is called and what it says when done. What the run takes in is not here: it is read from the
+# landing — every register waiting, and what reads it (ingest/scope.py, DEC-20261119-06).
 SCOPED: dict[str, dict] = {
-    "finance": {"commands": FINANCE_RUN, "pending": FINANCE.pending, "what": "revenue",
-                "says": "run completed — Revenue reads Finance's figures; nothing else in the plan reads them"},
+    "finance": {"what": "revenue", "says": "run completed — Revenue reads Finance's figures; nothing else in the plan reads them"},
 }
 
 
 def _run_plan(who: str, scope: str = "") -> bool:
-    """The run, from wherever it was asked for: the landing loaded, the models and checks evaluated, a receipt. Asked for
-    from a page with a scoped release (the financial forecast, the opex schedule) it runs that far and no further —
-    unless something else is waiting too, when stopping short would leave that file looking taken in: then it is the
-    whole run."""
+    """The run, from wherever it was asked for: what is waiting in the landing loaded, the models that read it and
+    everything after them evaluated, a receipt. Several kinds waiting is the union of their scopes; everything only when
+    the generated inputs are new or there is no warehouse (ingest/scope.py). A page names its act for the message."""
     sc = SCOPED.get(scope)
-    scoped = bool(sc) and len(_pending()) - len(sc["pending"]()) == 0
+    cmds = run_commands()
+    scoped = bool(sc) and cmds is not run_scope.EVERYTHING
     _close_warehouse(None)              # the run writes the file: this request lets go of its read first
-    log = Runner(sc["commands"] if scoped else None).run()
+    log = Runner(cmds).run()
     session.run_log = log
     ok = "✗" not in log
     what = sc["what"] if scoped else "plan"

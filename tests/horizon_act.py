@@ -94,7 +94,7 @@ def main() -> None:
             f.unlink()
         if ran:
             with app.test_request_context():
-                log = M.Runner(VP.HORIZON_RUN).run()
+                log = M.run_waiting()
             assert "✗" not in log, log[-800:]
             with app.test_request_context():
                 assert M.reads.version(V)["horizon_periods"] == n0

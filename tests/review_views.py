@@ -134,7 +134,7 @@ def main() -> None:
             if "workflow" in f.name or "run_" in f.name:
                 f.unlink()
         with app.test_request_context():
-            log = M.Runner(M.SCOPED["workflow"]["commands"]).run()
+            log = M.run_waiting()
         assert "✗" not in log, log[-800:]
         print("cleaned up: the test's files and receipts removed, the workflow's part of the plan run again")
 

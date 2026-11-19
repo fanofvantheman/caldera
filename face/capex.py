@@ -25,8 +25,6 @@ COLUMNS = ["act_id", "action", "withdraws", "version_id", "kind", "item_id", "it
            "cost_centre_code", "plant_code", "spend", "spend_from", "spend_to", "in_service_period", "life_years", "lifetime_units", "rate",
            "lease_charge", "lease_to_period", "tier", "note", "entered_by", "entered_on", "copied_from"]
 LANDING = LogLanding("plan", "reg_capex", COLUMNS)
-RUN = [["uv", "run", "python", "-m", "ingest.pipeline", "--only", "reg_capex"],
-       ["uv", "run", "sqlmesh", "plan", "prod", "--restate-model", "plan.capex_item+", "--auto-apply", "--no-prompts"]]
 KIND_SAYS = {"asset": "on the register", "project": "project", "sustaining": "sustaining rate", "lease": "lease"}
 PLANT_OF = {"CC_E_": "ECH", "CC_L_": "LOX"}
 
@@ -133,7 +131,7 @@ def view(version: str, fy: int) -> dict:
 
 def register(bp, page, who_fn, ctx_fn, busy, session, roles, run_plan, scoped: dict) -> None:
     from . import costs, reads
-    scoped["capex"] = {"commands": RUN, "pending": LANDING.pending, "what": "capital plan",
+    scoped["capex"] = {"what": "capital plan",
                        "says": "run completed — the capital plan, and the schedule lines it charges, read what was entered"}
 
     def _where() -> tuple[str, int]:
