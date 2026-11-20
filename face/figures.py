@@ -8,7 +8,8 @@ A page declares to it (`table`):
 - its **rows** — a code, a name, the line beneath the name, the attributes a filter reads, and the figures by period;
 - its **measures** — what each is called, how it is shown, how the year and a quarter read it (a sum, the last period,
   the first, or nothing), whether the rows add up to a total, which field says it was typed, and whether it is typed
-  here; one **leads**, and a row opens to the rest in their order;
+  here; one **leads**, and a row opens to the rest in their order — or, as a **movement** table, every row shows every
+  measure, each a line under its group (volume, value, …), and no measure is chosen;
 - its **filters** — a choice on what the rows carry, and part of a name typed; a filter narrows the rows and never
   changes a figure;
 - whether its cells may be typed, and where a typed figure goes (`posted` reads the form back).
@@ -38,6 +39,7 @@ class Measure:
     typed: str | None = None          # the field that says the figure was typed in the period (boxed)
     note: str | None = None           # a field whose words are shown beneath the figure
     input: bool = False               # typed here, in a plan period, where the page lets its reader type
+    group: str | None = None          # the heading the line sits under in a movement table (volume, value, cost basis)
 
 
 @dataclass(frozen=True)
@@ -102,10 +104,10 @@ def chosen(filters: list[Filter]) -> tuple[dict, str]:
 
 def table(id: str, rows: list[dict], measures: list[Measure], lead: str, cols: dict, *, row_head: str, filters: list[Filter] = (),
           total: str | None = None, editable: bool = False, plan_periods: set | frozenset = frozenset(), actual_title: str = "",
-          year_says: str | None = None, empty: str = "Nothing to show.") -> dict:
+          year_says: str | None = None, empty: str = "Nothing to show.", movement: bool = False) -> dict:
     """The table a page declares, ready to draw with `grid_table`. `rows`: [{code, label, level, attrs: {filter key: value},
     by: {period: {field: value}}}]. The measure chosen above the table (`?measure=`) leads, or the page's own; a row opened
-    (`?open=`) shows every measure in its order. A cell may be typed where `editable`, its measure is typed here and the
+    (`?open=`) shows every measure in its order; in a `movement` table every row shows every measure. A cell may be typed where `editable`, its measure is typed here and the
     period is one of `plan_periods`."""
     by_key = {m.key: m for m in measures}
     lead = request.args.get("measure") if request.args.get("measure") in by_key else lead
@@ -140,14 +142,15 @@ def table(id: str, rows: list[dict], measures: list[Measure], lead: str, cols: d
         return out
 
     def line(r: dict, total_row: bool = False) -> dict:
-        open_ = r["code"] in opened
+        open_ = r["code"] in opened or (movement and not total_row)
         # the total carries what adds up: the lead where it does, else every measure that does (quantities in different units do not)
-        ms = measures if open_ else ([by_key[lead]] if not total_row or by_key[lead].total else [m for m in measures if m.total])
+        ms = measures if open_ else ([by_key[lead]] if not (total_row and movement) and (not total_row or by_key[lead].total) else [m for m in measures if m.total])
         others = len(measures) - len(ms)
         toggle = {"href": here(open=",".join(sorted(opened - {r["code"]})) if open_ else ",".join(sorted(opened | {r["code"]}))),
-                  "label": "close" if open_ else f"{others} more"} if others or open_ else None
+                  "label": "close" if open_ else f"{others} more"} if (others or open_) and not movement else None
         return {"code": r["code"], "label": r["label"], "current": total_row, "href": r.get("href"), "depth": 0 if total_row else 1, "lvl": r.get("lvl"),
-                "level": r.get("level", ""), "built": "", "toggle": toggle, "lines": [{"key": m.key, "label": m.label} for m in ms],
+                "level": r.get("level", ""), "built": "", "toggle": toggle,
+                "lines": [{"key": m.key, "label": m.label, "group": m.group if movement and (i == 0 or ms[i - 1].group != m.group) else None} for i, m in enumerate(ms)],
                 "cells": {m.key: cells(r, m) if (not total_row or m.total) else [{"show": "", "cls": "tot" if p.get("total") else "", "title": "", "src": None,
                                                                                     "built": None, "input": None, "moved": False} for p in cols["cols"]] for m in ms}}
 
@@ -165,7 +168,7 @@ def table(id: str, rows: list[dict], measures: list[Measure], lead: str, cols: d
     return {"id": id, "row_head": row_head, "periods": cols["cols"], "rows": out, "actual_title": actual_title, "year_says": year_says,
             "measures": [{"key": m.key, "label": m.label, "on": m.key == lead, "href": here(measure=m.key)} for m in measures], "lead": lead,
             "filters": [{"key": f.key, "label": f.label, "options": f.options, "value": picked.get(f.key, "")} for f in filters], "find": find,
-            "n_shown": len(shown), "n_all": len(rows), "empty": empty, "editable": editable}
+            "n_shown": len(shown), "n_all": len(rows), "empty": empty, "editable": editable, "movement": movement}
 
 
 def posted(form, measures: list[Measure]) -> list[tuple[str, str, str, str]]:
@@ -185,11 +188,11 @@ def posted(form, measures: list[Measure]) -> list[tuple[str, str, str, str]]:
 MACROS = """{% macro grid_head(g) %}<thead><tr><th>{{ g.row_head }}</th><th></th>{% for p in g.periods %}{% if p.total %}<th class="n tot"{% if g.year_says %} title="{{ g.year_says }}"{% endif %}>{{ p.label }}{% if g.year_says %}<div class="small muted">{{ g.year_says }}</div>{% endif %}</th>{% elif p.quarter %}<th class="n qtr" title="{{ p.title }}">{{ p.label }}<div class="small muted">{{ 'quarter' if not p.part else p.periods|length ~ ' periods' }}</div></th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="{{ g.actual_title }}"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>{% endmacro %}
 {% macro grid_row(g, r) %}<tbody id="{{ g.id }}-r-{{ r.code }}">{% for m in r.lines %}<tr class="{{ 'first' if loop.first }} {{ 'total' if r.current and loop.first }}">
 {% if loop.first %}<td rowspan="{{ r.lines|length }}" class="node d{{ r.depth }}{% if r.lvl %} lv-{{ r.lvl }}{% endif %}"><div class="nm">{% if r.href %}<a href="{{ r.href }}" tabindex="-1" title="open {{ r.label }}: what is beneath it becomes the rows">{{ r.label }}&nbsp;<span class="opens" aria-hidden="true">▸</span></a>{% else %}<span>{{ r.label }}</span>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div>{% if r.toggle %}<a class="more small" href="{{ r.toggle.href }}" tabindex="-1">{{ r.toggle.label }}</a>{% endif %}</div></td>{% endif %}
-<td class="small muted">{{ m.label }}</td>
+<td class="small muted">{% if m.group %}<div class="grp">{{ m.group }}</div>{% endif %}{{ m.label }}</td>
 {% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% set mark %}{% if x.undo %}<button class="one" form="{{ g.id }}-one" formaction="{{ g.undo_action }}" name="figure" value="{{ x.undo }}" tabindex="-1" title="take this figure out — {{ x.title }}" aria-label="take this figure out">↶</button>{% elif x.withdraw %}<a class="one" href="{{ x.withdraw }}" tabindex="-1" title="withdraw this figure — shows what will change first" aria-label="withdraw this figure">↶</a>{% endif %}{% endset %}{% if x.input %}<span class="inp"><input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{{ mark }}</span>{% else %}{{ mark }}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
 </tr>{% endfor %}</tbody>{% endmacro %}
 {% macro grid_choice(g) %}<form class="toolbar gridpick" method="get">{{ context_fields() }}{% for k in ('measure', 'open') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args.get(k) }}">{% endif %}{% endfor %}
-<span class="seg"><span class="small muted">the rows show</span>{% for m in g.measures %}{% if m.on %}<b>{{ m.label }}</b>{% else %}<a href="{{ m.href }}">{{ m.label }}</a>{% endif %}{% endfor %}</span>
+{% if not g.movement %}<span class="seg"><span class="small muted">the rows show</span>{% for m in g.measures %}{% if m.on %}<b>{{ m.label }}</b>{% else %}<a href="{{ m.href }}">{{ m.label }}</a>{% endif %}{% endfor %}</span>{% endif %}
 {% for f in g.filters %}<label class="small">{{ f.label }} <select name="f_{{ f.key }}" onchange="this.form.submit()"><option value="">all</option>{% for v, lab in f.options %}<option value="{{ v }}" {{ 'selected' if v == f.value }}>{{ lab }}</option>{% endfor %}</select></label>{% endfor %}
 <label class="small">find <input name="find" value="{{ g.find }}" size="12" placeholder="part of a name"></label><button class="act">Filter</button>{% if g.n_shown != g.n_all %} <span class="small muted">{{ g.n_shown }} of {{ g.n_all }} rows</span> <a class="small" href="{{ request.path }}?{% for k in ('version', 'location', 'material', 'customer') %}{% if request.args.get(k) %}{{ k }}={{ request.args.get(k)|urlencode }}&amp;{% endif %}{% endfor %}">clear</a>{% endif %}</form>{% endmacro %}
 {% macro grid_table(g) %}<div class="finwrap"><table class="fin">{{ grid_head(g) }}
@@ -202,5 +205,5 @@ table.fin td.node .more{display:inline-block;margin-top:.15rem;color:var(--muted
 table.fin .inp{position:relative;display:inline-block}table.fin .one{padding:0;border:0;background:none;color:var(--muted);font-size:.85rem;line-height:1;text-decoration:none;cursor:pointer;margin-right:.3rem}table.fin .inp .one{position:absolute;left:.35rem;top:50%;transform:translateY(-50%);margin:0}table.fin .one:hover,table.fin .one:focus{color:var(--ink)}
 table.fin td.unsaved{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 14%,transparent) 5px 6px)}table.fin td.unsaved input.cell{font-style:italic}
 table.fin td.actual,table.fin th.actual{color:var(--muted);background:var(--soft)}table.fin td.tot,table.fin th.tot{border-left:1px solid var(--rule);border-right:1px solid var(--rule)}table.fin input.cell{width:5.6rem;text-align:right;font-size:.85rem;padding:.15rem .35rem}
-.moved{font-size:.7rem;margin-left:.15rem}table.fin td.down{color:var(--muted)}table.fin td.over{font-weight:700;color:var(--bad,#a33)}table.fin td.near{font-weight:600}
+.moved{font-size:.7rem;margin-left:.15rem}table.fin .grp{color:var(--ink);font-weight:600;margin-top:.3rem}table.fin td.down{color:var(--muted)}table.fin td.over{font-weight:700;color:var(--bad,#a33)}table.fin td.near{font-weight:600}
 .toolbar .seg{display:inline-flex;gap:.6rem;margin-left:auto}.toolbar .seg b{font-weight:600}.gridpick{display:flex;flex-wrap:wrap;gap:.8rem;align-items:center}.gridpick .seg{margin-left:0}</style>{% endmacro %}"""

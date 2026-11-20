@@ -1,17 +1,26 @@
-"""The material purchase plan and its stock (DEC-20261116-04): for each key raw material at a plant, period by period —
-the requirement production draws, the purchase that covers it, and the stock it makes, valued at a monthly weighted
-average. The model (models/plan/material_stock.py) and the face's page call the same function, so the page and the run
-never disagree.
+"""The material balance (DEC-20261116-04, DEC-20261120-02 point 7): for each key raw material at a plant, period by
+period, a movement table — opening, consumption, contracted receipts, additional receipts, closing — in volume, value
+and cost basis. The model (models/plan/material_stock.py) and the face's pages call the same function, so the page and
+the run never disagree.
 
-  campaign  bought in the input's campaign window for what is needed until the next window opens (or the horizon ends),
-            less the stock at the window's start, spread evenly over the window's periods
-  contract  the requirement plus the declared cover (that many periods of the next period's requirement) less the stock on
-  spot      hand — the same quantity rule; they differ in price: a contract's is fixed, or tied to an index, for its term;
-            spot is the price in force with its index
-A buyer may type a quantity or a price over the calculated one in a period: it replaces it, and is marked.
+Each row has one source (DEC-20261120-02 point 1):
+  opening              the ERP at the actuals cutoff in the first plan period (a declared stand-in here); after it, the
+                       period before's closing
+  consumption          the production plan through the bill (plan.material_requirement), valued at the opening cost
+                       basis — the opening value ÷ the opening volume
+  contracted receipts  the ERP's contracted receipts (a declared stand-in here), at the contract's price
+  additional receipts  procurement's: proposed by the material's buying rule unless a buyer typed a quantity or a price,
+                       which replaces it and is marked; at the price in force unless typed
+  closing              calculated: opening − consumption + contracted + additional, volume and value; its cost basis the
+                       closing value ÷ the closing volume
 
-Average: (opening value + purchases at their price) ÷ (opening quantity + purchases); consumption at that average; the
-closing quantity and value carried to the next period. No layers, no batches."""
+The proposal for additional receipts, by how the material is bought:
+  contract, spot  the requirement plus the declared cover (that many periods of the next period's requirement) less the
+                  stock on hand and the contracted receipts
+  campaign        bought in the input's campaign window for what is needed until the next window opens (or the horizon
+                  ends), less the stock at the window's start and what is contracted in it, spread evenly over the
+                  window's periods; never short inside the window
+No layers, no batches."""
 from __future__ import annotations
 
 from typing import Iterable
@@ -33,29 +42,35 @@ def blocks(periods: list[str], window: set[str]) -> list[list[str]]:
 
 
 def plan(periods: list[str], requirement: dict[str, float], price: dict[str, float | None], source: str, cover: float,
-         opening_quantity: float, opening_cost: float, window: Iterable[str] = (), typed: dict[str, dict] | None = None) -> list[dict]:
-    """One key material at one plant on one version: a row per period, in order. `requirement` and `price` by period;
-    `typed` by period — {"quantity": x?, "price": y?, "act_id": ...} — replaces the calculated figure where given."""
-    typed = typed or {}
+         opening_quantity: float, opening_cost: float, window: Iterable[str] = (), typed: dict[str, dict] | None = None,
+         contracted: dict[str, dict] | None = None) -> list[dict]:
+    """One key material at one plant on one version: a row per period, in order. `requirement` and `price` (the price in
+    force, for additional receipts) by period; `contracted` by period — {"quantity": x, "price": y}; `typed` by period —
+    {"quantity": x?, "price": y?, "act_id": ...} — replaces the proposed additional receipt where given."""
+    typed, contracted = typed or {}, contracted or {}
     window = set(window)
     req = {p: float(requirement.get(p) or 0.0) for p in periods}
-    starts: dict[str, tuple[list[str], float]] = {}      # a window's first period → (its periods, what is needed until the next opens)
+    con = {p: (float((contracted.get(p) or {}).get("quantity") or 0.0), (contracted.get(p) or {}).get("price")) for p in periods}
+    starts: dict[str, tuple[list[str], float]] = {}      # a window's first period → (its periods, what is needed until the next opens less what is contracted in it)
     if source == "campaign":
         bs = blocks(periods, window)
         for i, b in enumerate(bs):
             until = periods.index(bs[i + 1][0]) if i + 1 < len(bs) else len(periods)
-            starts[b[0]] = (b, sum(req[p] for p in periods[periods.index(b[0]):until]))
+            starts[b[0]] = (b, sum(req[p] for p in periods[periods.index(b[0]):until]) - sum(con[p][0] for p in b))
     rows, oq, ov = [], float(opening_quantity or 0.0), float(opening_quantity or 0.0) * float(opening_cost or 0.0)
     rate = 0.0
     for i, p in enumerate(periods):
         nxt = req[periods[i + 1]] if i + 1 < len(periods) else req[p]
+        cq, cp = con[p]
+        cp = None if cp is None else float(cp)
         if source == "campaign":
             if p in starts:                                 # less the stock at the window's start, spread over the window
                 b, need = starts[p]
                 rate = max(0.0, need - oq) / len(b)
-            q = max(rate, req[p] - oq) if p in window else 0.0       # never short inside the window
+            q = max(rate, req[p] - oq - cq) if p in window else 0.0       # never short inside the window
         else:
-            q = max(0.0, req[p] + cover * nxt - oq)
+            q = max(0.0, req[p] + cover * nxt - oq - cq)
+        proposed = q
         pr = price.get(p)
         t = typed.get(p) or {}
         q_typed, pr_typed = t.get("quantity") is not None, t.get("price") is not None
@@ -63,21 +78,29 @@ def plan(periods: list[str], requirement: dict[str, float], price: dict[str, flo
             q = float(t["quantity"])
         if pr_typed:
             pr = float(t["price"])
-        pv = q * pr if pr is not None else 0.0
-        avg = (ov + pv) / (oq + q) if (oq + q) > 0 else pr
-        cq = req[p]
-        cv = cq * avg if avg is not None else 0.0
-        rows.append({"period": p, "requirement": req[p], "opening_quantity": oq, "opening_value": ov, "purchase_quantity": q, "purchase_price": pr,
-                     "purchase_value": pv, "average_cost": avg, "consumption_quantity": cq, "consumption_value": cv,
-                     "closing_quantity": oq + q - cq, "closing_value": ov + pv - cv, "quantity_typed": q_typed, "price_typed": pr_typed,
-                     "typed_act": t.get("act_id"), "short": oq + q - cq < -1e-9})
-        oq, ov = oq + q - cq, ov + pv - cv
+        # the opening cost basis; with nothing on hand, the period's contracted price, else the price in force
+        basis = ov / oq if oq > 1e-9 else (cp if cp is not None else pr)
+        cv = cq * cp if cp is not None else 0.0
+        av = q * pr if pr is not None else 0.0
+        uq = req[p]
+        uv = uq * basis if basis is not None else 0.0
+        clq, clv = oq - uq + cq + q, ov - uv + cv + av
+        rows.append({"period": p, "requirement": req[p], "opening_quantity": oq, "opening_value": ov, "opening_cost": basis,
+                     "consumption_quantity": uq, "consumption_value": uv, "average_cost": basis,
+                     "contracted_quantity": cq, "contracted_price": cp, "contracted_value": cv,
+                     "additional_quantity": q, "additional_price": pr, "additional_value": av, "proposed_quantity": proposed,
+                     "purchase_quantity": cq + q, "purchase_value": cv + av, "purchase_price": (cv + av) / (cq + q) if cq + q > 1e-9 else pr,
+                     "closing_quantity": clq, "closing_value": clv, "closing_cost": clv / clq if clq > 1e-9 else None,
+                     "quantity_typed": q_typed, "price_typed": pr_typed, "typed_act": t.get("act_id"), "short": clq < -1e-9})
+        oq, ov = clq, clv
     return rows
 
 
 COLUMNS = ["version_id", "input_code", "plant_code", "period", "fiscal_year", "source", "requirement", "opening_quantity", "opening_value",
-           "purchase_quantity", "purchase_price", "purchase_value", "average_cost", "consumption_quantity", "consumption_value",
-           "closing_quantity", "closing_value", "quantity_typed", "price_typed", "typed_act", "short"]
+           "opening_cost", "consumption_quantity", "consumption_value", "average_cost", "contracted_quantity", "contracted_price",
+           "contracted_value", "additional_quantity", "additional_price", "additional_value", "proposed_quantity",
+           "purchase_quantity", "purchase_price", "purchase_value", "closing_quantity", "closing_value", "closing_cost",
+           "quantity_typed", "price_typed", "typed_act", "short"]
 TYPES = {c: "DOUBLE" for c in COLUMNS} | {"version_id": "TEXT", "input_code": "TEXT", "plant_code": "TEXT", "period": "TEXT", "fiscal_year": "INT",
                                           "source": "TEXT", "quantity_typed": "BOOLEAN", "price_typed": "BOOLEAN", "typed_act": "TEXT", "short": "BOOLEAN"}
 OPENING_MARGIN = 0.05        # a campaign material opens with what it needs until its window, and this much over
@@ -114,12 +137,12 @@ def compute_all(fetch, T, version: str | None = None, acts: list[dict] | None = 
         for k in keys:
             def in_term(p: str) -> bool:
                 return k["source"] == "contract" and k["contract_price"] is not None and (not k["contract_through"] or p <= k["contract_through"])
-            def pr(p: str):
-                if in_term(p):
-                    i = idx.get((v["version_id"], k["contract_index"], p), 100.0) if k["contract_index"] else 100.0
-                    return float(k["contract_price"]) * float(i) / 100.0
+            def pr(p: str):                              # the price in force — what an additional receipt is bought at
                 x = price.get((v["version_id"], k["input_code"], p))
                 return None if x is None else float(x)
+            def contract_pr(p: str):                     # a contract's price, × its index
+                i = idx.get((v["version_id"], k["contract_index"], p), 100.0) if k["contract_index"] else 100.0
+                return float(k["contract_price"]) * float(i) / 100.0
             rq = {p: float(req.get((v["version_id"], k["input_code"], k["plant_code"], p)) or 0.0) for p in periods}
             window = window_periods(k["campaign_window"], fp) if k["source"] == "campaign" else set()
             if window:                                       # last season's intake: what is needed until the window opens, and a margin
@@ -130,8 +153,13 @@ def compute_all(fetch, T, version: str | None = None, acts: list[dict] | None = 
                 oq = float(k["opening_periods"] or 0.0) * (sum(head) / len(head) if head else 0.0)
             oc = float(price.get((v["version_id"], k["input_code"], periods[0])) or 0.0) * float(k["opening_cost_factor"] or 1.0)
             ty = {a["period"]: a for a in typed if a["version_id"] == v["version_id"] and a["input_code"] == k["input_code"] and a["plant_code"] == k["plant_code"]}
+            # contracted receipts (the ERP's, a declared stand-in): a contract material's through its term at its price, a
+            # campaign material's in each window period at the price in force; a spot material has none
+            cq = float(k.get("contract_quantity") or 0.0)
+            con = {p: {"quantity": cq, "price": contract_pr(p)} for p in periods if cq and in_term(p)} if k["source"] == "contract" else \
+                  {p: {"quantity": cq, "price": pr(p)} for p in periods if cq and p in window} if k["source"] == "campaign" else {}
             for r in plan(periods, rq, {p: pr(p) for p in periods}, k["source"], float(k["cover_periods"] or 0.0), oq, oc,
-                          window, ty):
+                          window, ty, con):
                 out.append({**r, "version_id": v["version_id"], "input_code": k["input_code"], "plant_code": k["plant_code"],
                             "fiscal_year": fy[r["period"]], "source": k["source"] if k["source"] != "contract" or in_term(r["period"]) else "spot"})
     return out

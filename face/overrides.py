@@ -41,7 +41,7 @@ SETTING = LogLanding("plan", "reg_recalc_setting", ["act_id", "mode", "reason", 
 NOW = {
     "production": ("""select material_code, plant_code, period, proposed calc_quantity, quantity now_quantity
                       from plan.production_requirement where version_id = ?"""),
-    "purchase": ("""select input_code, plant_code, period, purchase_quantity now_quantity, purchase_price now_price
+    "purchase": ("""select input_code, plant_code, period, additional_quantity now_quantity, additional_price now_price
                     from plan.material_stock where version_id = ?"""),
     "unit_cost": ("""select material_code, plant_code, period, c.component,
                             case c.component when 'material' then material_driven when 'labour' then labour_driven

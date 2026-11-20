@@ -22,6 +22,7 @@ from chassis.warehouse import Busy, q
 
 from . import ENTRY_COLUMNS, HEALTH, MAP_FLOWS, MAP_NODES, FINANCE_COLUMNS, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUMNS, TERMS_COLUMNS, roles, session
 from . import reads
+from . import purchasing_plan
 from . import dashboard
 from . import promotions
 from . import forecast as fcst
@@ -269,7 +270,19 @@ def run_waiting() -> str:
     cmds = run_commands()
     if has_request_context():
         _close_warehouse(None)
-    return Runner(cmds).run()
+    log = Runner(cmds).run()
+    _after_run(log)
+    return log
+
+
+def _after_run(log: str) -> None:
+    """What the Plan publishes once a run has written it: a revision of consumption for the purchasing plan to take
+    (face/purchasing_plan.py, DEC-20261120-04)."""
+    if "✗" not in log:
+        try:
+            purchasing_plan.publish_open()
+        except Busy:
+            pass
 
 
 def _d(a: float | None, b: float | None) -> float | None:
@@ -2806,6 +2819,7 @@ def _run_plan(who: str, scope: str = "") -> bool:
     scoped = bool(sc) and cmds is not run_scope.EVERYTHING
     _close_warehouse(None)              # the run writes the file: this request lets go of its read first
     log = Runner(cmds).run()
+    _after_run(log)
     session.run_log = log
     ok = "✗" not in log
     what = sc["what"] if scoped else "plan"

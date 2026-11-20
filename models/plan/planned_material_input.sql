@@ -2,12 +2,12 @@
    quantity per case and the input's price in the period, its pool read from its type. The planned unit cost's material
    pools are the sum of these; the material price and usage variances read them against the standard (DEC-20261116-02
    point 5). The quantity is the bill × the plant's usage assumption (% of the bill; 100 until someone moves it). The price
-   is a key raw material's weighted-average cost in the period, read as given from the purchase plan's stock
-   (plan.material_stock, DEC-20261116-04 point 5), and any other input's price in force (price × index ÷ 100); the utility
+   is a key raw material's consumption cost in the period — its opening cost basis — read as given from the material
+   balance (plan.material_stock, DEC-20261116-04 point 5, DEC-20261120-02 point 7), and any other input's price in force (price × index ÷ 100); the utility
    in the bill is the schedule's energy, an overhead pool, and is not priced here. */
 MODEL (name plan.planned_material_input, kind FULL, grain (version_id, material_code, period, input_code));
 WITH mats AS (SELECT version_id, material_code, period, plant_code FROM plan.planned_labour),
-avg AS (                                              -- a key raw material: the stock's weighted-average cost in the period (DEC-20261116-04)
+avg AS (                                              -- a key raw material: what its consumption is valued at in the period (DEC-20261120-02 point 7)
   SELECT version_id, input_code, plant_code, period, COALESCE(consumption_value / NULLIF(consumption_quantity, 0), average_cost) AS avg_cost
   FROM plan.material_stock
 )

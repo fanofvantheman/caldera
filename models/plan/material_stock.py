@@ -1,8 +1,9 @@
-"""The material purchase plan and its stock (DEC-20261116-04): each key raw material at each plant on each plan, period by
-period — requirement, purchase (quantity and price, from its declared source), opening, the weighted-average cost,
-consumption at it, closing. Made by `calc.purchases`, the function the face's page also calls. Python because each
-period's average is made from the one before (charter, scope default 2). The costing reads the average and nothing else
-(point 5)."""
+"""The material balance (DEC-20261116-04, DEC-20261120-02 point 7): each key raw material at each plant on each plan, period
+by period — opening, consumption, contracted receipts, additional receipts, closing, in volume, value and cost basis.
+Made by `calc.purchases`, the function the face's pages also call. Python because each period opens on the one before's
+closing (charter, scope default 2). Consumption is valued at the opening cost basis, and the costing reads that and
+nothing else (DEC-20261116-04 point 5). The additional receipts are proposed again on every run; only a typed one is
+carried (plan.purchase_act, DEC-20261120-02 point 6)."""
 from __future__ import annotations
 
 import typing as t
@@ -26,7 +27,7 @@ def _records(df: pd.DataFrame) -> list[dict]:
     depends_on=["plan.material_requirement", "plan.input_price_in_force", "plan.purchase_act", "dims.ref_key_material", "dims.dim_input_material",
                 "dims.dim_period", "dims.ctl_version", "plan.assumption_in_force"],
     columns={c: TYPES[c] for c in COLUMNS},
-    description="Key raw materials: purchases, stock and the weighted-average cost, by version, plant and period.",
+    description="Key raw materials: the material balance — opening, consumption, contracted and additional receipts, closing — by version, plant and period.",
 )
 def execute(context: ExecutionContext, start: datetime, end: datetime, execution_time: datetime, **kwargs: t.Any) -> pd.DataFrame:
     T = context.resolve_table

@@ -77,9 +77,9 @@ def _intake(version: str, pct: float, start: str, n: int) -> list[dict]:
     window = set(periods[periods.index(start):periods.index(start) + n]) if start in periods else set()
     acts = [a for a in q("select * from plan.purchase_act where version_id = ?", version)]
     for r in rows:
-        if r["source"] == "campaign" and r["period"] in window and r["purchase_quantity"]:
+        if r["source"] == "campaign" and r["period"] in window and r["purchase_quantity"]:      # the intake that much higher, on the additional receipt
             acts.append({"version_id": version, "input_code": r["input_code"], "plant_code": r["plant_code"], "period": r["period"],
-                         "quantity": r["purchase_quantity"] * (1 + pct / 100), "price": None, "act_id": "stress"})
+                         "quantity": r["additional_quantity"] + r["purchase_quantity"] * pct / 100, "price": None, "act_id": "stress"})
     return P.compute_all(fetch, lambda t: t, version, acts=acts)
 
 
