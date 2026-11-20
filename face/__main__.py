@@ -23,6 +23,7 @@ from chassis.warehouse import Busy, q
 from . import ENTRY_COLUMNS, HEALTH, MAP_FLOWS, MAP_NODES, FINANCE_COLUMNS, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUMNS, TERMS_COLUMNS, roles, session
 from . import reads
 from . import purchasing_plan
+from . import exposure
 from . import dashboard
 from . import promotions
 from . import forecast as fcst
@@ -2875,6 +2876,7 @@ views.register(plan, _page, _who, _ctx, _busy, session, roles)
 standard.register(plan, _page, _who, _ctx, _busy)
 pools.register(plan, _page, _who, _ctx, _busy, session, roles)
 purchases.register(plan, _page, _who, _ctx, _busy, session, roles)
+exposure.register(plan, _page, _who, _ctx, _busy, session, roles)
 typed_cost.register(plan, _page, _who, _ctx, _busy, session, roles)
 supply.register(plan, _page, _who, _ctx, _busy, session, roles)
 storage.register(plan, _page, _who, _ctx, _busy, session, roles)

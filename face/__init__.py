@@ -69,9 +69,11 @@ PROCESSES = [
             Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"], uses=("version",)),
         ]),
         Area("supply", "Supply", [
-            # the key raw materials: requirement, purchases by source, stock at a weighted average (DEC-20261116-04)
+            # the key raw materials: the purchasing plan's material balance (DEC-20261120-02, -04) and the exposure matrix (DEC-20261120-05)
             Section("purchases", "Material purchases", "plan.material_purchases", uses=("version", "location"),
-                    verbs=["register.supply_plan.maintain", "register.supplier_price_list.maintain", "delta.supply.enter", "read.plan", "read.proof", *FIN_READ]),
+                    verbs=["register.supply_plan.maintain", "register.supplier_price_list.maintain", "delta.supply.enter", "read.plan", "read.proof", *FIN_READ], tabs=[
+                Tab("purchases", "Balance", "plan.material_purchases"),
+                Tab("exposure", "Exposure", "plan.material_exposure")]),
             # the production requirement by plant, with the stocking points it comes from; production typed over it (DEC-20261117-02)
             Section("supply", "Supply plan", "plan.supply_plan", uses=("version", "location", "material"), verbs=["delta.supply.enter", "register.supply_plan.maintain", "policy.production.accept", "read.plan", "read.proof"]),
             Section("capacity", "Capacity", RUNG, {"slug": "capacity"}, verbs=["register.capacity.machine.maintain", "register.capacity.labour.maintain", "register.capacity.storage.maintain", "register.capacity.logistics.maintain", "schedule.line.enter", "headcount.enter"]),
