@@ -1,10 +1,10 @@
 """The supply plan's first two pages (DEC-20261117-02 point 7), under Integrated business planning → Supply:
 
-- **Inventory** — a material at a stocking point: its demand, target, receipts, projected stock at period end with the
-  period's peak beside it, and its safety stock; above a material, every material at the node with its class and cover.
-- **Supply plan** — the production requirement by plant, with the stocking points it comes from; a material's
-  requirement period by period — proposed, typed, standing — and a form for the supply plan's owner to type a quantity
-  over a proposal with a reason, the proposal kept beside it (DEC-20261118-04 point 3).
+- **Inventory** — one table, a material at the stocking point chosen a row (DEC-20261119-05): projected stock at period
+  end leading, a row opening to its demand, receipts, target, the period's peak and its safety stock.
+- **Supply plan** — one table, a material at its plant a row: cases to make leading, a row opening to the proposal, what
+  it ships to each DC and its finished stock; the supply plan's owner types a quantity in its cell over the proposal
+  with a reason, the proposal kept beside it (DEC-20261118-04 point 3).
 
 Both read plan.inventory_flow, made by calc.inventory. Registered on the plan's blueprint by `register(...)`."""
 from __future__ import annotations
@@ -16,7 +16,8 @@ from chassis.landing import LogLanding
 from chassis.warehouse import Busy, q
 from flask import redirect, request, url_for
 
-from . import overrides
+from . import figures, overrides
+from .figures import Filter, Measure
 from .words import said
 
 VERB = "delta.supply.enter"
@@ -25,51 +26,36 @@ ACTS = LogLanding("plan", "reg_production_act", ACT_COLUMNS)
 
 MACRO = """{% macro n0(x) %}{{ '' if x is none else '{:,.0f}'.format(x) }}{% endmacro %}"""
 
-INVENTORY = """<h1>Inventory<small>{{ version|plan }} · {{ node_name }}{% if mat_name %} · {{ mat_name }}{% endif %} · replenished to an order-up-to target from the plant that supplies it</small></h1>
-<p class="hint">Each stocking point holds the demand over the next review period and lead time, plus a safety stock solved for the fill rate of the material's class ({% for s in levels %}{{ s.service_class }} {{ '{:.0%}'.format(s.fill_rate) }}{{ ', ' if not loop.last }}{% endfor %}); each week it receives what restores the target and ships its demand. A DC's demand is the plan's cases at the ship-tos it serves; a plant's is the DCs' receipts, by the share each takes from it. The variability is what the node shipped a week over the last 52 closed weeks — <b>demand variability, an upper bound</b>: no weekly record of the plan against what shipped is kept yet, so the buffer is larger than a residual would make it. Opening stock is each point's target at the plan's first week — no stock position is loaded. Stock at period end, the week-grain peak beside it.</p>
+INVENTORY = """<h1>Inventory<small>{{ version|plan }} · {{ node_name }} · replenished to an order-up-to target from the plant that supplies it</small></h1>
+<p class="hint">Each stocking point holds the demand over the next review period and lead time, plus a safety stock solved for the fill rate of the material's class ({% for s in levels %}{{ s.service_class }} {{ '{:.0%}'.format(s.fill_rate) }}{{ ', ' if not loop.last }}{% endfor %}); each week it receives what restores the target and ships its demand. A DC's demand is the plan's cases at the ship-tos it serves; a plant's is the DCs' receipts, by the share each takes from it. The variability is what the node shipped a week over the last 52 closed weeks — <b>demand variability, an upper bound</b>: no weekly record of the plan against what shipped is kept yet, so the buffer is larger than a residual would make it. Opening stock is each point's target at the plan's first week — no stock position is loaded. Stock at period end; the week-grain peak is one of a row's figures.</p>
 <div class="seg toolbar"><span class="small muted">node</span>{% for n in nodes %}{% if n.code == node %}<b>{{ n.name }}</b>{% else %}<a href="{{ url_for('plan.inventory', location=n.code, material=material) }}">{{ n.name }}</a>{% endif %}{% endfor %}</div>
-{% if rows %}<div style="overflow-x:auto"><table class="stock"><thead><tr><th></th>{% for r in rows %}<th class="n">{{ r.period[2:4] }}·{{ r.period[5:] }}</th>{% endfor %}<th class="n">Total</th></tr></thead><tbody>
-<tr><td>Demand</td>{% for r in rows %}<td class="n">{{ n0(r.demand) }}</td>{% endfor %}<td class="n">{{ n0(tot.demand) }}</td></tr>
-<tr><td>{{ 'Production' if is_plant else 'Receipts' }}</td>{% for r in rows %}<td class="n {{ 'typed' if r.typed }}">{{ n0(r.receipt) }}{% if r.typed %} ◆{% endif %}</td>{% endfor %}<td class="n">{{ n0(tot.receipt) }}</td></tr>
-<tr><td>Target at period end</td>{% for r in rows %}<td class="n">{{ n0(r.target) }}</td>{% endfor %}<td></td></tr>
-<tr class="avg"><td><b>Projected stock</b></td>{% for r in rows %}<td class="n"><b>{{ n0(r.closing) }}</b></td>{% endfor %}<td></td></tr>
-<tr><td>Peak in the period</td>{% for r in rows %}<td class="n">{{ n0(r.peak) }}</td>{% endfor %}<td></td></tr>
-<tr><td>Safety stock</td>{% for r in rows %}<td class="n">{{ n0(r.safety_stock) }}</td>{% endfor %}<td></td></tr>
-</tbody></table></div>
-<p class="hint">{{ mat_name }} at {{ node_name }}: class {{ cls.service_class or '—' }} ({{ '{:.0%}'.format(cls.fill_rate) if cls.fill_rate else 'no fill rate' }}), {{ var.weeks_shipped or 0 }} of the last 52 weeks shipped, σ {{ n0(var.sigma) if var.sigma is not none else 'none — under 13 weeks shipped, no safety stock' }} a week. <a href="{{ url_for('plan.inventory', location=node, material='ALL') }}">Every material at {{ node_name }}</a>.</p>
-{% else %}<h2>Materials at {{ node_name }}<span class="count">{{ listing|length }} · by stock held, average over the plan's periods</span></h2>
-<table><thead><tr><th>Material</th><th>Class</th><th class="n">Demand</th><th class="n">Safety stock</th><th class="n">Average stock</th><th class="n">Weeks of cover</th><th class="n">Peak</th></tr></thead><tbody>
-{% for m in listing %}<tr><td><a href="{{ url_for('plan.inventory', location=node, material=m.material_code) }}">{{ m.material_name }}</a> <span class="small muted">{{ m.material_code }}</span></td><td>{{ m.service_class or '' }}</td><td class="n">{{ n0(m.demand) }}</td><td class="n">{{ n0(m.safety_stock) }}</td><td class="n">{{ n0(m.avg_stock) }}</td><td class="n">{{ '%.1f'|format(m.cover) if m.cover is not none else '' }}</td><td class="n">{{ n0(m.peak) }}</td></tr>
-{% else %}<tr><td colspan="7" class="muted">Nothing stocked at {{ node_name }} on {{ version|plan }}.</td></tr>{% endfor %}</tbody></table>{% endif %}
-<style>table.stock td{white-space:nowrap}table.stock td.typed{box-shadow:inset 0 0 0 1px var(--ink)}table.stock tr.avg td{border-top:1px solid var(--rule)}.seg{display:flex;gap:.6rem;flex-wrap:wrap;margin:.4rem 0}</style>"""
+{{ grid_choice(g) }}
+{{ grid_table(g) }}
+<p class="hint">A row is a material at {{ node_name }}; its name's line says its class and fill rate and what it shipped a week (σ). Cases of different materials add, so the first row totals the cases. The year is its plan periods: demand and {{ 'production' if is_plant else 'receipts' }} summed, the stock, target and safety stock its last period's; a peak is not added. A typed production quantity is boxed.</p>
+{{ grid_style() }}<style>.seg{display:flex;gap:.6rem;flex-wrap:wrap;margin:.4rem 0}</style>"""
 
 SUPPLY = """<h1>Supply plan<small>{{ version|plan }} · the production requirement by plant — what the inventory plan asks each plant to make, not sequenced against the lines</small></h1>
-<p class="hint">Each plant's requirement is its replenishment of the DCs it supplies, less its own finished stock, on its own order-up-to target. Whether the lines can make it is the capacity reading's question, not this page's. {% if may and is_open %}You plan supply: type a quantity over a period's proposal with a reason — the proposal stays beside it, and materials read what stands after the next run.{% else %}Typed over by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}</p>
-{% for pl in plants %}<h2>{{ pl.name }}<span class="count">cases to make · {{ n0(pl.total) }} over the plan{% if pl.typed %} · {{ pl.typed }} period{{ 's' if pl.typed != 1 }} typed{% endif %}</span></h2>
-<div style="overflow-x:auto"><table class="stock"><thead><tr><th></th>{% for p in periods %}<th class="n">{{ p[2:4] }}·{{ p[5:] }}</th>{% endfor %}<th class="n">Total</th></tr></thead><tbody>
-<tr><td><b>To make</b></td>{% for p in periods %}<td class="n"><b>{{ n0(pl.by.get(p, {}).get('quantity')) }}</b></td>{% endfor %}<td class="n"><b>{{ n0(pl.total) }}</b></td></tr>
-<tr><td class="small muted">proposed</td>{% for p in periods %}<td class="n small muted">{{ n0(pl.by.get(p, {}).get('proposed')) }}</td>{% endfor %}<td class="n small muted">{{ n0(pl.proposed) }}</td></tr>
-{% for s in pl.sources %}<tr><td class="small">for {{ s.name }}</td>{% for p in periods %}<td class="n small">{{ n0(s.by.get(p)) }}</td>{% endfor %}<td class="n small">{{ n0(s.total) }}</td></tr>{% endfor %}
-<tr><td class="small muted">finished stock at period end</td>{% for p in periods %}<td class="n small muted">{{ n0(pl.by.get(p, {}).get('finished_stock')) }}</td>{% endfor %}<td></td></tr>
-</tbody></table></div>{% endfor %}
-<h2 id="material">A material<span class="count">{{ mat_name or 'choose a material in the context' }}</span></h2>
-{% if mrows %}<div style="overflow-x:auto"><table class="stock"><thead><tr><th>Plant</th><th></th>{% for p in periods %}<th class="n">{{ p[2:4] }}·{{ p[5:] }}</th>{% endfor %}</tr></thead><tbody>
-{% for plant, rs in mrows.items() %}<tr><td rowspan="3">{{ plant }}</td><td class="small">to make</td>{% for p in periods %}{% set r = rs.get(p) %}<td class="n {{ 'typed' if r and r.typed }}">{{ n0(r.quantity) if r else '' }}{% if r and r.typed %} ◆{% endif %}</td>{% endfor %}</tr>
-<tr><td class="small muted">proposed</td>{% for p in periods %}{% set r = rs.get(p) %}<td class="n small muted">{{ n0(r.proposed) if r else '' }}</td>{% endfor %}</tr>
-<tr><td class="small muted">to the DCs</td>{% for p in periods %}{% set r = rs.get(p) %}<td class="n small muted">{{ n0(r.shipped_to_dcs) if r else '' }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% endif %}
+<p class="hint">Each plant's requirement is its replenishment of the DCs it supplies, less its own finished stock, on its own order-up-to target. Whether the lines can make it is the capacity reading's question, not this page's. {% if may and is_open %}You plan supply: type a quantity in a period's cell over the proposal and place it with a reason — the proposal stays beside it, and materials read what stands after the next run.{% else %}Typed over by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}</p>
+{{ grid_choice(g) }}
+{% if g.editable %}<form method="post" action="{{ url_for('plan.production_type') }}" id="type">{% for k in ('version', 'location', 'material') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args.get(k) }}">{% endif %}{% endfor %}{% endif %}
+{{ grid_table(g) }}
+{% if g.editable %}<div class="form-row"><label class="small grow">why <input name="reason" placeholder="a campaign run, a line down, a build ahead"></label><button class="primary">Place</button><span class="hint">each figure changed is placed as one act, by {{ who_ }} — in the plan after the next run</span></div></form>{% endif %}
+<p class="hint">A row is a material at the plant that makes it, in cases: the first row totals them. A row opens to the proposal, what it ships to each DC and its finished stock at period end. The year is its plan periods; the stock its last period's. A typed quantity is boxed with the proposal beneath it.</p>
 {% if typed %}<h2>Typed<span class="count">{{ typed|length }} standing on {{ version|plan }}</span></h2><table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Typed</th><th class="n">Proposed</th><th>Why</th><th>By</th><th></th></tr></thead><tbody>
 {% for t in typed %}<tr><td>{{ t.material_code }}</td><td>{{ t.plant_code }}</td><td>{{ t.period }}</td><td class="n">{{ n0(t.quantity) }}</td><td class="n">{{ n0(t.proposed) }}</td><td class="small">{{ t.reason }}</td><td class="small">{{ t.entered_by }}</td>
 <td>{% if may and is_open %}<form class="inline" method="post" action="{{ url_for('plan.production_withdraw') }}"><input type="hidden" name="act_id" value="{{ t.act_id }}"><input name="reason" required placeholder="why" size="10"> <button class="act">Withdraw</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
-{% if may and is_open %}<h2 id="type">Type a production quantity<span class="count">over a period's proposal, with a reason</span></h2>
-<form class="entry" method="post" action="{{ url_for('plan.production_type') }}">
-<label class="wide">material at a plant<select name="key">{% for m in materials %}<option value="{{ m.material_code }}|{{ m.plant_code }}" {{ 'selected' if m.material_code == material }}>{{ m.material_name }} · {{ m.plant_code }}</option>{% endfor %}</select></label>
-<label>period<select name="period">{% for x in periods %}<option>{{ x }}</option>{% endfor %}</select></label>
-<label>cases<input name="quantity" type="number" step="any" min="0" required></label>
-<label class="wide">why<input name="reason" required placeholder="a campaign run, a line down, a build ahead"></label>
-<div class="actions"><button class="primary">Place</button><span class="hint">by {{ who_ }} — in the plan after the next run</span></div></form>{% endif %}
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
-<style>table.stock td{white-space:nowrap}table.stock td.typed{box-shadow:inset 0 0 0 1px var(--ink)}</style>"""
+{{ grid_style() }}<style>.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}</style>"""
+
+INV_MEASURES = [Measure("closing", "projected stock", year="last"), Measure("demand", "demand"),
+                Measure("receipt", "receipts", typed="typed"), Measure("target", "target at period end", year="last"),
+                Measure("peak", "peak in the period", year=None, total=False), Measure("safety_stock", "safety stock", year="last")]
+
+
+def _categories(q) -> dict:
+    """Each finished material's category — what the category filter reads."""
+    return {r["descendant_code"]: r["ancestor_code"] for r in q("select descendant_code, ancestor_code from dims.dim_material_hierarchy where ancestor_level = 'category'")}
 
 
 def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
@@ -89,22 +75,31 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             node = c.get("location") if c.get("location") in {n["code"] for n in nodes} else next((n["code"] for n in nodes if n["kind"] != "plant"), nodes[0]["code"])
             mat = leaf(c.get("material"))
             names = {r["material_code"]: r["material_name"] for r in q("select material_code, material_name from dims.dim_material")}
-            rows, listing, cls, var = [], [], {}, {}
-            if mat:
-                rows = q("select * from plan.inventory_flow where version_id = ? and node_code = ? and material_code = ? order by period", version, node, mat)
-                cls = (q("select * from plan.service_class where version_id = ? and material_code = ?", version, mat) or [{}])[0]
-                var = (q("select * from plan.demand_variability where node_code = ? and material_code = ?", node, mat) or [{}])[0]
-            else:
-                listing = q("""select f.material_code, any_value(c.service_class) service_class, sum(f.demand) demand, max(f.safety_stock) safety_stock,
-                                      avg(f.closing) avg_stock, max(f.peak) peak, avg(f.closing) / nullif(sum(f.demand) / nullif(sum(f.weeks), 0), 0) cover
-                               from plan.inventory_flow f left join plan.service_class c on c.version_id = f.version_id and c.material_code = f.material_code
-                               where f.version_id = ? and f.node_code = ? group by 1 order by avg_stock desc nulls last limit 150""", version, node)
-                listing = [{**m, "material_name": names.get(m["material_code"], m["material_code"])} for m in listing]
-            tot = {k: sum(r[k] or 0 for r in rows) for k in ("demand", "receipt")}
-            return page(MACRO + INVENTORY, title="Inventory", active="inventory", width="none", version=version, nodes=nodes, node=node,
-                        node_name=next(n["name"] for n in nodes if n["code"] == node), is_plant=next(n["kind"] for n in nodes if n["code"] == node) == "plant",
-                        material=mat or "ALL", mat_name=names.get(mat) if mat else None, rows=rows, tot=tot, listing=listing, cls=cls, var=var,
-                        levels=q("select * from dims.ref_service_level order by service_class"))
+            cls = {r["material_code"]: r for r in q("select c.material_code, c.service_class, l.fill_rate from plan.service_class c left join dims.ref_service_level l using (service_class) where c.version_id = ?", version)}
+            var = {r["material_code"]: r for r in q("select * from plan.demand_variability where node_code = ?", node)}
+            cat_of = _categories(q)
+            is_plant = next(n["kind"] for n in nodes if n["code"] == node) == "plant"
+            rows: dict = {}
+            for r in q("select * from plan.inventory_flow where version_id = ? and node_code = ? order by material_code, period", version, node):
+                if mat and r["material_code"] != mat:
+                    continue
+                m = r["material_code"]; k = cls.get(m) or {}; v = var.get(m) or {}
+                row = rows.setdefault(m, {"code": m, "label": names.get(m, m),
+                                          "level": " · ".join(x for x in [f"class {k['service_class']}" if k.get("service_class") else "no class",
+                                                                          f"{k['fill_rate']:.0%}" if k.get("fill_rate") else "",
+                                                                          f"σ {v['sigma']:,.0f} a week" if v.get("sigma") is not None else "under 13 weeks shipped, no safety stock"] if x),
+                                          "attrs": {"class": k.get("service_class") or "", "category": cat_of.get(m, "")}, "by": {}})
+                row["by"][r["period"]] = {**r, "typed_title": "a production quantity typed over the proposal"}
+            cats = sorted({r["attrs"]["category"] for r in rows.values() if r["attrs"]["category"]})
+            filters = [Filter("class", "class", tuple((x, x) for x in sorted({r["attrs"]["class"] for r in rows.values() if r["attrs"]["class"]}))),
+                       Filter("category", "category", tuple((x, reads.node_label("material", x) or x) for x in cats))]
+            measures = [m if m.key != "receipt" else Measure("receipt", "production" if is_plant else "receipts", typed="typed") for m in INV_MEASURES]
+            vp = reads.version_periods(version)
+            node_name = next(n["name"] for n in nodes if n["code"] == node)
+            g = figures.table("inv", list(rows.values()), measures, "closing", figures.columns(vp, actuals=False, quarters=False), row_head=f"Materials at {node_name}",
+                              filters=filters, total=f"Every material at {node_name}", year_says="plan periods", empty=f"Nothing stocked at {node_name} on {version}.")
+            return page(figures.MACROS + INVENTORY, title="Inventory", active="inventory", width="none", version=version, nodes=nodes, node=node,
+                        node_name=node_name, is_plant=is_plant, material=mat or "ALL", g=g, levels=q("select * from dims.ref_service_level order by service_class"))
         except Busy as e:
             return busy("Inventory", e)
 
@@ -115,38 +110,47 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             loc = c.get("location") or "ALL"
             mat = leaf(c.get("material"))
             names = {r["node_code"]: r["node_name"] for r in q("select node_code, node_name from dims.dim_node")}
-            req = q("select plant_code, period, sum(quantity) quantity, sum(proposed) proposed, sum(finished_stock) finished_stock, count(*) filter (where typed) typed from plan.production_requirement where version_id = ? group by all order by 1, 2", version)
-            src = q("select plant_code, node_code, period, sum(cases) cases from plan.production_source where version_id = ? group by all", version)
-            periods = sorted({r["period"] for r in req})
-            plants = []
-            for p in sorted({r["plant_code"] for r in req}):
-                if loc != "ALL" and loc != p and loc in names and q("select 1 ok from dims.dim_node where node_code = ? and node_kind = 'plant'", loc):
+            plant_codes = {r["node_code"] for r in q("select node_code from dims.dim_node where node_kind = 'plant'")}
+            mats = {r["material_code"]: r["material_name"] for r in q("select material_code, material_name from dims.dim_material")}
+            cat_of = _categories(q)
+            src: dict = {}
+            for s_ in q("select material_code, plant_code, node_code, period, sum(cases) cases from plan.production_source where version_id = ? group by all", version):
+                src.setdefault((s_["material_code"], s_["plant_code"], s_["period"]), {})[f"src_{s_['node_code']}"] = s_["cases"]
+            dcs = sorted({k[4:] for d in src.values() for k in d})
+            rows: dict = {}
+            for r in q("select * from plan.production_requirement where version_id = ? order by material_code, plant_code, period", version):
+                if (loc in plant_codes and r["plant_code"] != loc) or (mat and r["material_code"] != mat):
                     continue
-                by = {r["period"]: r for r in req if r["plant_code"] == p}
-                sources = []
-                for n in sorted({s["node_code"] for s in src if s["plant_code"] == p}):
-                    sb = {s["period"]: s["cases"] for s in src if s["plant_code"] == p and s["node_code"] == n}
-                    sources.append({"name": names.get(n, n), "by": sb, "total": sum(sb.values())})
-                plants.append({"name": names.get(p, p), "by": by, "total": sum(r["quantity"] or 0 for r in by.values()), "proposed": sum(r["proposed"] or 0 for r in by.values()),
-                               "typed": sum(1 for r in by.values() if r["typed"]), "sources": sources})
-            mrows: dict = {}
-            if mat:
-                for r in q("select * from plan.production_requirement where version_id = ? and material_code = ? order by plant_code, period", version, mat):
-                    mrows.setdefault(r["plant_code"], {})[r["period"]] = r
+                row = rows.setdefault((r["material_code"], r["plant_code"]), {
+                    "code": f"{r['material_code']}~{r['plant_code']}", "label": mats.get(r["material_code"], r["material_code"]),
+                    "level": names.get(r["plant_code"], r["plant_code"]), "attrs": {"plant": r["plant_code"], "category": cat_of.get(r["material_code"], "")}, "by": {}})
+                row["by"][r["period"]] = {**r, **src.get((r["material_code"], r["plant_code"], r["period"]), {}),
+                                          "proposed_note": f"proposed {r['proposed']:,.0f}" if r["typed"] and r["proposed"] is not None else None,
+                                          "typed_title": "typed over the proposal — listed under Typed"}
+            measures = [Measure("quantity", "to make", typed="typed", note="proposed_note", input=True), Measure("proposed", "proposed"),
+                        Measure("shipped_to_dcs", "to the DCs")] + [Measure(f"src_{n}", f"for {names.get(n, n)}") for n in dcs] + \
+                       [Measure("finished_stock", "finished stock at period end", year="last")]
+            cats = sorted({r["attrs"]["category"] for r in rows.values() if r["attrs"]["category"]})
+            filters = [Filter("plant", "plant", tuple((p, names.get(p, p)) for p in sorted({r["attrs"]["plant"] for r in rows.values()}))),
+                       Filter("category", "category", tuple((x, reads.node_label("material", x) or x) for x in cats))]
+            vp = reads.version_periods(version)
+            may, is_open = roles.may(who, VERB), v.get("status") == "open"
+            g = figures.table("sup", list(rows.values()), measures, "quantity", figures.columns(vp, actuals=False, quarters=False), row_head="Materials at their plant",
+                              filters=filters, total="Cases to make", editable=may and is_open, plan_periods=set(vp["plan"]), year_says="plan periods",
+                              empty="No production requirement on this plan.")
             typed = q("""select a.*, r.proposed from plan.production_act a left join plan.production_requirement r using (version_id, material_code, plant_code, period)
                          where a.version_id = ? order by a.material_code, a.period""", version)
-            materials = q("""select distinct r.material_code, m.material_name, r.plant_code from plan.production_requirement r join dims.dim_material m using (material_code)
-                             where r.version_id = ? order by m.material_name""", version)
-            mat_name = (q("select material_name from dims.dim_material where material_code = ?", mat) or [{}])[0].get("material_name") if mat else None
-            return page(MACRO + SUPPLY, title="Supply plan", active="supply", width="none", version=version, plants=plants, periods=periods, mrows=mrows,
-                        material=mat, mat_name=mat_name, typed=typed, materials=materials, may=roles.may(who, VERB), holders=reads.holders(VERB),
-                        is_open=v.get("status") == "open", who_=who, last=session.last, receipt_acts=("production",))
+            return page(figures.MACROS + MACRO + SUPPLY, title="Supply plan", active="supply", width="none", version=version, g=g, typed=typed,
+                        may=may, holders=reads.holders(VERB), is_open=is_open, who_=who, last=session.last, receipt_acts=("production",))
         except Busy as e:
             return busy("Supply plan", e)
 
     @bp.post("/supply/plan/type")
     def production_type():
-        f = request.form; who = who_fn(); version = version_of(); v = reads.version(version) or {}
+        f = request.form
+        if not f.get("key"):
+            return production_cells()
+        who = who_fn(); version = version_of(); v = reads.version(version) or {}
         mat, _, plant = (f.get("key") or "").partition("|")
         period, reason = f.get("period") or "", (f.get("reason") or "").strip()
         try:
@@ -174,6 +178,48 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         if not placed:
             session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
         return redirect(url_for("plan.supply_plan") + "#type")
+
+    def production_cells():
+        """The table posted back: every quantity whose cell differs from the figure it was drawn with is placed — one act a
+        material at a plant in a period, all with the one reason, or none."""
+        f = request.form; who = who_fn(); version = f.get("version") or version_of(); v = reads.version(version) or {}
+        reason = (f.get("reason") or "").strip()
+        now = {(r["material_code"], r["plant_code"], r["period"]): r for r in q("select * from plan.production_requirement where version_id = ?", version)}
+        plan_periods = set(reads.version_periods(version)["plan"])
+        qm = Measure("quantity", "to make", input=True)
+        changed, bad = {}, []
+        for _, code, period, raw in figures.posted(f, [qm]):
+            m, _, plant = code.partition("~")
+            r = now.get((m, plant, period))
+            if raw == "" or (r is not None and raw == figures.input_value(qm, r["quantity"])):
+                continue
+            try:
+                x = float(raw)
+            except ValueError:
+                x = None
+            if x is None or x < 0 or r is None or period not in plan_periods:
+                bad.append(f"{raw!r} for {m} at {plant} in {period}"); continue
+            changed[(m, plant, period)] = x
+        stage = reads.stage_open(version, "production") if hasattr(reads, "stage_open") else (True, "")
+        checks = [
+            {"check": "who may plan supply", "ok": roles.may(who, VERB), "says": f"{who} holds {said(VERB)}" if roles.may(who, VERB) else f"{who} does not hold {said(VERB)} — supply is planned by {', '.join(reads.holders(VERB))}"},
+            {"check": "the plan is open", "ok": v.get("status") == "open", "says": f"{version} is {v.get('status', 'unknown')}"},
+            {"check": "the stage is open", "ok": stage[0], "says": stage[1] or "production is open on this plan"},
+            {"check": "quantities typed", "ok": bool(changed) and not bad, "says": ("refused: " + "; ".join(bad)) if bad else ("; ".join(f"{m} at {pl} in {per}: {x:,.0f}" for (m, pl, per), x in sorted(changed.items())) or "no cell differs from the figure it was drawn with")},
+            {"check": "a reason", "ok": bool(reason), "says": reason or "a typed quantity says why"},
+        ]
+        placed = receipts.judge(checks)
+        if placed:
+            now_ = dt.datetime.now()
+            ACTS.place([{"act_id": f"PRD-{now_:%Y%m%d%H%M%S%f}-{i:03d}", "action": "set", "withdraws": "", "version_id": version, "material_code": m, "plant_code": pl,
+                         "period": per, "quantity": x, "reason": reason, "entered_by": who, "entered_at": now_.isoformat(timespec="seconds")}
+                        for i, ((m, pl, per), x) in enumerate(sorted(changed.items()), start=1)], who)
+        session.last = receipts.write("production.type", who, f"{len(changed)} cells", checks, placed)
+        if overrides.released(who, "production", session, f"{len(changed)} production quantit{'ies' if len(changed) != 1 else 'y'} placed", placed):
+            return redirect(url_for("plan.run"))
+        if not placed:
+            session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
+        return redirect(url_for("plan.supply_plan", version=version, location=f.get("location") or None, material=f.get("material") or None) + "#type")
 
     @bp.post("/supply/plan/withdraw")
     def production_withdraw():

@@ -14,7 +14,9 @@ from chassis.landing import LogLanding
 from chassis.warehouse import Busy, q
 from flask import redirect, request, url_for
 
+from . import figures
 from .costs import pay_withheld, planning_cost_centres
+from .figures import Filter, Measure
 from .words import said
 
 VERB = "register.cost_centre_map.maintain"
@@ -23,16 +25,12 @@ RULES = LogLanding("plan", "reg_cost_pool_rule", RULE_COLUMNS)
 COMPONENTS = [("material", "Material"), ("labour", "Labour"), ("variable_overhead", "Variable overhead"), ("fixed_overhead", "Fixed overhead"), (None, "Not in cost of goods")]
 
 POOLS = """<h1>Cost pools<small>{{ version|plan }} · the kinds of cost a case is made of, each in one of the four components — where a rate is set and read</small></h1>
-{% for comp, label in components %}<h2>{{ label }}<span class="count">{{ pools_by[comp]|length }} pool{{ '' if pools_by[comp]|length == 1 else 's' }}</span></h2>
-<table><thead><tr><th>Pool</th><th>Reaches a case by</th>{% if comp %}{% for p in plants %}<th class="n">{{ p.name }} · cost</th><th class="n">{{ p.name }} · per case</th>{% endfor %}{% else %}<th class="n">Cost</th>{% endif %}<th class="n">Cells</th></tr></thead><tbody>
-{% for pl in pools_by[comp] %}<tr><td><b>{{ pl.pool_name }}</b></td><td class="small">{{ pl.reaches }}</td>
-{% if comp %}{% for p in plants %}{% set f = figs.get((pl.pool_code, p.code)) %}<td class="n">{{ money0(f.cost) if f else '' }}</td><td class="n">{{ money(f.per_case) if f else '' }}</td>{% endfor %}{% else %}<td class="n">{{ money0(not_cogs) }}</td>{% endif %}
-<td class="n">{% if pl.cells %}<a href="{{ url_for('plan.cost_pool_map', pool=pl.pool_code) }}">{{ pl.cells }}</a>{% elif comp == 'material' %}<span class="small muted">read from the input</span>{% elif comp == 'labour' %}<span class="small muted">read from the route</span>{% else %}0{% endif %}</td></tr>{% endfor %}
-{% if comp == 'fixed_overhead' %}<tr><td class="small muted">Other factory's share</td><td class="small muted">of fixed overhead at the plant — a catch-all that grows is a rule to write</td>{% for p in plants %}{% set sh = other_share.get(p.code) %}<td class="n small">{{ '{:.1%}'.format(sh) if sh is not none else '' }}</td><td></td>{% endfor %}<td></td></tr>{% endif %}
-{% if comp %}<tr class="total"><td>{{ label }}</td><td></td>{% for p in plants %}{% set t = totals.get((comp, p.code)) %}<td class="n">{{ money0(t.cost) if t and t.cost is not none else '' }}</td><td class="n"><b>{{ money(t.per_case) if t else '' }}</b></td>{% endfor %}<td></td></tr>{% endif %}
-</tbody></table>{% endfor %}
-<p class="hint">Per case at {{ period }}, weighted by its cases at the plant. <b>Cost</b>: for an overhead pool, its schedule lines at the plant over the {{ n_sched }} planned periods — indirect labour less the direct labour the routes' crews take for the plan's cases; for material and direct labour, the cases planned at the plant × their cost per case over the same periods. A variable pool's per case is its lines' rates per case made; a fixed pool's is its cost for the year ÷ the planned cases at the plant, both set on the business plan of the year and held on every plan of it. The cost centre stops at the map: from here on a rate is a pool's at a plant. <a href="{{ url_for('plan.cost_pool_map') }}">The map</a> says which cost centre × account is in which pool.</p>
-{% if waiting %}<p class="hint"><b>{{ waiting }}</b> cell{{ '' if waiting == 1 else 's' }} carrying a cost in no pool — <a href="{{ url_for('plan.cost_pool_map') }}#unmapped">set a rule for each</a>.</p>{% endif %}"""
+{{ grid_choice(g) }}
+{{ grid_table(g) }}
+<p class="hint">A row is a pool at a plant; its name's line says its component, how it reaches a case and how many cells of the map are in it. <b>Per case</b>: the pool's cost in a case made at the plant in the period, weighted by the period's cases. <b>Cost</b>: for an overhead pool, its schedule lines at the plant in the period — indirect labour less the direct labour the routes' crews take for the plan's cases; for material and direct labour, the cases planned at the plant × their cost per case. A variable pool's per case is its lines' rates per case made; a fixed pool's is its cost for the year ÷ the planned cases at the plant, both set on the business plan of the year and held on every plan of it. The year is its plan periods: cost summed; a per-case figure is not added. The cost centre stops at the map: from here on a rate is a pool's at a plant. <a href="{{ url_for('plan.cost_pool_map') }}">The map</a> says which cost centre × account is in which pool.</p>
+<p class="hint">{% for pl, sh in other_share %}Other factory is {{ '{:.1%}'.format(sh) }} of fixed overhead at {{ pl }}{{ '; ' if not loop.last else '.' }}{% endfor %} A catch-all that grows is a rule to write. Not in cost of goods over the plan: {{ money0(not_cogs) }}.</p>
+{% if waiting %}<p class="hint"><b>{{ waiting }}</b> cell{{ '' if waiting == 1 else 's' }} carrying a cost in no pool — <a href="{{ url_for('plan.cost_pool_map') }}#unmapped">set a rule for each</a>.</p>{% endif %}
+{{ grid_style() }}"""
 
 MAP = """<h1>The map<small>{{ version|plan }} · the plan's cost centre × account onto the cost pools · the cost over its {{ n_sched }} planned periods{% if pool %} · {{ pool_name }} only{% endif %}</small></h1>
 <p class="hint">Each cell is the pool its cost is in, by the most specific rule: a cost centre × account rule, then a cost centre whatever the account, then an account whatever the cost centre; a rule naming the entity before one that does not. {% if may %}You keep the map: a rule set or removed is in force after the next run.{% else %}The map is kept by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}{% if pool %} <a href="{{ url_for('plan.cost_pool_map', pool=None) }}">Every pool</a>.{% endif %}</p>
@@ -78,49 +76,45 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
     def cost_pools():
         try:
             version = version_of()
-            plan_periods = reads.version_periods(version)["plan"] or [""]
-            period = plan_periods[0]
             plants = [{"code": r["node_code"], "name": r["node_name"]} for r in q(
                 "select distinct n.node_code, n.node_name from dims.dim_node n join plan.ref_cost_centre_plant c on c.plant_code = n.node_code order by 1")]
             ps = pools()
             cells = {r["pool_code"]: r["n"] for r in q("select pool_code, count(*) n from plan.cost_pool_cell where pool_code is not null group by 1")}
-            figs: dict = {}
-            # overheads: the pool's cost over the schedule's planned periods at the plant; per case at the first plan period
-            for r in q("""select plant_code, pool_code, sum(case when component = 'variable_overhead' then lines_amount else amount end) as "cost"
+            by: dict = {}                                 # (pool, plant) → period → {cost, per_case}
+            # overheads: the pool's cost at the plant in the period, from the schedule (DEC-20261119-05: by period)
+            for r in q("""select plant_code, pool_code, period, sum(case when component = 'variable_overhead' then lines_amount else amount end) as "cost"
                           from plan.cost_pool_rate where version_id = ? group by all""", version):
-                figs[(r["pool_code"], r["plant_code"])] = {"cost": r["cost"], "per_case": None}
-            sched = [r["period"] for r in q("select distinct period from plan.cost_pool_rate where version_id = ? order by 1", version)]
-            per_case = q("""select s.plant_code, s.pool_code, s.component, sum(s.per_case * d.c) / nullif(sum(d.c), 0) per_case
-                            from plan.planned_unit_cost_pool s
-                            join (select material_code, sum(cases) c from plan.demand_financialised where version_id = ? and period = ? group by 1) d using (material_code)
-                            where s.version_id = ? and s.period = ? group by all""", version, period, version, period)
-            for r in per_case:
-                figs.setdefault((r["pool_code"], r["plant_code"]), {"cost": None, "per_case": None})["per_case"] = r["per_case"]
-            # material and direct labour have no schedule line: their cost is the plan's cases × the cost per case over the same periods
-            if sched:
-                ph = ",".join("?" * len(sched))
-                for r in q(f"""select s.plant_code, s.pool_code, sum(s.per_case * d.c) as "cost" from plan.planned_unit_cost_pool s
-                               join (select material_code, period, sum(cases) c from plan.demand_financialised where version_id = ? group by all) d using (material_code, period)
-                               where s.version_id = ? and s.component in ('material', 'labour') and s.period in ({ph}) group by all""", version, version, *sched):
-                    figs.setdefault((r["pool_code"], r["plant_code"]), {"cost": None, "per_case": None})["cost"] = r["cost"]
-            totals: dict = {}
-            for pl in ps:
-                for p in plants:
-                    f = figs.get((pl["pool_code"], p["code"]))
-                    if f and pl["component"]:
-                        t = totals.setdefault((pl["component"], p["code"]), {"cost": 0.0, "per_case": 0.0})
-                        t["cost"] += f["cost"] or 0; t["per_case"] += f["per_case"] or 0
-            # other factory's share of the plant's fixed overhead, so a catch-all that has grown is seen (DEC-20261118-02 point 3)
-            other_share = {p["code"]: ((figs.get(("OTHER_FACTORY", p["code"])) or {}).get("cost") or 0) / totals[("fixed_overhead", p["code"])]["cost"]
-                           for p in plants if (totals.get(("fixed_overhead", p["code"])) or {}).get("cost")}
+                by.setdefault((r["pool_code"], r["plant_code"]), {}).setdefault(r["period"], {})["cost"] = r["cost"]
+            cases = """(select material_code, period, sum(cases) c from plan.demand_financialised where version_id = ? group by all)"""
+            for r in q(f"""select s.plant_code, s.pool_code, s.component, s.period, sum(s.per_case * d.c) / nullif(sum(d.c), 0) per_case, sum(s.per_case * d.c) as "cost"
+                           from plan.planned_unit_cost_pool s join {cases} d using (material_code, period)
+                           where s.version_id = ? group by all""", version, version):
+                f = by.setdefault((r["pool_code"], r["plant_code"]), {}).setdefault(r["period"], {})
+                f["per_case"] = r["per_case"]
+                if r["component"] in ("material", "labour"):  # no schedule line: the plan's cases × the cost per case
+                    f["cost"] = r["cost"]
+            comp_name = dict(COMPONENTS)
+            pname = {p["code"]: p["name"] for p in plants}
+            reach = {"material": "read from the input", "labour": "read from the route"}
+            rows = [{"code": f"{pl['pool_code']}~{p['code']}", "label": pl["pool_name"], "lvl": None,
+                     "level": " · ".join(x for x in [comp_name.get(pl["component"], ""), p["name"], pl.get("reaches") or "",
+                                                     f"{cells[pl['pool_code']]} cells" if cells.get(pl["pool_code"]) else reach.get(pl["component"], "")] if x),
+                     "attrs": {"component": pl["component"], "plant": p["code"]}, "by": by[(pl["pool_code"], p["code"])]}
+                    for pl in ps if pl["component"] for p in plants if (pl["pool_code"], p["code"]) in by]
+            measures = [Measure("per_case", "per case", shown="price", year=None, total=False), Measure("cost", "cost", shown="money")]
+            filters = [Filter("component", "component", tuple((c, l) for c, l in COMPONENTS if c and any(r["attrs"]["component"] == c for r in rows))),
+                       Filter("plant", "plant", tuple((p["code"], p["name"]) for p in plants))]
+            g = figures.table("pools", rows, measures, "per_case", figures.columns(reads.version_periods(version), actuals=False, quarters=False),
+                              row_head="Pool at a plant", filters=filters, total="Every pool", year_says="plan periods", empty="No pool carries a cost on this plan.")
+            fixed = {p: sum((f.get("cost") or 0) for (pc, pl), per in by.items() if pl == p for f in per.values()
+                            if next((x["component"] for x in ps if x["pool_code"] == pc), None) == "fixed_overhead") for p in pname}
+            other = {p: sum((f.get("cost") or 0) for f in (by.get(("OTHER_FACTORY", p)) or {}).values()) for p in pname}
+            other_share = [(pname[p], other[p] / fixed[p]) for p in pname if fixed.get(p)]
             not_cogs = q("""select sum(s.amount) a from plan.opex_schedule s join plan.cost_pool_cell c using (entity_code, cost_centre_code, account_code)
                             where s.version_id = ? and c.pool_code = 'NOT_COGS'""", version)[0]["a"]
-            pools_by = {comp: [] for comp, _ in COMPONENTS}
-            for pl in ps:
-                pools_by[pl["component"]].append({**pl, "cells": cells.get(pl["pool_code"], 0)})
             waiting = q("select count(*) n from plan.worklist_cost_pool_unmapped")[0]["n"]
-            return page(MACRO + POOLS, title="Cost pools", active="pools_set", version=version, period=period, plants=plants, components=COMPONENTS,
-                        pools_by=pools_by, figs=figs, totals=totals, other_share=other_share, not_cogs=not_cogs, n_sched=len(sched), waiting=waiting)
+            return page(figures.MACROS + MACRO + POOLS, title="Cost pools", active="pools_set", width="none", version=version, g=g,
+                        other_share=other_share, not_cogs=not_cogs, waiting=waiting)
         except Busy as e:
             return busy("Cost pools", e)
 

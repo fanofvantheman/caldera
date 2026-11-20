@@ -12,7 +12,8 @@ A page declares to it (`table`):
   measure, each a line under its group (volume, value, …), and no measure is chosen;
 - its **filters** — a choice on what the rows carry, and part of a name typed; a filter narrows the rows and never
   changes a figure;
-- whether its cells may be typed, and where a typed figure goes (`posted` reads the form back).
+- whether its cells may be typed, and where a typed figure goes (`posted` reads the form back);
+- a mark on a figure: a row's `<measure>_cls` in a period is added to the cell's class (over, near).
 
 A page whose rows are made its own way (a working copy that recalculates as it is typed) builds the same row and cell
 dicts and draws them with the same macros (`MACROS`):
@@ -136,6 +137,8 @@ def table(id: str, rows: list[dict], measures: list[Measure], lead: str, cols: d
                     x["title"] = f.get("typed_title") or "typed over the calculated figure"
                 if m.note and f.get(m.note):
                     x["src"] = f[m.note]
+                if f.get(m.key + "_cls"):                # a mark the page puts on a figure (over, near)
+                    x["cls"] += " " + f[m.key + "_cls"]
                 if editable and m.input and r.get("typed_here", True) and p["period"] in plan_periods and f:
                     x["input"], x["value"], x["live"] = f"{m.key}|{r['code']}|{p['period']}", input_value(m, v), None
             out.append(x)

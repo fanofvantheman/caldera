@@ -20,6 +20,9 @@ from flask import request
 from calc import inventory as I
 from calc import purchases as P
 
+from . import figures
+from .figures import Filter, Measure
+
 SHOCKS = {"sales": "sales against plan", "intake": "campaign intake above plan"}
 
 PAGE = """<h1>Storage<small>{{ version|plan }} · pallet positions against capacity by node and class, at each period's peak</small></h1>
@@ -32,15 +35,11 @@ PAGE = """<h1>Storage<small>{{ version|plan }} · pallet positions against capac
 <label>for periods<input name="n" type="number" min="1" value="{{ st.n or 3 }}"></label>
 <label>production held for<input name="hold" type="number" min="0" value="{{ st.hold if st.hold is not none else 1 }}"> periods</label>
 <div class="actions"><button class="act">Read it</button>{% if st.on %} <a href="{{ url_for('plan.storage') }}">clear</a>{% endif %}</div></form>
-{% for n in nodes %}<h2>{{ n.name }}</h2><div style="overflow-x:auto"><table class="stock"><thead><tr><th>Class</th><th></th>{% for p in periods %}<th class="n">{{ p[2:4] }}·{{ p[5:] }}</th>{% endfor %}</tr></thead><tbody>
-{% for c in n.classes %}<tr class="first"><td rowspan="{{ 4 if st.on else 3 }}"><b>{{ c.storage_class }}</b><div class="small muted">{% if c.own %}{{ '{:,.0f}'.format(c.own) }} own · limit {{ '{:.0%}'.format(c.limit) if c.limit else '—' }}{% if c.overflow %} · overflow {{ '{:,.0f}'.format(c.overflow) }} at {{ '{:.2f}'.format(c.rate) }}{% endif %}{% else %}no capacity declared{% endif %}</div></td>
-<td class="small">pallets at peak</td>{% for p in periods %}{% set x = c.by.get(p) %}<td class="n">{{ '{:,.0f}'.format(x.peak_pallets) if x else '' }}</td>{% endfor %}</tr>
-<tr><td class="small">Utilisation</td>{% for p in periods %}{% set x = c.by.get(p) %}<td class="n {{ 'over' if x and x.utilisation and x.utilisation > 1 }}{{ ' near' if x and x.utilisation and c.limit and x.utilisation > c.limit and x.utilisation <= 1 }}">{{ '{:.0%}'.format(x.utilisation) if x and x.utilisation is not none else '' }}</td>{% endfor %}</tr>
-{% if st.on %}<tr><td class="small"><b>with the shock</b></td>{% for p in periods %}{% set y = c.shock.get(p) %}<td class="n {{ 'over' if y and y > 1 }}">{{ '{:.0%}'.format(y) if y is not none else '' }}</td>{% endfor %}</tr>{% endif %}
-<tr><td class="small muted">overflow cost</td>{% for p in periods %}{% set x = c.by.get(p) %}<td class="n small muted">{{ '{:,.0f}'.format(x.overflow_cost) if x and x.overflow_cost else '' }}</td>{% endfor %}</tr>{% endfor %}
-</tbody></table></div>{% endfor %}
+{{ grid_choice(g) }}
+{{ grid_table(g) }}
 <p class="hint">{{ first_over or 'No class goes over its own positions within the plan.' }} Pallets: finished goods at their cases a position (800 kg net); raw materials at their units a position. A stress test of sales holds production as planned for the periods you give, then lets it follow demand again; the raw materials are read as planned. A campaign intake shock buys that much more of each campaign material in its window. A shock worth keeping is a scenario — a Plan of its own, made the way Plans are.</p>
-<style>table.stock td{white-space:nowrap}table.stock td.over{font-weight:700;color:var(--bad,#a33)}table.stock td.near{font-weight:600}table.stock tr.first td{border-top:1px solid var(--rule)}</style>"""
+<p class="hint">A row is a storage class at a node; its name's line says its own positions, the working limit and the overflow tier. Utilisation over the own tier is bold, over the working limit a little less so. The year is its plan periods: the overflow cost summed; pallets and utilisation are not added.</p>
+{{ grid_style() }}"""
 
 
 def _shocked_demand(inp: dict, pct: float, periods: set[str]) -> dict:
@@ -126,16 +125,30 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 for (node, cls, p), v in peak.items():
                     if caps.get((node, cls)):
                         shock[(node, cls)][p] = v / caps[(node, cls)]
-            nodes = []
+            # one table, a class at a node a row (DEC-20261119-05): utilisation leading, a row opening to the rest
+            rows = []
             for node in sorted({r["node_code"] for r in load}, key=lambda n: (names.get(n, ("", ""))[1] != "plant", n)):
-                classes = []
                 for cls in ("ambient", "chilled", "frozen"):
                     rs = [r for r in load if r["node_code"] == node and r["storage_class"] == cls]
                     if not rs:
                         continue
-                    classes.append({"storage_class": cls, "own": rs[0]["own_pallets"], "limit": rs[0]["working_limit"], "overflow": rs[0]["overflow_pallets"],
-                                    "rate": rs[0]["overflow_rate"], "by": {r["period"]: r for r in rs}, "shock": shock.get((node, cls), {})})
-                nodes.append({"name": names.get(node, (node,))[0], "classes": classes})
+                    own, limit, ovf, rate = rs[0]["own_pallets"], rs[0]["working_limit"], rs[0]["overflow_pallets"], rs[0]["overflow_rate"]
+                    by = {}
+                    for r in rs:
+                        u, y = r["utilisation"], shock.get((node, cls), {}).get(r["period"])
+                        by[r["period"]] = {**r, "shocked": y, "overflow_cost": r["overflow_cost"] or None,
+                                           "utilisation_cls": "over" if u and u > 1 else "near" if u and limit and u > limit else "",
+                                           "shocked_cls": "over" if y and y > 1 else ""}
+                    rows.append({"code": f"{node}~{cls}", "label": f"{names.get(node, (node,))[0]} — {cls}",
+                                 "level": (f"{own:,.0f} own · limit {limit:.0%}" if limit else f"{own:,.0f} own · limit —") + (f" · overflow {ovf:,.0f} at {rate:.2f}" if ovf else "") if own else "no capacity declared",
+                                 "attrs": {"node": node, "class": cls}, "by": by})
+            measures = [Measure("utilisation", "utilisation", shown="pct", year=None, total=False)] + \
+                       ([Measure("shocked", "with the shock", shown="pct", year=None, total=False)] if st["on"] else []) + \
+                       [Measure("peak_pallets", "pallets at peak", year=None, total=False), Measure("overflow_cost", "overflow cost", shown="money")]
+            filters = [Filter("node", "node", tuple((n, names.get(n, (n,))[0]) for n in sorted({r["attrs"]["node"] for r in rows}))),
+                       Filter("class", "class", tuple((x, x) for x in ("ambient", "chilled", "frozen") if any(r["attrs"]["class"] == x for r in rows)))]
+            g = figures.table("sto", rows, measures, "utilisation", figures.columns(reads.version_periods(version), actuals=False, quarters=False),
+                              row_head="Node and class", filters=filters, total="Every node", year_says="plan periods", empty="No storage declared.")
             over = [r for r in load if r["own_pallets"] and r["peak_pallets"] > r["own_pallets"]]
             first = min(over, key=lambda r: r["period"]) if over else None
             cost = sum(r["overflow_cost"] or 0 for r in load)
@@ -144,7 +157,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                       "says": f"{worst['storage_class']} at {names.get(worst['node_code'], (worst['node_code'],))[0]} in {worst['period']}" if worst else ""},
                      {"label": "Overflow over the plan", "show": f"${cost:,.0f}", "says": "pallets over the own tier × the overflow rate × the weeks"},
                      {"label": "Periods over the own tier", "show": str(len(over)), "says": "node × class × period"}]
-            return page(PAGE, title="Storage", active="storage", width="none", version=version, nodes=nodes, periods=periods, shocks=SHOCKS, st=st, cards=cards,
+            return page(figures.MACROS + PAGE, title="Storage", active="storage", width="none", version=version, g=g, periods=periods, shocks=SHOCKS, st=st, cards=cards,
                         first_over=(f"The first period a class goes over its own positions: {first['storage_class']} at {names.get(first['node_code'], (first['node_code'],))[0]} in {first['period']}, "
                                     f"{first['over_own']:,.0f} pallets over at {first['overflow_rate'] or 0:.2f} a pallet a week." if first else None))
         except Busy as e:
