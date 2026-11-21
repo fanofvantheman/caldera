@@ -91,11 +91,15 @@ def _columns(table: str) -> list[str]:
 def copies(base: str, new: str) -> dict[str, list[dict]]:
     """Every act in force on the base, as a row of its own register on the new version: a new id (`<id>@<version>`,
     the original's prefix kept, so what reads the kind of an id still reads it), the author and time of the act it came
-    from, and that act named. The base's own assumption values come too, as the new version's values (from ALL)."""
+    from, and that act named. The base's own assumption values come too, as the new version's values (from ALL).
+    Where a copy of purchasing's receipts stands in the base, that copy is carried across instead (`purchasing_plan.carry`,
+    DEC-20261121-02) and the base's typed purchases are not copied: on a plan with a standing copy it is all that is read."""
+    from . import purchasing_plan
+    skip = {"reg_purchase_act"} if purchasing_plan.standing(base) else set()
     out: dict[str, list[dict]] = {}
     for table, _, ids, sql in COPIES:
         rows = []
-        for r in q(sql, base):
+        for r in ([] if table in skip else q(sql, base)):
             r = {k: v for k, v in r.items() if not k.startswith("_dlt") and k not in ("source_file", "file_row_number")}
             origin = r.get(ids[0]) if ids else f"{base}:{r.get('event_id')}"
             for c in ids:
@@ -138,7 +142,7 @@ PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its 
 {% if last and last.act in ('version.close', 'version.reopen', 'version.horizon', 'version.name', 'version.promote') %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else '✕' }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 <p class="hint"><b>Actual to</b> is the last period a version treats as actual, fixed when it was named: every grid on the version shows the periods of its year up to it as actuals, marked and never typed, by anyone — a later close does not move it; a later close is a new version. <b>Horizon</b> is how far the plan runs after it, past the year end where it reaches, and it is the version's own. <b>Calculated</b> is how far the plan's models calculate on the version; a horizon never runs past it.</p>
-{% if may_name %}<h2>Name a version from another<span class="count">a copy of what was decided on it; what arrived from outside is read, not copied</span></h2>
+{% if may_name %}<h2>Name a version from another<span class="count">a copy of what was decided on it; what arrived from outside is read, not copied · <a href="{{ url_for('plan.plan_start') }}">start a plan</a> shows what is carried across first</span></h2>
 <form class="entry" method="post" action="{{ url_for('plan.version_name') }}">
 <label>from<select name="base_version">{% for v in versions if v.version_kind != 'actual' %}<option value="{{ v.version_id }}" {{ 'selected' if v.is_latest_view }}>{{ v.version_id }} · {{ v.status }} · actual to {{ v.from_period }}</option>{% endfor %}</select></label>
 <label>code<input name="version_id" size="16" placeholder="{{ suggest }}" pattern="[A-Z0-9][A-Z0-9-]+"></label>
@@ -162,6 +166,66 @@ PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its 
 {% for a in acts %}<tr><td class="small">{{ (a.entered_on or '')[:16].replace('T', ' ') }}</td><td>{{ a.version_id }}</td><td>{{ a.act }}{% if a.act == 'horizon' %} to {{ a.horizon_periods }} periods{% elif a.act == 'name' %} from {{ a.base_version }}, actual to {{ a.from_period }}{% if takes.get(a.version_id) %} <span class="small muted">· reads {{ takes[a.version_id] }} arrivals of its base's</span>{% endif %}{% elif a.act == 'promote' %} to the latest view{% elif a.act == 'port' %} from {{ a.base_version }}{% endif %}</td><td class="small">{{ a.entered_by }}</td><td class="small">{{ a.reason or '' }}</td></tr>
 {% else %}<tr><td colspan="5" class="muted">No version has been closed or reopened.</td></tr>{% endfor %}
 {% for w in waiting %}<tr><td class="small">{{ w.entered_on[:16].replace('T', ' ') }}</td><td>{{ w.version_id }}</td><td>{{ w.act }} <span class="small muted">placed, waiting for the run</span></td><td class="small">{{ w.entered_by }}</td><td class="small">{{ w.reason }}</td></tr>{% endfor %}</tbody></table>"""
+
+
+# Start a plan (DEC-20261121-02): the same act as naming a version from another, from the IBP side's own entry — what will be
+# carried across shown before, and the same list of parts as it stands in a plan afterwards. Purchasing is the one part that
+# stands as a copy today; the rest of the plan is carried by naming as before.
+START = """<h1>Start a plan<small>a new IBP plan begins as the prior plan carried across · each planner then replaces their part when they are ready</small></h1>
+<h2><span class="step">1</span>The new plan</h2>
+<div class="card"><form class="entry" method="post" action="{{ url_for('plan.version_name') }}" id="start"><input type="hidden" name="back" value="start">{% if request.args.get('version') %}<input type="hidden" name="version" value="{{ request.args.get('version') }}">{% endif %}
+<label>Name <input name="version_id" value="{{ request.args.get('version_id', '') }}" placeholder="{{ suggest }}" pattern="[A-Z0-9][A-Z0-9-]+"><span class="hint">a code, {{ suggest }} if left empty; the plan reads by its cycle and its actual months, as every plan does</span></label>
+<label>Carry across from <select name="base_version" onchange="redraw(this.form)">{% for v in bases %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == base.version_id }}>{{ v.version_id|planfull }}{{ ' — the latest view' if v.is_latest_view }}{{ ' · closed' if v.status != 'open' }}</option>{% endfor %}</select><span class="hint">what stands in that plan is copied into this one, part by part</span></label>
+<label>Actuals to <select name="from_period" onchange="redraw(this.form)">{% for pp in from_points %}<option value="{{ pp }}" {{ 'selected' if pp == from_p }}>{{ per(pp) }}{{ ' — the latest closed' if pp == last_closed }}</option>{% endfor %}</select><span class="hint">periods to this close are the record; nothing planned for them is carried</span></label>
+<label>Plans through <input value="{{ per(st.through) if st.through else 'nothing to plan' }}" disabled><span class="hint">as far as {{ base.version_id|plan }} plans, within what the plan calculates</span></label>
+<label class="wide">Why <input name="reason" required value="{{ request.args.get('reason', '') }}" placeholder="the next cycle, or a what-if"></label>
+<div class="actions">{% if may_name %}<button class="primary" onclick="this.textContent='Starting…'">Start the plan</button>{% else %}<span class="muted small">Plans are started by {{ holders|join(', ') or 'nobody yet' }}.</span>{% endif %}<span class="hint">the plan is whole from the first moment: its figures are worked out from what was carried across, against the new close</span></div>
+</form></div>
+<script>function redrawn(f){const u=new URLSearchParams();for(const k of ['version','version_id','reason']){const e=f.elements[k];if(e&&e.value)u.set(k,e.value)}u.set('base',f.elements.base_version.value);u.set('actuals_to',f.elements.from_period.value);return u.toString()}
+function redraw(f){location.search=redrawn(f)}</script>
+
+<h2><span class="step">2</span>What will be carried across<span class="count">from {{ base.version_id|planfull }} · shown before you start</span></h2>
+<table class="board"><thead><tr><th></th><th>Part of the plan</th><th>Sent by</th><th>Standing in the prior plan</th><th class="n">Carried</th><th>Left behind</th></tr></thead><tbody>
+{% if carry %}{% set w = carry.was %}<tr><td class="mark">●</td><td><b>Purchasing</b><div class="small muted">{{ pn(plants_of(w.receipts)) or 'no plant' }}</div></td><td class="small">{{ (w.carried or {}).by or w.by }}</td>
+<td>{{ w.source }}<div class="small muted">{% if w.carried %}carried across from {{ w.carried.from|planfull }} · sent {{ when(w.carried.at) }}{% else %}sent {{ when(w.at) }}{% endif %}</div></td>
+<td class="n">{{ n(carry.receipts|length, 'receipt') }}</td>
+<td class="small">{% for r in carry.left_behind %}<div>{{ names.get(r.input_code, r.input_code) }}, {{ plants.get(r.plant_code, r.plant_code) }}, {{ per(r.period) }} — {{ r.why }}</div>{% else %}<span class="muted">nothing</span>{% endfor %}</td></tr>
+{% else %}<tr><td class="mark">○</td><td><b>Purchasing</b></td><td></td><td class="muted">nothing stands in {{ base.version_id|plan }}<div class="small">nothing is carried; the new plan proposes every receipt until purchasing sends one</div></td><td class="n">—</td><td></td></tr>{% endif %}
+</tbody></table>
+<p class="hint">Each part is copied as it stands in the prior plan — the facts its planner sent, not the figures worked out from them. A copy carried across is read-only, like any other. What was planned for a period that has since closed is left behind and named here. The rest of the plan is carried with it as before: everything still standing on {{ base.version_id|plan }} — the demand plan's entries, Finance's figures, the opex schedule, the assumptions, the promotions typed here — each under the name of whoever made it.</p>
+
+{% if here %}<h2><span class="step">3</span>What stands in {{ here.version_id|planfull }}<span class="count">the same list, as it stands now · the plan chosen above</span></h2>
+<div class="cards">
+<div class="card stat"><span>Parts</span><b>{{ parts|length }}</b><div class="small muted">one copy standing in each</div></div>
+<div class="card stat"><span>Sent for this plan</span><b>{{ parts|selectattr('sent')|list|length }}</b><div class="small muted">{{ parts|selectattr('sent')|map(attribute='name')|join(' · ') or 'none yet' }}</div></div>
+<div class="card stat"><span>Still as carried across</span><b>{{ parts|selectattr('carried')|list|length }}</b><div class="small muted">{{ parts|selectattr('carried')|map(attribute='name')|join(' · ') or 'none' }}</div></div>
+</div>
+<table class="board"><thead><tr><th></th><th>Part of the plan</th><th>Sent by</th><th>Standing now</th><th>Since</th><th class="n">Holds</th><th></th></tr></thead><tbody>
+{% for x in parts %}{% set s = x.held %}<tr><td class="mark">{{ '○' if x.carried else '●' }}</td><td><b>{{ x.name }}</b><div class="small muted">{{ pn(plants_of(s.receipts)) or 'no plant' }}</div></td><td class="small">{{ (s.carried or {}).by or s.by }}</td>
+{% if x.carried %}<td class="muted">carried across from {{ s.carried.from|planfull }}<div class="small">{{ s.source }}, sent {{ when(s.carried.at) }}{% if s.carried.left_behind %} · left behind: {% for r in s.carried.left_behind %}{{ names.get(r.input_code, r.input_code) }}, {{ plants.get(r.plant_code, r.plant_code) }}, {{ per(r.period) }} — {{ r.why }}{{ '; ' if not loop.last }}{% endfor %}{% endif %}</div></td>
+{% else %}<td>{{ s.source }}<div class="small muted">sent for this plan{% if s.made_against %} · made against {% for c in s.made_against.copies %}consumption at {{ plants.get(c.plant, c.plant) }} from {{ c.source|plan }} of {{ when(c.taken_at) }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}</div></td>{% endif %}
+<td class="small">{{ when(s.at) }}</td><td class="n">{{ n(s.receipts|length, 'receipt') }}</td><td class="acts"><form class="inline" method="get" action="{{ url_for('plan.material_stock') }}"><input type="hidden" name="version" value="{{ here.version_id }}"><button class="act">View</button></form></td></tr>
+{% else %}<tr><td class="mark">○</td><td><b>Purchasing</b></td><td></td><td class="muted" colspan="4">nothing stands in {{ here.version_id|plan }} — its receipts are proposed, or typed on it as before</td></tr>{% endfor %}
+</tbody></table>
+<p class="hint">● sent for this plan · ○ still as carried across. One copy stands in each part; a planner sending again replaces it, and nothing earlier is kept. The plan's figures are worked out again from what stands whenever a part is replaced. Closing the plan closes every part with it.</p>{% endif %}
+{% if last and last.act == 'version.name' %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok and not c.flag else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+<style>h2 .step{display:inline-grid;place-items:center;width:1.5rem;height:1.5rem;margin-right:.5rem;border:1px solid var(--ink);border-radius:50%;font:400 .8rem var(--sans);vertical-align:.15em}
+table.board td.mark{width:1.4rem;color:var(--muted)}</style>"""
+
+
+def starting(base: dict, from_p: str) -> dict:
+    """What a version named from `base` with actuals to `from_p` will plan, as naming sets it: its first plan period, its
+    horizon — the base's, within what the models calculate — and the plan periods that horizon covers."""
+    known = bool(from_p) and bool(q("select 1 from dims.dim_period where period = ?", from_p))
+    later = bool(base) and from_p != base.get("from_period")
+    start = base.get("horizon_start")
+    if later and known:
+        start = (q("select min(period) p from dims.dim_period where period > ?", from_p) or [{}])[0].get("p")
+    reach = q("select count(*) n from dims.dim_period where period > ? and period <= ?", from_p, base.get("horizon_end") or "")[0]["n"] if known else 0
+    horizon = min(int(base.get("horizon_periods") or 0), reach)
+    periods = [r["period"] for r in q("select period from dims.dim_period where period > ? order by period limit ?", from_p, horizon)] if known and horizon else []
+    return {"known": known, "later": later, "start": start, "horizon": horizon, "periods": periods, "through": periods[-1] if periods else None}
 
 
 def suggest_code(base: str, base_from: str | None, taken: list[str], from_period: str | None = None) -> str:
@@ -222,6 +286,38 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
         except Busy as e:
             return busy("Versions", e)
 
+    @bp.get("/versions/start")
+    def plan_start():
+        """Start a plan: the naming act's own entry on the IBP side — what will be carried across from the base, before,
+        and what stands in the plan chosen above, after (DEC-20261121-02)."""
+        try:
+            from . import purchasing_plan
+            from .purchases import per, when
+            who = who_fn()
+            bases = [v for v in reads.versions() if v.get("version_kind") != "actual"]
+            latest = next((v for v in bases if v.get("is_latest_view")), bases[0] if bases else {})
+            base = next((v for v in bases if v["version_id"] == request.args.get("base")), latest)
+            last_closed = (q("select max(period) p from dims.dim_period where period_state = 'CLOSED'") or [{}])[0].get("p") or ""
+            from_points = [r["period"] for r in q("select period from dims.dim_period where period >= ? and period <= ? order by period",
+                                                   base.get("from_period") or "", last_closed)] or [base.get("from_period")]
+            from_p = request.args.get("actuals_to") if request.args.get("actuals_to") in from_points else from_points[-1]
+            st = starting(base, from_p)
+            taken = [v["version_id"] for v in reads.versions()] + [w.get("version_id") for w in _waiting() if w.get("act") == "name"]
+            here = reads.version(request.args.get("version") or "") or reads.version(reads.default_version() or "")
+            s = purchasing_plan.standing(here["version_id"]) if here else None
+            parts = [{"name": "Purchasing", "held": s, "carried": bool((s.get("carried") or {}).get("from")), "sent": not (s.get("carried") or {}).get("from")}] if s else []
+            plants = {r["node_code"]: r["node_name"] for r in q("select node_code, node_name from dims.dim_node")}
+            names = {r["material_code"]: r["material_name"] for r in q("select material_code, material_name from dims.dim_input_material")}
+            return page(START, title="Start a plan", active="start", width="1240px", bases=bases, base=base, from_points=from_points, from_p=from_p,
+                        last_closed=last_closed, st=st, suggest=suggest_code(base.get("version_id") or "", base.get("from_period"), taken, from_p),
+                        carry=purchasing_plan.carried(base.get("version_id") or "", from_p, st["periods"]), here=here, parts=parts,
+                        may_name=roles.may(who, HORIZON_VERB), holders=reads.holders(HORIZON_VERB), plants=plants, names=names,
+                        plants_of=lambda rs: sorted({r["plant_code"] for r in rs or []}),
+                        pn=lambda codes: " and ".join(plants.get(c, c) for c in codes),
+                        n=lambda k, w: f"{k} {w}{'' if k == 1 else 's'}", per=per, when=when, last=session.last, receipt_acts=("version.name",))
+        except Busy as e:
+            return busy("Start a plan", e)
+
     def _act(kind: str):
         f = request.form; who = who_fn(); vid = f.get("version_id", ""); reason = (f.get("reason") or "").strip()
         v = reads.version(vid) or {}
@@ -273,13 +369,9 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
         from_p = (f.get("from_period") or base.get("from_period") or "").strip()
         code = (f.get("version_id") or "").strip().upper() or suggest_code(base_id, base.get("from_period"), taken, from_p)
         last_closed = (q("select max(period) p from dims.dim_period where period_state = 'CLOSED'") or [{}])[0].get("p") or ""
-        known = bool(q("select 1 from dims.dim_period where period = ?", from_p))
-        later = bool(base) and from_p != base.get("from_period")
-        start = base.get("horizon_start")
-        if later and known:
-            start = (q("select min(period) p from dims.dim_period where period > ?", from_p) or [{}])[0].get("p")
-        reach = q("select count(*) n from dims.dim_period where period > ? and period <= ?", from_p, base.get("horizon_end") or "")[0]["n"] if known else 0
-        horizon = min(int(base.get("horizon_periods") or 0), reach)
+        st = starting(base, from_p)
+        known, later, start, horizon = st["known"], st["later"], st["start"], st["horizon"]
+        back = "plan.plan_start" if f.get("back") == "start" else "plan.versions"
         may = roles.may(who, HORIZON_VERB)
         checks = [
             {"check": "who may name a version", "ok": may, "says": f"{who} holds {said(HORIZON_VERB)}" if may else f"{who} does not hold {said(HORIZON_VERB)} — versions are named by {', '.join(reads.holders(HORIZON_VERB)) or 'nobody yet'}"},
@@ -310,6 +402,13 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
                 if past:
                     checks.append({"check": "copied into what is now actual", "ok": False, "flag": True,
                                    "says": f"{past} copied entries, figures and months start in or before {from_p}: they are refused there, kept on record"})
+        from . import purchasing_plan
+        carry = purchasing_plan.carried(base_id, from_p, st["periods"]) if rows else None
+        if carry:
+            left = carry["left_behind"]
+            checks.append({"check": "purchasing's copy carried", "ok": True, "flag": bool(left),
+                           "says": f"{len(carry['receipts'])} receipt{'s' if len(carry['receipts']) != 1 else ''} of “{carry['was']['source']}”, standing in {base_id}"
+                                   + (" · left behind: " + "; ".join(f"{r['input_code']} at {r['plant_code']} in {r['period']} — {r['why']}" for r in left) if left else "")})
         placed = receipts.judge(checks)
         if placed:
             now = dt.datetime.now(); stamp = now.strftime('%Y%m%d-%H%M%S-%f'); when = now.isoformat(timespec="seconds")
@@ -325,13 +424,15 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
             for table, rs in rows.items():
                 if rs:
                     LogLanding("plan", table, _columns(table)).place(rs, who)
+            if carry:
+                purchasing_plan.carry(base_id, code, from_p, st["periods"], who)
         session.last = receipts.write("version.name", who, code, checks, placed)
         if not placed:
             session.say("not named: " + "; ".join(c["says"] for c in checks if not c["ok"] and not c.get("flag")), False)
-            return redirect(url_for("plan.versions"))
+            return redirect(url_for(back, base=base_id, actuals_to=from_p) if back == "plan.plan_start" else url_for(back))
         if run_plan(who, ""):
             session.say(f"{code} named from {base_id}, actual to {from_p} — a copy of what stands on {base_id}; the two are independent from now", True)
-            return redirect(url_for("plan.versions"))
+            return redirect(url_for(back, version=code) if back == "plan.plan_start" else url_for(back))
         return redirect(url_for("plan.run"))
 
     @bp.post("/versions/promote")

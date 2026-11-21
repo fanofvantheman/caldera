@@ -100,6 +100,8 @@ PROCESSES = [
             Section("scenarios", "Scenarios", RUNG, {"slug": "scenarios"}, verbs=["scenario.create", "scenario.promote", "decision.accept"]),
         ]),
         Area("management", "Management", [
+            # a new IBP plan begins as the prior plan carried across: the naming act, with what is carried shown before (DEC-20261121-02)
+            Section("start", "Start a plan", "plan.plan_start", verbs=["version.name"], uses=("version",)),
             # plan administration: the plans of the kinds this process owns, each process its own (DEC-20261115-03 a)
             Section("versions", "Plan administration", "plan.versions", verbs=VERSION_VERBS + ["read.plan"], tabs=[
                 Tab("versions", "Plans", "plan.versions", verbs=VERSION_VERBS),

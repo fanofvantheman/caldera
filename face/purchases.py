@@ -54,6 +54,7 @@ PAGE = """{% if finance %}<h1>{{ title }}<small>{{ version|plan }} · {{ where }
 <p class="hint">A row is a key raw material at the plant that holds it, its balance beneath it in volume (its own unit), value and cost basis. The volumes of different materials do not add, so the first row totals the value only. A name's line says its unit, how it is bought and its cover; choose a commodity above the table to read one alone. The year is its plan periods: movements summed, the opening its first period's, the closing its last's; a cost basis is not added. A typed additional receipt is boxed with the proposal beneath it; a closing below zero is marked short.</p>
 {% if others %}<p class="hint">Valued at the price in force, with no stock and no purchase line: {{ others|join(', ') }}.</p>{% endif %}
 {% if not finance %}<h2 id="typed">Typed here<span class="count">{{ drafts|length }} receipt{{ '' if drafts|length == 1 else 's' }} in this plan · {{ n_changed }} new or changed since its last snapshot</span></h2>
+{% if may and clearable %}<form class="form-row" method="post" action="{{ url_for('plan.purchase_clear') }}"><input type="hidden" name="rows" value="{{ clear_rows|join(',') }}"><button class="act" onclick="this.textContent='Clearing…'">Clear the {{ clearable|length }} receipt{{ '' if clearable|length == 1 else 's' }} typed in the rows shown</button><span class="hint">each goes back to what the plan proposes{% if clearable|length != drafts|length %}; {{ drafts|length - clearable|length }} typed in rows not shown stay{% endif %} · nothing in an IBP plan changes until you send a snapshot</span></form>{% endif %}
 {% if drafts %}<table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Why</th><th>By</th><th>Since sent</th><th></th></tr></thead><tbody>
 {% for t in drafts %}<tr><td>{{ names.get(t.input_code, {}).get('material_name') or t.input_code }}</td><td>{{ plants.get(t.plant_code, t.plant_code) }}</td><td>{{ per(t.period) }}</td><td class="n">{{ q0(t.quantity) }}</td><td class="n">{{ pr(t.price) }}</td><td class="small">{{ t.reason }}</td><td class="small">{{ t.entered_by }}</td><td class="small">{{ t.since }}</td>
 <td class="acts">{% if may %}<form class="inline" method="post" action="{{ url_for('plan.purchase_drop') }}"><input type="hidden" name="cell" value="{{ t.input_code }}|{{ t.plant_code }}|{{ t.period }}"><button class="act">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">Nothing typed in this plan.</p>{% endif %}
@@ -154,6 +155,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             drafts = [{**t, "since": ("changed" if purchasing_plan._cell(t) in before else "new") if purchasing_plan._cell(t) in ch else "as last sent"}
                       for t in purchasing_plan.typed(p["id"])]
             n_changed = len(ch)
+        shown_rows = sorted({r["code"] for r in g["rows"] if not r["current"]})           # the rows the table shows: plant, filters, find
+        clearable = [d for d in drafts if f"{d['input_code']}~{d['plant_code']}" in shown_rows]
         buy = sum(r["purchase_value"] or 0 for m in rows.values() for r in m["rows"])        # contracted and additional receipts
         close = [m["rows"][-1]["closing_value"] or 0 for m in rows.values() if m["rows"]]
         cards = [{"label": "Receipts", "show": f"${buy / 1e6:,.2f}M", "says": f"contracted and additional, {len(rows)} key materials over the plan periods"},
@@ -163,7 +166,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         where = plants.get(loc, loc) if loc != "ALL" else ("both plants" if finance else ", ".join(plants.get(x, x) for x in p["plants"]))
         return page(figures.MACROS + MACRO + PAGE, title="Material stock" if finance else "Material balance", active="material_stock" if finance else "purchases", width="none",
                     finance=finance, version=version, p=p, where=where, g=g, others=others, typed=typed, cards=cards, source_says=SOURCE_SAYS, may=may,
-                    last=session.last, receipt_acts=("purchase.type",), drafts=drafts, n_changed=n_changed, names=names, plants=plants,
+                    last=session.last, receipt_acts=("purchase.type", "purchase.clear"), drafts=drafts, clearable=clearable,
+                    clear_rows=sorted({f"{d['input_code']}~{d['plant_code']}" for d in clearable}), n_changed=n_changed, names=names, plants=plants,
                     reads=purchasing_plan.reads_of(p) if p else None, per=per, when=when)
 
     @bp.get("/purchasing/balance")
@@ -253,6 +257,22 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 continue
             changed.setdefault((inp, plant, period), {"quantity": None, "price": None})[field] = x
         return keep(p, changed, bad, (f.get("reason") or "").strip(), who)
+
+    @bp.post("/purchasing/balance/clear")
+    def purchase_clear():
+        """Every receipt typed in the plan for the rows the page showed, cleared in one act — the only way receipts go
+        together without being replaced; each cell shows what the plan proposes again (DEC-20261121-02 (d))."""
+        who = who_fn()
+        p = _plan_posted(who)
+        rows = {tuple(x.split("~", 1)) for x in (request.form.get("rows") or "").split(",") if "~" in x}
+        n = purchasing_plan.clear(p["id"], rows) if p and roles.may(who, VERB) and rows else 0
+        checks = [{"check": "who may plan purchases", "ok": roles.may(who, VERB), "says": f"{who} holds {said(VERB)}" if roles.may(who, VERB) else f"{who} does not hold {said(VERB)}"},
+                  {"check": "a plan of yours", "ok": bool(p), "says": p["name"] if p else "no plan of yours is chosen"},
+                  {"check": "receipts typed in the rows shown", "ok": n > 0, "says": f"{n} cleared — each cell shows what the plan proposes" if n else "nothing typed there"}]
+        session.last = receipts.write("purchase.clear", who, f"{n} receipts", checks, n > 0)
+        session.say(f"{n} typed receipt{'s' if n != 1 else ''} cleared from {p['name']}; the proposal stands again in each — what stands in an IBP plan changes only when a snapshot is sent" if n
+                    else "nothing cleared", bool(n))
+        return redirect(url_for("plan.material_purchases") + "#typed")
 
     @bp.post("/purchasing/balance/drop")
     def purchase_drop():

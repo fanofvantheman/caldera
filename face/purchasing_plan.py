@@ -12,7 +12,9 @@ Where things are — folders under the build's data, the cheapest form (DEC-2026
   workspaces/purchasing/plans/<plan>/receipts.csv     the receipts typed in it — a quantity and a price together
   workspaces/purchasing/plans/<plan>/copies/<copy>/   each copy it has taken, never changed
   workspaces/purchasing/plans/<plan>/sent.json        its own last snapshot: where it went, when, what it carried
-  shared/standing/purchasing/<IBP plan>.json          the one copy standing in an IBP plan, overwritten when replaced
+  shared/standing/purchasing/<IBP plan>.json          the one copy standing in an IBP plan, overwritten when replaced;
+                                                      a plan started from another begins with the other's copy carried
+                                                      across (`carried` names where from), less what it does not plan
   landing/plan/reg_purchase_act/standing-purchasing-<IBP plan>-<moment>.csv
                                                       the same copy in the IBP plan's register of typed purchases; the
                                                       previous file is removed when it is replaced, and on an IBP plan
@@ -378,7 +380,8 @@ def send(version: str, rows: list[dict], source: str, who: str, p: dict | None =
         {"check": "a reason on each", "ok": all(t["reason"] for t in taken), "says": "each receipt says why" if all(t["reason"] for t in taken) else "a receipt with no reason"},
         {"check": "periods the IBP plan plans", "ok": True, "flag": bool(dropped), "says": ("left out: " + "; ".join(dropped)) if dropped else "every period is planned there"},
         {"check": "what it replaces", "ok": True, "flag": bool(gone),
-         "says": (f"replaces {was['source']} of {was['at'].replace('T', ' ')[:16]}" if was else "nothing stood there")
+         "says": ((f"replaces {was['source']}, carried across from {reads.plan_codes().get(was['carried']['from'], (was['carried']['from'],) * 2)[1]}"
+                   if was.get("carried") else f"replaces {was['source']} of {was['at'].replace('T', ' ')[:16]}") if was else "nothing stood there")
                  + (f"; nothing now stands for {', '.join(gone)}" if gone else "")},
     ]
     placed = receipts.judge(checks)
@@ -386,21 +389,69 @@ def send(version: str, rows: list[dict], source: str, who: str, p: dict | None =
     copy = {"version": version, "submitter": SUBMITTER, "plan": p["id"] if p else None, "source": source, "owner": p["owner"] if p else None,
             "by": who, "at": now.isoformat(timespec="seconds"), "receipts": taken, "dropped": dropped,
             "made_against": ({"actuals_to": p["actuals_to"], "copies": [c for c in reads_of(p)["consumption"].values() if c]} if p else None),
-            "replaced": {"source": was["source"], "at": was["at"]} if was else None}
+            "replaced": {"source": was["source"], "at": was["at"], "carried_from": (was.get("carried") or {}).get("from")} if was else None}
     if placed:
-        stamp = now.strftime("%Y%m%d-%H%M%S-%f")
-        for old in ACTS.folder.glob(f"standing-{SUBMITTER}-{version}-*.csv") if ACTS.folder.is_dir() else []:
-            old.unlink()
-        ACTS.folder.mkdir(parents=True, exist_ok=True)
-        marker = {"act_id": f"STD-{stamp}-000", "action": "stand", "version_id": version, "reason": source, "entered_by": who, "entered_at": copy["at"]}
-        _write_csv(ACTS.folder / f"standing-{SUBMITTER}-{version}-{stamp}.csv",
-                   [marker] + [{"act_id": f"STD-{stamp}-{i:03d}", "action": "set", "version_id": version, **t, "entered_by": who, "entered_at": copy["at"]}
-                               for i, t in enumerate(taken, start=1)], ACT_COLUMNS)
-        _standing_dir().mkdir(parents=True, exist_ok=True)
-        (_standing_dir() / f"{version}.json").write_text(json.dumps(copy, indent=1))
+        _place_standing(version, copy, who, now.strftime("%Y%m%d-%H%M%S-%f"))
         if p:
             (_plans_dir() / p["id"] / "sent.json").write_text(json.dumps({"version": version, "at": copy["at"], "receipts": taken}, indent=1))
     return checks, placed, copy
+
+
+def _place_standing(version: str, copy: dict, who: str, stamp: str) -> None:
+    """The copy written as the one standing in an IBP plan: its file of the register of typed purchases (the previous one
+    removed, a marker row so an empty copy still stands) and its record under shared/standing."""
+    for old in ACTS.folder.glob(f"standing-{SUBMITTER}-{version}-*.csv") if ACTS.folder.is_dir() else []:
+        old.unlink()
+    ACTS.folder.mkdir(parents=True, exist_ok=True)
+    marker = {"act_id": f"STD-{stamp}-000", "action": "stand", "version_id": version, "reason": copy["source"], "entered_by": who, "entered_at": copy["at"]}
+    _write_csv(ACTS.folder / f"standing-{SUBMITTER}-{version}-{stamp}.csv",
+               [marker] + [{"act_id": f"STD-{stamp}-{i:03d}", "action": "set", "version_id": version, **t, "entered_by": who, "entered_at": copy["at"]}
+                           for i, t in enumerate(copy["receipts"], start=1)], ACT_COLUMNS)
+    _standing_dir().mkdir(parents=True, exist_ok=True)
+    (_standing_dir() / f"{version}.json").write_text(json.dumps(copy, indent=1))
+
+
+def carried(base: str, actuals_to: str, plan_periods: list[str]) -> dict | None:
+    """What starting a plan from `base` carries of purchasing (DEC-20261121-02 (a)): the copy standing there, as it stands,
+    less each receipt for a period the new plan does not plan — left behind and named: at or before its close, now the
+    record; after its last period, past where it runs. None when nothing stands in the base."""
+    was = standing(base)
+    if not was:
+        return None
+    ps = set(plan_periods)
+    keep = [r for r in was.get("receipts", []) if r["period"] in ps]
+    left = [{**r, "why": "now the record" if r["period"] <= actuals_to else "past where this plan runs"}
+            for r in was.get("receipts", []) if r["period"] not in ps]
+    return {"from": base, "was": was, "receipts": keep, "left_behind": left}
+
+
+def carry(base: str, new: str, actuals_to: str, plan_periods: list[str], who: str) -> dict | None:
+    """The copy standing for purchasing in `base` carried into the new plan `new` as its own standing copy — read-only like
+    any other, replaced by the first send to the new plan. Where it came from is kept on it (`carried`); nothing else
+    marks it."""
+    c = carried(base, actuals_to, plan_periods)
+    if not c:
+        return None
+    was = c["was"]
+    origin = was.get("carried") or {}                   # carried again: it still came from whoever first sent it
+    now = dt.datetime.now()
+    copy = {"version": new, "submitter": SUBMITTER, "plan": None, "source": was["source"], "owner": was.get("owner"),
+            "by": who, "at": now.isoformat(timespec="seconds"), "receipts": c["receipts"], "dropped": [],
+            "made_against": was.get("made_against"), "replaced": None,
+            "carried": {"from": base, "source": was["source"], "by": origin.get("by") or was.get("by"), "at": origin.get("at") or was.get("at"),
+                        "plan": origin.get("plan") or was.get("plan"), "owner": was.get("owner"),
+                        "left_behind": [{k: r[k] for k in ("input_code", "plant_code", "period", "quantity", "price", "why")} for r in c["left_behind"]]}}
+    _place_standing(new, copy, who, now.strftime("%Y%m%d-%H%M%S-%f"))
+    return copy
+
+
+def clear(pid: str, rows: set[tuple[str, str]]) -> int:
+    """Every receipt typed in the plan for the rows given — a material at a plant — taken out in one act, so each of those
+    cells shows what the plan proposes again (DEC-20261121-02 (d)). Returns how many."""
+    have = typed(pid)
+    keep = [r for r in have if (r["input_code"], r["plant_code"]) not in rows]
+    _save_receipts(pid, keep)
+    return len(have) - len(keep)
 
 
 def read_sheet(text: str) -> list[dict]:
