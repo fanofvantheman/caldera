@@ -1,31 +1,25 @@
-"""Material purchases (DEC-20261116-04, DEC-20261120-02 point 7, DEC-20261120-04): the key raw materials' balance —
-opening, consumption, contracted and additional receipts, closing, in volume, value and cost basis — as one table, a
-material at its plant a row and its movements beneath it.
+"""The key raw materials' balance (DEC-20261116-04, DEC-20261120-02 point 7) — opening, consumption, contracted and
+additional receipts, closing, in volume, value and cost basis — as one table, a material at its plant a row and its
+movements beneath it. Two pages over the same function:
 
-Two sides of the same figures:
-- **Material purchases**, under Supply, is the purchasing plan, worked apart from the Plan (face/purchasing_plan.py): it
-  reads consumption from the revision it has taken, the buyer types additional receipts in the workspace, and publishes
-  them; only what is published reaches the Plan, and the rest of its additional receipts the Plan proposes again.
-- **Material stock**, under Financial planning → Cost of goods, is the Plan's balance (plan.material_stock), read only:
-  what the costing takes as given.
+- **Material balance**, under Purchasing, is one of the planner's own purchasing plans (DEC-20261121-01,
+  face/purchasing_plan.py): its balance over the copies it holds and the receipts typed in it — a quantity and a price
+  together. Nothing typed here reaches an IBP plan until a snapshot is sent from My plans.
+- **Material stock**, under Financial planning → Cost of goods, is the IBP plan's balance (plan.material_stock), read
+  only: the receipts standing there taken as fixed, the rest proposed again; what the costing takes as given.
 
 Registered on the plan's blueprint by `register(...)`, called once from `face/__main__.py`."""
 from __future__ import annotations
 
-import datetime as dt
-
 from chassis import receipts
-from chassis.landing import LogLanding
 from chassis.warehouse import Busy, q
 from flask import redirect, request, url_for
 
-from . import figures, overrides, purchasing_plan
+from . import figures, purchasing_plan
 from .figures import Filter, Measure
 from .words import said
 
 VERB = "register.supply_plan.maintain"
-ACT_COLUMNS = ["act_id", "action", "withdraws", "version_id", "input_code", "plant_code", "period", "quantity", "price", "reason", "entered_by", "entered_at"]
-ACTS = LogLanding("plan", "reg_purchase_act", ACT_COLUMNS)
 # one table, a key raw material at its plant a row (DEC-20261119-05), each a movement table — each element a row, in volume,
 # value and cost basis (DEC-20261120-02 point 7, CH's mock); consumption shown as it leaves the stock, below zero
 MEASURES = [Measure("opening_quantity", "opening", year="first", total=False, group="volume"),
@@ -47,32 +41,47 @@ SOURCE_SAYS = {"contract": "contract — what keeps the cover beyond the contrac
                "spot": "spot — what keeps the cover, at the price in force with its index",
                "campaign": "campaign intake — bought in the input's window for what is needed until the next, beyond what is contracted"}
 
-PAGE = """<h1>{{ title }}<small>{{ version|plan }} · {{ where }} · {% if finance %}the Plan's balance, read only — additional receipts planned under Integrated business planning → Supply → <a href="{{ url_for('plan.material_purchases') }}">Material purchases</a> and published into it; the costing takes the consumption cost as given{% else %}the purchasing plan: the key raw materials' balance, worked apart from the Plan and published into it{% endif %}</small></h1>
-<p class="hint">{% if finance %}Each key raw material's balance, period by period: consumption is valued at the period's opening cost basis, and the material cost of a case uses it. Every other input has no stock and is valued at its price in force.{% else %}Each row has one source. The opening is the stock on hand when the plan opens; after it, the period before's closing. Consumption is the cases the plant makes — the <a href="{{ url_for('plan.supply_plan') }}">supply plan</a>'s production requirement — × the bill × the plant's usage assumption, valued at the opening cost basis. Contracted receipts are what is already on order or under contract, at the contract's price. Additional receipts are proposed by how the material is bought — {% for k, v in source_says.items() %}<b>{{ v.split(' — ')[0] }}</b>: {{ v.split(' — ')[1] }}{{ '; ' if not loop.last else '.' }}{% endfor %} The closing is calculated, and is the next period's opening. {% if may %}You plan the additional receipts: type a quantity or a price in its cell over the proposal and keep it with a reason — it changes this balance at once and nothing in the Plan until you publish it. The Plan takes what you typed as typed and proposes the rest of its additional receipts again from its own consumption.{% else %}Additional receipts are planned by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}{% endif %}</p>
-{% if ws %}<div class="pin {{ 'behind' if ws.behind }}"><b>Consumption as of {{ ws.pinned.published_at.replace('T', ' ') if ws.pinned else ws.pin.consumption }}</b> — taken by {{ ws.pin.taken_by }}. {% if ws.behind %}The Plan has published a later consumption ({{ ws.latest.published_at.replace('T', ' ') }}): this balance does not read it until you take it.{% if may %} <form class="inline" method="post" action="{{ url_for('plan.purchase_take') }}"><input type="hidden" name="version" value="{{ version }}"><input type="hidden" name="revision" value="{{ ws.latest.revision }}"><button class="act">Take the latest</button></form>{% endif %}{% else %}It is the latest the Plan has published.{% endif %}</div>{% endif %}
+PAGE = """{% if finance %}<h1>{{ title }}<small>{{ version|plan }} · {{ where }} · the Plan's balance, read only — its additional receipts are the ones purchasing has sent into it, taken as typed, and the rest proposed again; the costing takes the consumption cost as given</small></h1>
+<p class="hint">Each key raw material's balance, period by period: consumption is valued at the period's opening cost basis, and the material cost of a case uses it. Every other input has no stock and is valued at its price in force.</p>
+{% else %}<h1>{{ p.name }}<small>the material balance · actuals to {{ per(p.actuals_to) }} · through {{ per(p.through) }} · {{ where }} · <a href="{{ url_for('plan.purchasing_plans', purchasing=p.id) }}">My plans</a></small></h1>
+<p class="hint">Each row has one source. The opening is the stock on hand at the close of {{ per(p.actuals_to) }}; after it, the period before's closing. Consumption is copied from the IBP plan each plant reads — the cases it makes × the bill × the plant's usage — and valued at the opening cost basis. Contracted receipts are what is already on order or under contract, at the contract's price. Additional receipts are proposed by how the material is bought — {% for k, v in source_says.items() %}<b>{{ v.split(' — ')[0] }}</b>: {{ v.split(' — ')[1] }}{{ '; ' if not loop.last else '.' }}{% endfor %} The closing is calculated, and is the next period's opening. {% if may %}You plan the additional receipts: type a quantity and a price in a cell over the proposal and keep it with a reason — a receipt is a quantity and a price together; one without the other is not taken. It changes this balance at once and nothing in any IBP plan until you send a snapshot from <a href="{{ url_for('plan.purchasing_plans', purchasing=p.id) }}">My plans</a>.{% endif %}</p>
+<div class="card reads"><b>Reads copies, not connections</b> — {% for pl, c in reads.consumption.items() %}consumption at {{ plants.get(pl, pl) }}: {% if c %}{{ c.source|planfull }}, copy of {{ when(c.taken_at) }}{% else %}<b>not received</b>{% endif %}{{ '; ' if not loop.last else '.' }}{% endfor %} A source changing changes nothing here until you refresh.</div>{% endif %}
 <div class="cards">{% for c in cards %}<div class="card stat"><span>{{ c.label }}</span><b>{{ c.show }}</b><div class="small muted">{{ c.says }}</div></div>{% endfor %}</div>
 {{ grid_choice(g) }}
-{% if g.editable %}<form method="post" action="{{ url_for('plan.purchase_type') }}" id="type">{% for k in ('version', 'location') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args.get(k) }}">{% endif %}{% endfor %}{% endif %}
+{% if g.editable %}<form method="post" action="{{ url_for('plan.purchase_type') }}" id="type">{% if request.args.get('location') %}<input type="hidden" name="location" value="{{ request.args.get('location') }}">{% endif %}{% endif %}
 {{ grid_table(g) }}
-{% if g.editable %}<div class="form-row"><label class="small grow">why <input name="reason" placeholder="the quote, the order, the change"></label><button class="primary">Place</button><span class="hint">kept in this purchasing plan by {{ who }}; publish to send it to the Plan</span></div></form>{% endif %}
-<p class="hint">A row is a key raw material at the plant that holds it, its balance beneath it in volume (its own unit), value and cost basis. The volumes of different materials do not add, so the first row totals the value only. A name's line says its unit, how it is bought and its cover; choose a commodity above the table to read one alone. The year is its plan periods: movements summed, the opening its first period's, the closing its last's; a cost basis is not added. A typed additional receipt is boxed with the proposal beneath it; a closing below zero is marked short. The balance walks from the Plan's first plan period: an actual period holds no figure here.</p>
+{% if g.editable %}<div class="form-row"><label class="small grow">why <input name="reason" placeholder="the quote, the order, the change"></label><button class="primary">Keep</button><span class="hint">kept in this plan by {{ who }}; a quantity and a price together</span></div></form>{% endif %}
+<p class="hint">A row is a key raw material at the plant that holds it, its balance beneath it in volume (its own unit), value and cost basis. The volumes of different materials do not add, so the first row totals the value only. A name's line says its unit, how it is bought and its cover; choose a commodity above the table to read one alone. The year is its plan periods: movements summed, the opening its first period's, the closing its last's; a cost basis is not added. A typed additional receipt is boxed with the proposal beneath it; a closing below zero is marked short.</p>
 {% if others %}<p class="hint">Valued at the price in force, with no stock and no purchase line: {{ others|join(', ') }}.</p>{% endif %}
-{% if ws %}<h2 id="publish">Typed here<span class="count">{{ drafts|length }} in this purchasing plan · {{ drafts|selectattr('published', 'equalto', '')|list|length }} not yet published</span></h2>
-{% if drafts %}<table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Why</th><th>By</th><th>Published</th><th></th></tr></thead><tbody>
-{% for t in drafts %}<tr><td>{{ t.input_code }}</td><td>{{ t.plant_code }}</td><td>{{ t.period }}</td><td class="n">{{ q0(t.quantity) }}</td><td class="n">{{ p(t.price) }}</td><td class="small">{{ t.reason }}</td><td class="small">{{ t.entered_by }}</td><td class="small">{{ t.published or 'not yet' }}</td>
-<td>{% if may %}<form class="inline" method="post" action="{{ url_for('plan.purchase_drop') }}"><input type="hidden" name="version" value="{{ version }}"><input type="hidden" name="cell" value="{{ t.input_code }}|{{ t.plant_code }}|{{ t.period }}"><button class="act">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">Nothing typed in this purchasing plan.</p>{% endif %}
-{% if may and is_open %}<form class="form-row" method="post" action="{{ url_for('plan.purchase_publish') }}"><input type="hidden" name="version" value="{{ version }}"><button class="primary" {{ 'disabled' if not drafts|selectattr('published', 'equalto', '')|list }}>Publish to the Plan</button><span class="hint">sends what is not yet published, with what this balance was made against; the Plan proposes the rest again on its next run</span></form>
-<form class="form-row" method="post" enctype="multipart/form-data" action="{{ url_for('plan.purchase_sheet') }}"><input type="hidden" name="version" value="{{ version }}"><label class="small">or receipts from a spreadsheet, saved as CSV — {{ sheet_columns|join(', ') }} <input type="file" name="sheet" accept=".csv"></label><button class="act">Publish the spreadsheet</button></form>{% endif %}{% endif %}
-{% if typed %}<h2>{{ 'In the Plan' if ws else 'Typed' }}<span class="count">{{ typed|length }} standing on {{ version|plan }}</span></h2><table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Why</th><th>By</th><th></th></tr></thead><tbody>
-{% for t in typed %}<tr><td>{{ t.input_code }}</td><td>{{ t.plant_code }}</td><td>{{ t.period }}</td><td class="n">{{ q0(t.quantity) if t.quantity is not none else '' }}</td><td class="n">{{ p(t.price) if t.price is not none else '' }}</td><td class="small">{{ t.reason }}</td><td class="small">{{ t.entered_by }}</td>
-<td>{% if not finance and may and is_open %}<form class="inline" method="post" action="{{ url_for('plan.purchase_withdraw') }}"><input type="hidden" name="act_id" value="{{ t.act_id }}"><input name="reason" required placeholder="why" size="10"> <button class="act">Withdraw</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
-{% if arrivals %}<h2>Published into the Plan<span class="count">the last {{ arrivals|length }}</span></h2><table><thead><tr><th>When</th><th>From</th><th>By</th><th class="n">Taken</th><th>Made against</th><th>Dropped · clashes</th></tr></thead><tbody>
-{% for a in arrivals %}<tr><td class="small">{{ a.at.replace('T', ' ') }}</td><td>{{ a.source }}</td><td class="small">{{ a.by }}</td><td class="n">{{ a.taken|length if a.placed else 'refused' }}</td><td class="small">{{ 'consumption of ' ~ a.made_against[:15] if a.made_against else 'nothing stated' }} · actuals to {{ a.cutoff }}</td><td class="small">{{ (a.dropped + a.clashes)|join('; ') or (a.refused|join('; ')) }}</td></tr>{% endfor %}</tbody></table>{% endif %}
-{% if last and not finance %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
+{% if not finance %}<h2 id="typed">Typed here<span class="count">{{ drafts|length }} receipt{{ '' if drafts|length == 1 else 's' }} in this plan · {{ n_changed }} new or changed since its last snapshot</span></h2>
+{% if drafts %}<table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Why</th><th>By</th><th>Since sent</th><th></th></tr></thead><tbody>
+{% for t in drafts %}<tr><td>{{ names.get(t.input_code, {}).get('material_name') or t.input_code }}</td><td>{{ plants.get(t.plant_code, t.plant_code) }}</td><td>{{ per(t.period) }}</td><td class="n">{{ q0(t.quantity) }}</td><td class="n">{{ pr(t.price) }}</td><td class="small">{{ t.reason }}</td><td class="small">{{ t.entered_by }}</td><td class="small">{{ t.since }}</td>
+<td class="acts">{% if may %}<form class="inline" method="post" action="{{ url_for('plan.purchase_drop') }}"><input type="hidden" name="cell" value="{{ t.input_code }}|{{ t.plant_code }}|{{ t.period }}"><button class="act">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">Nothing typed in this plan.</p>{% endif %}
+{% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
-{{ grid_style() }}<style>.pin{border:1px solid var(--rule);padding:.5rem .7rem;margin:.4rem 0}.pin.behind{border-color:var(--ink)}.pin form{display:inline}.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}</style>"""
+{% elif typed %}<h2>Standing in the Plan<span class="count">{{ typed|length }} receipt{{ '' if typed|length == 1 else 's' }} on {{ version|plan }}</span></h2><table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Why</th><th>By</th></tr></thead><tbody>
+{% for t in typed %}<tr><td>{{ t.input_code }}</td><td>{{ t.plant_code }}</td><td>{{ t.period }}</td><td class="n">{{ q0(t.quantity) if t.quantity is not none else '' }}</td><td class="n">{{ pr(t.price) if t.price is not none else '' }}</td><td class="small">{{ t.reason }}</td><td class="small">{{ t.entered_by }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+{{ grid_style() }}<style>.card.reads{padding:.6rem .9rem;margin:.4rem 0 1rem}.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}</style>"""
 
-MACRO = """{% macro q0(x) %}{{ '' if x is none else '{:,.0f}'.format(x) }}{% endmacro %}{% macro p(x) %}{{ '' if x is none else ('{:,.4f}'.format(x) if x < 1 else '{:,.2f}'.format(x)) }}{% endmacro %}"""
+NONE = """<h1>Material balance<small>a purchasing plan's balance</small></h1>
+<p class="lede">You have no purchasing plan yet. Make one on <a href="{{ url_for('plan.purchasing_plans') }}">My plans</a>; it opens here.</p>"""
+
+MACRO = """{% macro q0(x) %}{{ '' if x is none else '{:,.0f}'.format(x) }}{% endmacro %}{% macro pr(x) %}{{ '' if x is none else ('{:,.4f}'.format(x) if x < 1 else '{:,.2f}'.format(x)) }}{% endmacro %}"""
+
+
+def per(x: str | None) -> str:
+    """A period as a planner reads it: 2027P04 → 2027 P04."""
+    return (x or "").replace("P", " P", 1)
+
+
+def when(x: str | None) -> str:
+    """A moment as a planner reads it: 2026-11-21T10:31:07 → 21 Nov 10:31."""
+    import datetime as dt
+    try:
+        t = dt.datetime.fromisoformat(x or "")
+    except ValueError:
+        return x or ""
+    return f"{t.day} {t:%b %H:%M}"
 
 
 def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
@@ -80,17 +89,23 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
 
     def view(finance: bool):
         c = ctx_fn(); who = who_fn()
-        version = c.get("version") or reads.default_version()
-        loc = c.get("location") or "ALL"
-        v = reads.version(version) or {}
-        ws = None
+        loc = request.args.get("location") or "ALL"
+        p = None
         if finance:                                       # the Plan's balance
+            version = c.get("version") or reads.default_version()
             stock = q("select * from plan.material_stock where version_id = ? order by input_code, plant_code, period", version)
-        else:                                             # the purchasing plan's own, over the consumption it has taken
-            stock, ws = purchasing_plan.balance(version, who)
-            stock = sorted(stock, key=lambda r: (r["input_code"], r["plant_code"], r["period"]))
-        keys = {(k["input_code"], k["plant_code"]): k for k in q("select * from dims.ref_key_material")}
-        names = {r["material_code"]: r for r in q("select material_code, material_name, material_type, base_uom from dims.dim_input_material")}
+            keys = {(k["input_code"], k["plant_code"]): k for k in q("select * from dims.ref_key_material")}
+            names = {r["material_code"]: r for r in q("select material_code, material_name, material_type, base_uom from dims.dim_input_material")}
+            vp = reads.version_periods(version)
+        else:                                             # the purchasing plan's own, over the copies it holds
+            p = purchasing_plan.plan(c.get("purchasing"))
+            if not p or p["owner"] != who:
+                return page(NONE, title="Material balance", active="purchases")
+            version = None
+            stock = sorted(purchasing_plan.balance(p), key=lambda r: (r["input_code"], r["plant_code"], r["period"]))
+            keys = {(k["input_code"], k["plant_code"]): {**k, "cover_periods": purchasing_plan._num(k.get("cover_periods"))} for k in purchasing_plan.structures(p, "dims.ref_key_material")}
+            names = {r["material_code"]: r for r in purchasing_plan.structures(p, "dims.dim_input_material")}
+            vp = purchasing_plan.periods(p)
         plants = {r["node_code"]: r["node_name"] for r in q("select node_code, node_name from dims.dim_node")}
         # the categories whose materials' bill uses each input — what the category filter reads
         cats: dict = {}
@@ -112,7 +127,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 "cats": cats.get(r["input_code"], set()), "source": k.get("source"), "by": {}, "rows": []})
             row["by"][r["period"]] = {**r, "consumption_out": -(r["consumption_quantity"] or 0.0), "consumption_value_out": -(r["consumption_value"] or 0.0),
                                       "proposed_note": f"proposed {r['proposed_quantity']:,.0f}" if r["quantity_typed"] and r.get("proposed_quantity") is not None else None,
-                                      "short_note": "short" if r["short"] else None, "typed_title": "typed over the proposal" + (" — published into the Plan" if finance else " — listed under Typed here")}
+                                      "short_note": "short" if r["short"] else None, "typed_title": "sent by purchasing, taken as typed" if finance else "typed in this plan — listed under Typed here"}
             row["rows"].append(r)
         # a category filter matches an input its materials' bill uses: the row carries the chosen category when it is one of its
         chosen_cat = request.args.get("f_category") or ""
@@ -120,38 +135,43 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             row["attrs"]["category"] = chosen_cat if chosen_cat in row["cats"] else ""
         used = sorted({ct for row in rows.values() for ct in row["cats"]}, key=lambda x: cat_names.get(x, x))
         filters = [Filter("material", "commodity", tuple(sorted({(r["attrs"]["material"], r["label"]) for r in rows.values()}, key=lambda x: x[1]))),
-                   Filter("plant", "plant", tuple((p, plants.get(p, p)) for p in sorted({r["attrs"]["plant"] for r in rows.values()}))),
+                   Filter("plant", "plant", tuple((pl, plants.get(pl, pl)) for pl in sorted({r["attrs"]["plant"] for r in rows.values()}))),
                    Filter("category", "used by", tuple((ct, cat_names.get(ct, ct)) for ct in used)),
                    Filter("type", "type", tuple((t, t.replace("_", " ")) for t in sorted({r["attrs"]["type"] for r in rows.values() if r["attrs"]["type"]}))),
                    Filter("source", "bought", tuple((x, x) for x in sorted({r["attrs"]["source"] for r in rows.values() if r["attrs"]["source"]})))]
-        vp = reads.version_periods(version)
-        may, is_open = roles.may(who, VERB), v.get("status") == "open"
+        may = roles.may(who, VERB)
         g = figures.table("pur", list(rows.values()), MEASURES, "closing_quantity",
                           figures.columns(vp, actuals=False, quarters=False), row_head="Key raw materials", filters=filters, total="Key raw materials",
                           editable=not finance and may, plan_periods=set(vp["plan"]),
-                          year_says="plan periods", empty=f"No key raw material at {plants.get(loc, loc) if loc != 'ALL' else 'either plant'}.", movement=True)
-        others = sorted({names[i]["material_name"] for i in names if i not in {k[0] for k in keys}
-                         and i in {r["component_material"] for r in q("select distinct component_material from dims.ref_bom")}
-                         and names[i]["material_name"]})
-        typed = q("select * from plan.purchase_act where version_id = ? order by input_code, plant_code, period", version)
-        drafts = purchasing_plan.typed(version) if not finance else []
+                          year_says="plan periods", empty=f"No key raw material at {plants.get(loc, loc) if loc != 'ALL' else 'the plants this plan buys for'}.", movement=True)
+        bom = {r["component_material"] for r in q("select distinct component_material from dims.ref_bom")}
+        others = sorted({names[i]["material_name"] for i in names if i not in {k[0] for k in keys} and i in bom and names[i].get("material_name")})
+        typed = q("select * from plan.purchase_act where version_id = ? order by input_code, plant_code, period", version) if finance else []
+        drafts, n_changed = [], 0
+        if p:
+            ch = {purchasing_plan._cell(r) for r in purchasing_plan.changed(p["id"])}
+            before = {purchasing_plan._cell(r) for r in (purchasing_plan.sent(p["id"]) or {}).get("receipts", [])}
+            drafts = [{**t, "since": ("changed" if purchasing_plan._cell(t) in before else "new") if purchasing_plan._cell(t) in ch else "as last sent"}
+                      for t in purchasing_plan.typed(p["id"])]
+            n_changed = len(ch)
         buy = sum(r["purchase_value"] or 0 for m in rows.values() for r in m["rows"])        # contracted and additional receipts
         close = [m["rows"][-1]["closing_value"] or 0 for m in rows.values() if m["rows"]]
-        cards = [{"label": "Receipts", "show": f"${buy / 1e6:,.2f}M", "says": f"contracted and additional, {len(rows)} key materials over {version}'s plan periods"},
+        cards = [{"label": "Receipts", "show": f"${buy / 1e6:,.2f}M", "says": f"contracted and additional, {len(rows)} key materials over the plan periods"},
                  {"label": "Stock at the end", "show": f"${sum(close) / 1e6:,.2f}M", "says": "the key materials' closing value at the last plan period"},
-                 {"label": "Typed", "show": str(len(drafts) if not finance else len(typed)), "says": "additional receipts typed over the proposals" + (" in this purchasing plan" if not finance else ", published into the Plan")}]
-        return page(figures.MACROS + MACRO + PAGE, title="Material stock" if finance else "Material purchases", active="material_stock" if finance else "purchases", width="none",
-                    finance=finance, version=version, where=plants.get(loc, "both plants") if loc != "ALL" else "both plants", g=g,
-                    others=others, typed=typed, cards=cards, source_says=SOURCE_SAYS, may=may, holders=reads.holders(VERB),
-                    is_open=is_open, last=session.last, receipt_acts=("purchase",), ws=ws, drafts=drafts, arrivals=purchasing_plan.arrivals(version),
-                    sheet_columns=purchasing_plan.SHEET_COLUMNS)
+                 {"label": "Typed", "show": str(len(typed) if finance else len(drafts)),
+                  "says": "additional receipts standing in the Plan, sent by purchasing" if finance else "additional receipts typed in this plan"}]
+        where = plants.get(loc, loc) if loc != "ALL" else ("both plants" if finance else ", ".join(plants.get(x, x) for x in p["plants"]))
+        return page(figures.MACROS + MACRO + PAGE, title="Material stock" if finance else "Material balance", active="material_stock" if finance else "purchases", width="none",
+                    finance=finance, version=version, p=p, where=where, g=g, others=others, typed=typed, cards=cards, source_says=SOURCE_SAYS, may=may,
+                    last=session.last, receipt_acts=("purchase.type",), drafts=drafts, n_changed=n_changed, names=names, plants=plants,
+                    reads=purchasing_plan.reads_of(p) if p else None, per=per, when=when)
 
-    @bp.get("/supply/purchases")
+    @bp.get("/purchasing/balance")
     def material_purchases():
         try:
             return view(False)
         except Busy as e:
-            return busy("Material purchases", e)
+            return busy("Material balance", e)
 
     @bp.get("/costs/material_stock")
     def material_stock():
@@ -166,46 +186,58 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         except ValueError:
             return "bad"
 
-    def keep(version: str, changed: dict, bad: list, reason: str, who: str):
-        """Typed cells kept in the purchasing plan's workspace — never the Plan's register; publishing sends them."""
-        cells = "; ".join(f"{i} at {pl} in {per}: " + " · ".join(x for x in [f"quantity {d['quantity']:,.0f}" if d.get("quantity") is not None else "",
-                                                                             f"price {d['price']:,.4f}" if d.get("price") is not None else ""] if x)
-                          for (i, pl, per), d in sorted(changed.items()))
+    def _plan_posted(who: str) -> dict | None:
+        p = purchasing_plan.plan(ctx_fn().get("purchasing"))
+        return p if p and p["owner"] == who else None
+
+    def keep(p: dict | None, changed: dict, bad: list, reason: str, who: str):
+        """Typed cells kept in the plan — never an IBP plan's register; a snapshot sends them. A cell kept must come out
+        with a quantity and a price (DEC-20261121-01 point 10)."""
+        if p:
+            for (i, pl, per_), d in purchasing_plan.merged(p["id"], changed).items():
+                if d["quantity"] is None or d["price"] is None:
+                    bad.append(f"{i} at {pl} in {per(per_)}: {'a price' if d['price'] is None else 'a quantity'} as well — a receipt is a quantity and a price together")
+        cells = "; ".join(f"{i} at {pl} in {per_}: " + " · ".join(x for x in [f"quantity {d['quantity']:,.0f}" if d.get("quantity") is not None else "",
+                                                                              f"price {d['price']:,.4f}" if d.get("price") is not None else ""] if x)
+                          for (i, pl, per_), d in sorted(changed.items()))
         checks = [
             {"check": "who may plan purchases", "ok": roles.may(who, VERB), "says": f"{who} holds {said(VERB)}" if roles.may(who, VERB) else f"{who} does not hold {said(VERB)} — purchases are planned by {', '.join(reads.holders(VERB))}"},
-            {"check": "figures typed", "ok": bool(changed) and not bad, "says": ("refused: " + "; ".join(bad)) if bad else (cells or "no cell differs from the figure it was drawn with")},
-            {"check": "a reason", "ok": bool(reason), "says": reason or "a purchase typed says why"},
+            {"check": "a plan of yours", "ok": bool(p), "says": p["name"] if p else "no plan of yours is chosen"},
+            {"check": "a quantity and a price together", "ok": bool(changed) and not bad, "says": "; ".join(bad) if bad else (cells or "no cell differs from the figure it was drawn with")},
+            {"check": "a reason", "ok": bool(reason), "says": reason or "a receipt typed says why"},
         ]
         kept = receipts.judge(checks)
         if kept:
-            purchasing_plan.type_cells(version, changed, reason, who)
+            purchasing_plan.type_cells(p["id"], changed, reason, who)
         session.last = receipts.write("purchase.type", who, f"{len(changed)} cells", checks, kept)
-        session.say(f"{len(changed)} figure{'s' if len(changed) != 1 else ''} kept in the purchasing plan — publish to send {'them' if len(changed) != 1 else 'it'} to the Plan" if kept
+        session.say(f"{len(changed)} receipt{'s' if len(changed) != 1 else ''} kept in {p['name']} — send a snapshot from My plans to put {'them' if len(changed) != 1 else 'it'} into an IBP plan" if kept
                     else "refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), kept)
-        return redirect(url_for("plan.material_purchases", version=version, location=request.form.get("location") or None) + "#publish")
+        return redirect(url_for("plan.material_purchases", location=request.form.get("location") or None) + "#typed")
 
-    @bp.post("/supply/purchases/type")
+    @bp.post("/purchasing/balance/type")
     def purchase_type():
         f = request.form
-        if not f.get("key"):
-            return typed_in_cells()
-        who = who_fn(); c = ctx_fn()
-        version = f.get("version") or c.get("version") or reads.default_version()
-        inp, _, plant = (f.get("key") or "").partition("|")
-        period = f.get("period") or ""
-        qty, price = _num(f.get("quantity")), _num(f.get("price"))
-        ok = q("select 1 ok from dims.ref_key_material where input_code = ? and plant_code = ?", inp, plant) and period in reads.version_periods(version)["plan"] \
-            and qty != "bad" and price != "bad" and (qty is not None or price is not None) and (qty or 0) >= 0 and (price is None or price > 0)
-        return keep(version, {(inp, plant, period): {"quantity": qty, "price": price}} if ok else {}, [] if ok else [f"{inp or 'nothing'} at {plant or '—'} in {period or 'no period'}: a key material, a plan period and a quantity or a price"],
-                    (f.get("reason") or "").strip(), who)
+        who = who_fn()
+        p = _plan_posted(who)
+        if f.get("key"):                                  # one cell, posted on its own
+            inp, _, plant = (f.get("key") or "").partition("|")
+            period = f.get("period") or ""
+            qty, price = _num(f.get("quantity")), _num(f.get("price"))
+            ok = p and plant in p["plants"] and period in purchasing_plan.periods(p)["plan"] and qty != "bad" and price != "bad" \
+                and (qty is not None or price is not None) and (qty or 0) >= 0 and (price is None or price > 0)
+            return keep(p, {(inp, plant, period): {"quantity": qty, "price": price}} if ok else {},
+                        [] if ok else [f"{inp or 'nothing'} at {plant or '—'} in {period or 'no period'}: a key material of this plan, a plan period and a figure"],
+                        (f.get("reason") or "").strip(), who)
+        return typed_in_cells(p, who)
 
-    def typed_in_cells():
-        """The table posted back: every quantity or price whose cell differs from the figure it was drawn with is kept in
-        the workspace — the quantity and the price of a cell together, all with the one reason, or none."""
-        f = request.form; who = who_fn(); c = ctx_fn()
-        version = f.get("version") or c.get("version") or reads.default_version()
-        plan_periods = set(reads.version_periods(version)["plan"])
-        now = {(r["input_code"], r["plant_code"], r["period"]): r for r in purchasing_plan.balance(version, who)[0]}
+    def typed_in_cells(p: dict | None, who: str):
+        """The table posted back: every quantity or price whose cell differs from the figure it was drawn with — the
+        quantity and the price of a cell together, all with the one reason, or none."""
+        f = request.form
+        if not p:
+            return keep(None, {}, [], (f.get("reason") or "").strip(), who)
+        plan_periods = set(purchasing_plan.periods(p)["plan"])
+        now = {(r["input_code"], r["plant_code"], r["period"]): r for r in purchasing_plan.balance(p)}
         by = {m.key: m for m in MEASURES}
         changed: dict = {}
         bad = []
@@ -220,84 +252,14 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 bad.append(f"{field} {raw!r} for {inp} at {plant} in {period}")
                 continue
             changed.setdefault((inp, plant, period), {"quantity": None, "price": None})[field] = x
-        return keep(version, changed, bad, (f.get("reason") or "").strip(), who)
+        return keep(p, changed, bad, (f.get("reason") or "").strip(), who)
 
-    def _version_posted() -> str:
-        return request.form.get("version") or ctx_fn().get("version") or reads.default_version()
-
-    def _publish(version: str, who: str, checks: list, placed: bool, what: str):
-        checks = [{"check": "who may plan purchases", "ok": roles.may(who, VERB), "says": f"{who} holds {said(VERB)}" if roles.may(who, VERB) else f"{who} does not hold {said(VERB)}"}] + checks
-        session.last = receipts.write("purchase.publish", who, what, checks, placed)
-        if overrides.released(who, "purchase", session, f"{what} published into the Plan", placed):
-            return redirect(url_for("plan.run"))
-        if not placed:
-            session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
-        return redirect(url_for("plan.material_purchases", version=version) + "#publish")
-
-    @bp.post("/supply/purchases/publish")
-    def purchase_publish():
-        """The workspace's unpublished receipts sent to the Plan through the contract (DEC-20261120-04)."""
-        who = who_fn(); version = _version_posted()
-        if not roles.may(who, VERB):
-            return _publish(version, who, [], False, "nothing")
-        checks, placed, arrival = purchasing_plan.publish_workspace(version, who)
-        return _publish(version, who, checks, placed, f"{len(arrival['taken'])} receipt{'s' if len(arrival['taken']) != 1 else ''} from the purchasing plan")
-
-    @bp.post("/supply/purchases/sheet")
-    def purchase_sheet():
-        """Receipts from a spreadsheet: the same contract, the same checks — only where they came from differs."""
-        who = who_fn(); version = _version_posted()
-        fs = request.files.get("sheet")
-        rows = purchasing_plan.read_sheet(fs.read().decode("utf-8-sig")) if fs else []
-        if not roles.may(who, VERB):
-            return _publish(version, who, [], False, "nothing")
-        checks, placed, arrival = purchasing_plan.arrive(version, rows, "a spreadsheet", who)
-        return _publish(version, who, checks, placed, f"{len(arrival['taken'])} receipt{'s' if len(arrival['taken']) != 1 else ''} from a spreadsheet")
-
-    @bp.post("/supply/purchases/take")
-    def purchase_take():
-        """The purchasing plan takes the Plan's latest consumption: its pin moves, and its balance reads it."""
-        who = who_fn(); version = _version_posted()
-        if roles.may(who, VERB):
-            try:
-                purchasing_plan.take(version, request.form.get("revision") or "", who)
-                session.say("the purchasing plan reads the Plan's latest consumption now", True)
-            except ValueError as e:
-                session.say(str(e), False)
-        else:
-            session.say(f"{who} does not hold {said(VERB)}", False)
-        return redirect(url_for("plan.material_purchases", version=version))
-
-    @bp.post("/supply/purchases/drop")
+    @bp.post("/purchasing/balance/drop")
     def purchase_drop():
-        who = who_fn(); version = _version_posted()
+        who = who_fn()
+        p = _plan_posted(who)
         cell = tuple((request.form.get("cell") or "").split("|"))
-        if roles.may(who, VERB) and len(cell) == 3:
-            purchasing_plan.drop(version, cell)
-            session.say("removed from the purchasing plan; the proposal stands again here — a figure already published stays in the Plan until withdrawn", True)
-        return redirect(url_for("plan.material_purchases", version=version) + "#publish")
-
-    @bp.post("/supply/purchases/withdraw")
-    def purchase_withdraw():
-        f = request.form; who = who_fn()
-        act = q("select * from plan.purchase_act where act_id = ?", f.get("act_id") or "")
-        reason = (f.get("reason") or "").strip()
-        v = reads.version(act[0]["version_id"]) if act else {}
-        checks = [
-            {"check": "who may plan purchases", "ok": roles.may(who, VERB), "says": f"{who} holds {said(VERB)}" if roles.may(who, VERB) else f"{who} does not hold {said(VERB)}"},
-            {"check": "a typed figure standing", "ok": bool(act), "says": f"{act[0]['act_id']}: {act[0]['input_code']} at {act[0]['plant_code']} in {act[0]['period']}" if act else "no such typed figure in force"},
-            {"check": "the plan is open", "ok": bool(v) and v.get("status") == "open", "says": f"{(v or {}).get('version_id', '—')} is {(v or {}).get('status', 'unknown')}"},
-            {"check": "a reason", "ok": bool(reason), "says": reason or "a withdrawal says why"},
-        ]
-        placed = receipts.judge(checks)
-        if placed:
-            now = dt.datetime.now()
-            ACTS.place([{"act_id": f"PUR-{now:%Y%m%d%H%M%S%f}", "action": "withdraw", "withdraws": act[0]["act_id"], "version_id": act[0]["version_id"],
-                         "input_code": act[0]["input_code"], "plant_code": act[0]["plant_code"], "period": act[0]["period"], "reason": reason,
-                         "entered_by": who, "entered_at": now.isoformat(timespec="seconds")}], who)
-        session.last = receipts.write("purchase.withdraw", who, f.get("act_id") or "", checks, placed)
-        if overrides.released(who, "purchase", session, "withdrawn — the calculated figure stands again", placed):
-            return redirect(url_for("plan.run"))
-        if not placed:
-            session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
-        return redirect(url_for("plan.material_purchases"))
+        if p and roles.may(who, VERB) and len(cell) == 3:
+            purchasing_plan.drop(p["id"], cell)
+            session.say(f"removed from {p['name']}; the proposal stands again here — what stands in an IBP plan changes only when a snapshot is sent", True)
+        return redirect(url_for("plan.material_purchases") + "#typed")

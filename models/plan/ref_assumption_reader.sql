@@ -21,9 +21,9 @@ SELECT * FROM (VALUES
   ('SUGAR_IDX',    'standard: sugar', 'Standard by plant', 'plan.rung', 'standard',
    'the standard cost of the input materials linked to the index', FALSE)
 ,
-  ('USAGE_ECH',    'planned unit cost: usage', 'Material purchases', 'plan.material_purchases', NULL,
+  ('USAGE_ECH',    'planned unit cost: usage', 'Material stock', 'plan.material_stock', NULL,
    'the quantity of each input a case at Echuca consumes = the bill × usage ÷ 100; and the purchase plan''s requirement', TRUE),
-  ('USAGE_LOX',    'planned unit cost: usage', 'Material purchases', 'plan.material_purchases', NULL,
+  ('USAGE_LOX',    'planned unit cost: usage', 'Material stock', 'plan.material_stock', NULL,
    'the quantity of each input a case at Loxton consumes = the bill × usage ÷ 100; and the purchase plan''s requirement', TRUE),
   ('EFFICIENCY_ECH', 'planned unit cost: efficiency', 'Cost of goods', 'plan.revenue', NULL,
    'the crew hours of a case at Echuca = the route''s hours ÷ (efficiency ÷ 100)', TRUE),

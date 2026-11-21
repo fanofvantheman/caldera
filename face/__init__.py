@@ -45,7 +45,15 @@ CONTEXT_ALL = ("version", "fy", "customer", "material")          # the context k
 COST_SIDE = ("version", "fy", "entity", "cc")                    # a cost-side screen: one cost centre at a time (DEC-20261115-02)
 
 # ---- the processes in play: a register, not a menu ----
+PURCHASING = ["register.supply_plan.maintain"]
 PROCESSES = [
+    # the planner's own plans, apart from the IBP plan: what each reads, and the copy sent into an IBP plan (DEC-20261121-01)
+    Process("purchasing", "Purchasing", says="Your purchasing plans: what each reads, the receipts you type, and the copy you send into an IBP plan.", areas=[
+        Area("purchasing", "Purchasing", [
+            Section("my_plans", "My plans", "plan.purchasing_plans", verbs=PURCHASING),
+            Section("purchases", "Material balance", "plan.material_purchases", verbs=PURCHASING, uses=("purchasing",)),
+        ]),
+    ]),
     Process("ibp", "Integrated business planning", says="Demand through supply to the one set of numbers the business runs on.", areas=[
         # an object with several views is one entry with tabs; the menu stays process → area → entry
         Area("demand", "Demand", [
@@ -69,11 +77,9 @@ PROCESSES = [
             Section("money", "Revenue bridge", "plan.money", verbs=["read.drill", "read.proof", "register.terms.maintain"], uses=("version",)),
         ]),
         Area("supply", "Supply", [
-            # the key raw materials: the purchasing plan's material balance (DEC-20261120-02, -04) and the exposure matrix (DEC-20261120-05)
-            Section("purchases", "Material purchases", "plan.material_purchases", uses=("version", "location"),
-                    verbs=["register.supply_plan.maintain", "register.supplier_price_list.maintain", "delta.supply.enter", "read.plan", "read.proof", *FIN_READ], tabs=[
-                Tab("purchases", "Balance", "plan.material_purchases"),
-                Tab("exposure", "Exposure", "plan.material_exposure")]),
+            # the key raw materials in each case's cost, on the Plan (DEC-20261120-05); the purchasing plans are a process of their own
+            Section("exposure", "Material exposure", "plan.material_exposure", uses=("version", "location"),
+                    verbs=["register.supply_plan.maintain", "register.supplier_price_list.maintain", "delta.supply.enter", "read.plan", "read.proof", *FIN_READ]),
             # the production requirement by plant, with the stocking points it comes from; production typed over it (DEC-20261117-02)
             Section("supply", "Supply plan", "plan.supply_plan", uses=("version", "location", "material"), verbs=["delta.supply.enter", "register.supply_plan.maintain", "policy.production.accept", "read.plan", "read.proof"]),
             Section("capacity", "Capacity", RUNG, {"slug": "capacity"}, verbs=["register.capacity.machine.maintain", "register.capacity.labour.maintain", "register.capacity.storage.maintain", "register.capacity.logistics.maintain", "schedule.line.enter", "headcount.enter"]),
@@ -402,6 +408,12 @@ def _locations(who, chosen) -> list[dict]:
     return [{"value": "ALL", "label": "All locations", "depth": 0}] + [{"value": r["code"], "label": r["name"], "depth": 1} for r in rows]
 
 
+def _purchasing_plans(who, chosen) -> list[dict]:
+    """The acting planner's own purchasing plans, the newest first — never anyone else's."""
+    from . import purchasing_plan
+    return [{"value": p["id"], "label": p["name"]} for p in purchasing_plan.plans(who)]
+
+
 CONTEXT = [
     Choice("version", "Plan", _versions, default=lambda who, chosen, opts: reads.default_version() or (opts[0]["value"] if opts else None), strict=True),
     Choice("fy", "Year", _years, default=_year_default, strict=True),
@@ -412,6 +424,7 @@ CONTEXT = [
     Choice("cc", "Cost centre", _centres, default=_centre_default,
            note=lambda who, opts: None if "CAL" in (_scope(who, "organisation") or {"CAL"}) else "the cost centres your assignments reach"),
     Choice("location", "Location", _locations, strict=True),
+    Choice("purchasing", "Purchasing plan", _purchasing_plans, strict=True),
 ]
 
 SHELL = Shell(brand="Caldera", strapline="integrated business planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map"), ("Reports", "plan.reports")],

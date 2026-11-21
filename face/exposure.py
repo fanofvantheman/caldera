@@ -1,4 +1,4 @@
-"""The exposure matrix (DEC-20261120-05), beside Material purchases under Supply: a row a key raw material in a SKU at
+"""The exposure matrix (DEC-20261120-05), its own entry under Supply (DEC-20261121-01 point 1): a row a key raw material in a SKU at
 the plant that makes it, the Plan's periods across, one measure at a time — the material's dollars in one case at
 standard, revised on the Plan, and the difference, each per case or as a share of the whole cost of the case in the
 period. Money only; read only: nothing here moves a quantity, the bill or the amount consumed.
@@ -21,8 +21,8 @@ MEASURES = [Measure("std", "at standard, $ a case", shown="price", year=None, to
             Measure("rev_pct", "revised, % of the case", shown="price", year=None, total=False),
             Measure("diff_pct", "difference, % of the case", shown="price", year=None, total=False)]
 
-PAGE = """<h1>Exposure<small>{{ version|plan }} · what each key raw material is worth in a case, period by period — at standard, revised on the Plan, and the difference</small></h1>
-<p class="hint">A row is a key raw material in a product at the plant that makes it: the bill's quantity in one case × the material's cost. <b>At standard</b> is the year's bill at the standard price, set on the year's business plan and held through the year; <b>revised</b> is the same quantity at what the material's consumption is valued at on {{ version|plan }} in the period, from the <a href="{{ url_for('plan.material_purchases') }}">material balance</a>; the <b>difference</b> is what the balance has moved in the cost of that case. Each is read per case or as a percentage of the whole cost of the case in the period — material, labour and overhead: at standard over the standard cost, revised and the difference over the planned cost. Filter to a product for its key materials through the year, or to a material for every case that carries it. Only money is shown: what a case consumes is the bill's and the production plan's, and nothing here changes it.</p>
+PAGE = """<h1>Material exposure<small>{{ version|plan }} · what each key raw material is worth in a case, period by period — at standard, revised on the Plan, and the difference</small></h1>
+<p class="hint">A row is a key raw material in a product at the plant that makes it: the bill's quantity in one case × the material's cost. <b>At standard</b> is the year's bill at the standard price, set on the year's business plan and held through the year; <b>revised</b> is the same quantity at what the material's consumption is valued at on {{ version|plan }} in the period, from the Plan's <a href="{{ url_for('plan.material_stock') }}">material stock</a>; the <b>difference</b> is what the balance has moved in the cost of that case. Each is read per case or as a percentage of the whole cost of the case in the period — material, labour and overhead: at standard over the standard cost, revised and the difference over the planned cost. Filter to a product for its key materials through the year, or to a material for every case that carries it. Only money is shown: what a case consumes is the bill's and the production plan's, and nothing here changes it.</p>
 {{ grid_choice(g) }}
 {{ grid_table(g) }}
 <p class="hint">Figures per case are not added across products or over periods, so there is no total row and no year. A period of a year with no business plan has no standard.</p>
@@ -70,6 +70,6 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             vp = reads.version_periods(version)
             g = figures.table("exp", rs, MEASURES, "rev", figures.columns(vp, actuals=False, quarters=False), row_head="Key raw material in a case",
                               filters=filters, empty="No key raw material in a case on this plan.")
-            return page(figures.MACROS + PAGE, title="Exposure", active="exposure", width="none", version=version, g=g)
+            return page(figures.MACROS + PAGE, title="Material exposure", active="exposure", width="none", version=version, g=g)
         except Busy as e:
             return busy("Exposure", e)
