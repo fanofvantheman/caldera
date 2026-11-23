@@ -50,7 +50,8 @@ PROCESSES = [
     # the planner's own plans, apart from the IBP plan: what each reads, and the copy sent into an IBP plan (DEC-20261121-01)
     Process("purchasing", "Purchasing", says="Your purchasing plans: what each reads, the receipts you type, and the copy you send into an IBP plan.", areas=[
         Area("purchasing", "Purchasing", [
-            Section("my_plans", "My plans", "plan.purchasing_plans", verbs=PURCHASING),
+            # the holders of the stage a plan's figures are asked of answer here too (by request, DEC-20261123-01)
+            Section("my_plans", "My plans", "plan.purchasing_plans", verbs=PURCHASING + ["delta.supply.enter"]),
             Section("purchases", "Material balance", "plan.material_purchases", verbs=PURCHASING, uses=("purchasing",)),
         ]),
     ]),
@@ -106,6 +107,8 @@ PROCESSES = [
             Section("versions", "Plan administration", "plan.versions", verbs=VERSION_VERBS + ["read.plan"], tabs=[
                 Tab("versions", "Plans", "plan.versions", verbs=VERSION_VERBS),
                 # each stage handed over by its owner (DEC-20261118-04)
+                # the plans that feed the IBP plan and the key figures each owns and reads (DEC-20261124-05 point 7)
+                Tab("plan_list", "Plans and their figures", "plan.plan_list", verbs=VERSION_VERBS + ["read.plan", "register.supply_plan.maintain"]),
                 Tab("stages", "Stages", "plan.stages", verbs=VERSION_VERBS + ["read.plan", "demand.plan.submit", "delta.supply.enter", "register.supply_plan.maintain"], uses=("version",)),
                 # overrides ported from a sandbox into its Plan, or from a Plan into the next (DEC-20261119-01)
                 Tab("port", "Port", "plan.port", verbs=VERSION_VERBS + ["delta.supply.enter", "register.supply_plan.maintain", "overlay.finance.enter"], uses=("version",)),

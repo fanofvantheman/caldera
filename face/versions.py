@@ -148,8 +148,10 @@ PAGE = """<h1>Plan administration<small>{{ process_label }} · the plans of its 
 <label>code<input name="version_id" size="16" placeholder="{{ suggest }}" pattern="[A-Z0-9][A-Z0-9-]+"></label>
 <label>actual to<select name="from_period">{% for pp in from_points %}<option value="{{ pp }}" {{ 'selected' if loop.first }}>{{ pp }}</option>{% endfor %}</select></label>
 <label class="wide">why<input name="reason" required placeholder="a what-if, or the next cycle"></label>
+<label class="small"><input type="checkbox" name="lock_source" value="1"> lock the one it is named from</label>
+<label class="small"><input type="checkbox" name="lock_others" value="1"> lock every other version of its plan</label>
 <button class="act" onclick="this.textContent='Naming…'">name</button></form>
-<p class="hint">The new version starts as a copy of everything still standing on the one it is named from — the demand plan's entries, Finance's figures, the opex schedule, the assumptions, the promotions typed here and their neighbour lines — each under the name and time of whoever made it, marked with what it was copied from; the forecasting runs and the promotions system's files it reads are the same ones, read, not copied. From then on the two are independent. Keep the period it is actual to for a what-if; take a later one for the next cycle, and anything copied that falls in what is now actual is refused, and counted before it is placed. Not copied: {{ not_copied }}. Naming does not change which version is the latest view; promoting does.</p>{% endif %}
+<p class="hint">The new version starts as a copy of everything still standing on the one it is named from — the demand plan's entries, Finance's figures, the opex schedule, the assumptions, the promotions typed here and their neighbour lines — each under the name and time of whoever made it, marked with what it was copied from; the forecasting runs and the promotions system's files it reads are the same ones, read, not copied. From then on the two are independent. Keep the period it is actual to for a what-if; take a later one for the next cycle, and anything copied that falls in what is now actual is refused, and counted before it is placed. Not copied: {{ not_copied }}. Each stage starts as it stands on the one it is named from — signed off, published or open. Locking the source, or every other version of the plan, is done in the same act, with the same reason. Naming does not change which version is the latest view; promoting does.</p>{% endif %}
 {% if steps_due %}<h2 id="due">Steps and their due dates<span class="count">what the workflow page reads as late · <a href="{{ url_for('plan.workflow') }}">workflow</a></span></h2>
 <table><thead><tr><th>Step</th>{% for v in due_versions %}<th>{{ v }}</th>{% endfor %}{% if may_due %}<th></th>{% endif %}</tr></thead><tbody>
 {% for s in steps_due %}<tr><td>{{ s.step_label }}{% if not s.built %} <span class="small muted">not built</span>{% endif %}</td>{% for v in due_versions %}<td class="small">{{ due.get((v, s.step)) or '—' }}</td>{% endfor %}
@@ -384,6 +386,7 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
                       else f"{from_p or 'nothing'} — a version is actual to its base's period or a later one, never after the last closed period ({last_closed})")},
             {"check": "a reason", "ok": bool(reason), "says": reason or "naming a version says why"},
         ]
+        from . import purchasing_plan
         rows = copies(base_id, code) if all(c["ok"] for c in checks[:2]) else {}
         arrivals = takes(base_id) if rows else []
         if rows:
@@ -402,16 +405,36 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
                 if past:
                     checks.append({"check": "copied into what is now actual", "ok": False, "flag": True,
                                    "says": f"{past} copied entries, figures and months start in or before {from_p}: they are refused there, kept on record"})
-        from . import purchasing_plan
         carry = purchasing_plan.carried(base_id, from_p, st["periods"]) if rows else None
         if carry:
             left = carry["left_behind"]
             checks.append({"check": "purchasing's copy carried", "ok": True, "flag": bool(left),
                            "says": f"{len(carry['receipts'])} receipt{'s' if len(carry['receipts']) != 1 else ''} of “{carry['was']['source']}”, standing in {base_id}"
                                    + (" · left behind: " + "; ".join(f"{r['input_code']} at {r['plant_code']} in {r['period']} — {r['why']}" for r in left) if left else "")})
+        # creating a version: its stage states start as the source's, and it may lock the source or every other version of
+        # its plan in the same act (DEC-20261123-01 points 3, 8, 11; ambiguity #126)
+        stage_from = [r for r in q("select stage, last_action, last_reason from plan.stage_state where version_id = ? and last_action in ('hand_over', 'publish') and ord = unit_to", base_id)] if rows else []
+        pv = purchasing_plan.plan_versions([v for v in vs if v.get("version_kind") != "actual"])
+        plan_of = (pv.get(base_id) or {}).get("plan")
+        to_lock = ([base_id] if f.get("lock_source") else []) + ([x for x, y in pv.items() if y["plan"] == plan_of and x != base_id] if f.get("lock_others") else [])
+        to_lock = [x for x in dict.fromkeys(to_lock) if (reads.version(x) or {}).get("status") == "open"]
+        if stage_from or f.get("lock_source") or f.get("lock_others"):
+            may_lock = roles.may(who, VERB)
+            checks.append({"check": "stages and locks", "ok": may_lock or not to_lock,
+                           "says": " · ".join(x for x in [
+                               ("stages as on " + base_id + ": " + ", ".join(f"{r['stage']} {'published' if r['last_action'] == 'publish' else 'signed off'}" for r in stage_from)) if stage_from else "every stage open, as on " + base_id,
+                               (("locks " + ", ".join(to_lock)) if may_lock else f"{who} does not hold {said(VERB)} — versions are locked by {', '.join(reads.holders(VERB)) or 'nobody yet'}") if to_lock else ""] if x)})
         placed = receipts.judge(checks)
         if placed:
             now = dt.datetime.now(); stamp = now.strftime('%Y%m%d-%H%M%S-%f'); when = now.isoformat(timespec="seconds")
+            if to_lock:
+                LANDING.place([{"act_id": f"VA-{stamp}-L{i:02d}", "version_id": x, "act": "close", "reason": f"locked when {code} was named from {base_id}: {reason}",
+                                "entered_by": who, "entered_on": when, "horizon_periods": ""} for i, x in enumerate(to_lock, start=1)], who)
+            if stage_from:
+                from . import stages as S
+                S.ACTS.place([{"act_id": f"SA-{stamp}-{i:02d}", "version_id": code, "stage": r["stage"], "action": r["last_action"],
+                               "reason": f"as on {base_id}" + (f": {r['last_reason']}" if r.get("last_reason") else ""), "entered_by": who, "entered_at": when}
+                              for i, r in enumerate(stage_from, start=1)], who)
             act = {"act_id": f"VA-{stamp}", "version_id": code, "act": "name", "reason": reason, "entered_by": who, "entered_on": when,
                    "horizon_periods": str(horizon), "base_version": base_id, "version_kind": base.get("version_kind"),
                    "cycle": re.sub(r"\d{4}P\d{2}", from_p, base.get("cycle") or "") if later else base.get("cycle"),

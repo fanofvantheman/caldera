@@ -51,7 +51,7 @@ def main() -> None:
         "dim_format": [{"format_code": k, "format_name": v[0], "container": v[1], "size_g": v[2], "units_per_case": v[3], "case_net_kg": v[4]} for k, v in FORMATS.items()],
         "dim_material": dataclass_rows(materials),
         "dim_input_material": [{"material_code": r[0], "material_name": r[1], "material_type": r[2], "base_uom": r[3],
-                                "campaign_window": r[4], "commodity_link": r[5], "origin": r[6], "key_material": r[7]} for r in INPUT_MATERIALS],
+                                "campaign_window": r[4], "commodity_link": r[5], "origin": r[6], "key_material": r[7], "perishable": r[8]} for r in INPUT_MATERIALS],
         "ref_promo_group": [{"promo_group_code": k, "promo_group_name": v[0], "material_code": m} for k, v in PROMO_GROUPS.items() for m in v[1]],
         "ref_bom": build_bom(materials),
         "dim_account": [{"account_code": a[0], "account_name": a[1], "channel": a[2], "sub_channel": a[3], "account_tier": a[4],

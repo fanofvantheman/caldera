@@ -86,7 +86,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             names = {r["stage"]: r["stage_name"] for r in ref.values()}
             recalc = overrides.behind(version) if overrides.mode() == "manual" else {}
             out = []
-            feeds_unit = next((x["unit_to"] for x in rows if x["stage"] == W.STAGE), None)
+            feeds_unit = next((x["unit_to"] for x in rows if x["stage"] == W.stage_code()), None)
             pub, st_ = W.published(version), W.standing(version)
             feeds = {"sent": len(W.stands(version)), "source": (st_ or {}).get("source"), "published": len(pub["receipts"]) if pub else None,
                      "published_at": (pub or {}).get("at", "")[:16].replace("T", " "), "waiting": W.unpublished(version) if pub else 0}
@@ -141,7 +141,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             now = dt.datetime.now()
             ACTS.place([{"act_id": f"STG-{now:%Y%m%d%H%M%S%f}", "version_id": version, "stage": stage, "action": action, "reason": reason,
                          "entered_by": who, "entered_at": now.isoformat(timespec="seconds")}], who)
-            feeds = q("select 1 from plan.stage_state where version_id = ? and stage = ? and unit_to = ?", version, W.STAGE, st["unit_to"])
+            feeds = q("select 1 from plan.stage_state where version_id = ? and stage = ? and unit_to = ?", version, W.stage_code(), st["unit_to"])
             if action == "publish" and feeds:           # what publication moves: purchasing's receipts, as they stand at this moment
                 c = W.publish(version, who, f"{ref['stage_name']} published")
                 told = f" — purchasing's {len(c['receipts'])} receipt{'s' if len(c['receipts']) != 1 else ''} are what the stages after it use now"

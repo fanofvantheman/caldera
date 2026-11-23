@@ -38,7 +38,7 @@ PAGE = """<h1>Typed over the drivers<small>{{ version|plan }} · a component of 
 <label>component<select name="component">{% for c, label, _ in components %}<option value="{{ c }}">{{ label }}</option>{% endfor %}</select></label>
 <label>per case<input name="per_case" type="number" step="any" min="0" required></label>
 <label class="wide">why<input name="reason" required placeholder="what the drivers are missing"></label>
-<div class="actions"><button class="primary">Place</button><span class="hint">by {{ who }} — in the plan after the next run</span></div></form>{% endif %}
+<div class="actions"><button class="primary">Save changes</button><span class="hint">by {{ who }} — in the plan after the next run</span></div></form>{% endif %}
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}"""
 

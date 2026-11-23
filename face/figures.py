@@ -97,6 +97,12 @@ def here(**kw) -> str:
     return url_for(request.endpoint, **{k: v for k, v in args.items() if v not in (None, "")})
 
 
+def back(default: str) -> str:
+    """Where a save returns to: the address its page was posted from (the bar's `back`, same filters), else `default`."""
+    b = (request.form.get("back") or "").strip()
+    return b if b.startswith("/") and not b.startswith("//") else default
+
+
 def chosen(filters: list[Filter]) -> tuple[dict, str]:
     """The filters as the address holds them: each filter's value, and the part of a name typed."""
     return ({f.key: request.args.get(f"f_{f.key}", "") for f in filters if request.args.get(f"f_{f.key}", "") in {v for v, _ in f.options}},
@@ -186,15 +192,31 @@ def posted(form, measures: list[Measure]) -> list[tuple[str, str, str, str]]:
     return out
 
 
+# The one save bar (DEC-20261124-03): a page where figures are typed in a table saves with it, pinned to the foot of the
+# window — "Save changes", "Discard changes" beside it where the page holds typed work, and how many figures are typed and
+# not saved. A page puts what it asks for with a save (a reason, a note) inside it with {% call %}. A form of its own that
+# holds only the bar takes the class `savebar-form`, so it stays pinned. After a save the handler returns to `back(...)`
+# and the page to where it was scrolled.
+SAVE_BAR = """{% macro save_bar(discard=none, held=0, note='') %}<div class="savebar" data-held="{{ held or 0 }}">{% if caller %}{{ caller() }}{% endif %}<button class="primary" data-save>Save changes</button>{% if discard %}<button class="act" {% if discard == 'reset' %}type="button"{% else %}formaction="{{ discard }}" formnovalidate{% endif %} data-discard="{{ discard }}">Discard changes</button>{% endif %}<span class="hint savecount" aria-live="polite"></span>{% if note %}<span class="hint grow">{{ note }}</span>{% endif %}<input type="hidden" name="back" data-back></div><style>.savebar{position:sticky;bottom:0;z-index:3;display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;background:var(--panel);border-top:1px solid var(--ink);padding:.6rem .9rem;margin:0 0 .6rem}.savebar .grow{flex:1}.savebar .savecount{align-self:center}.savebar.dirty .savecount{font-weight:600;color:var(--ink)}form.savebar-form{position:sticky;bottom:0;z-index:3}form.savebar-form .savebar{margin:0}</style>
+<script>(function(){if(window.__savebar)return;window.__savebar=1;
+function n(b){var f=b.closest('form'),c=0;if(f)[].forEach.call(f.querySelectorAll('input.cell'),function(i){if(i.value!==i.defaultValue)c++;});var x=document.querySelectorAll('form input.cell');if(f&&!f.querySelector('input.cell'))[].forEach.call(x,function(i){if(i.value!==i.defaultValue)c++;});return c+(+b.getAttribute('data-held')||0);}
+function say(){[].forEach.call(document.querySelectorAll('.savebar'),function(b){var k=n(b),s=b.querySelector('.savecount');s.textContent=k?k+' figure'+(k==1?'':'s')+' typed and not saved':'nothing typed and not saved';b.classList.toggle('dirty',k>0);});}
+document.addEventListener('input',function(e){if(e.target.matches&&e.target.matches('input.cell'))say();});
+document.addEventListener('click',function(e){var d=e.target.closest&&e.target.closest('[data-discard="reset"]');if(!d)return;var f=d.closest('form');[].forEach.call(f.querySelectorAll('input.cell'),function(i){i.value=i.defaultValue;});[].forEach.call(f.querySelectorAll('input[data-note]'),function(h){h.remove();});say();});
+document.addEventListener('submit',function(e){var b=e.target.querySelector('.savebar [data-back]');if(!b)return;b.value=location.pathname+location.search;try{sessionStorage.setItem('savebar-y:'+location.pathname,String(window.scrollY));}catch(x){}var s=e.submitter;if(s&&s.hasAttribute('data-save'))s.textContent='Saving…';},true);
+function back(){try{var k='savebar-y:'+location.pathname,y=sessionStorage.getItem(k);if(y!==null){sessionStorage.removeItem(k);window.scrollTo(0,+y);}}catch(x){}say();}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',back);else back();})();</script>{% endmacro %}
+"""
+
 # The markup. `g` is the table (from `table`, or a page's own dict with the same keys); the id prefixes every element so
 # a part can be replaced by its id.
-MACROS = """{% macro grid_head(g) %}<thead><tr><th>{{ g.row_head }}</th><th></th>{% for p in g.periods %}{% if p.total %}<th class="n tot"{% if g.year_says %} title="{{ g.year_says }}"{% endif %}>{{ p.label }}{% if g.year_says %}<div class="small muted">{{ g.year_says }}</div>{% endif %}</th>{% elif p.quarter %}<th class="n qtr" title="{{ p.title }}">{{ p.label }}<div class="small muted">{{ 'quarter' if not p.part else p.periods|length ~ ' periods' }}</div></th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="{{ g.actual_title }}"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>{% endmacro %}
+MACROS = SAVE_BAR + """{% macro grid_head(g) %}<thead><tr><th>{{ g.row_head }}</th><th></th>{% for p in g.periods %}{% if p.total %}<th class="n tot"{% if g.year_says %} title="{{ g.year_says }}"{% endif %}>{{ p.label }}{% if g.year_says %}<div class="small muted">{{ g.year_says }}</div>{% endif %}</th>{% elif p.quarter %}<th class="n qtr" title="{{ p.title }}">{{ p.label }}<div class="small muted">{{ 'quarter' if not p.part else p.periods|length ~ ' periods' }}</div></th>{% else %}<th class="n {{ 'actual' if p.actual }}"{% if p.actual %} title="{{ g.actual_title }}"{% endif %}>{{ p.label }}{% if p.actual %}<div class="small muted">actual</div>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>{% endmacro %}
 {% macro grid_row(g, r) %}<tbody id="{{ g.id }}-r-{{ r.code }}">{% for m in r.lines %}<tr class="{{ 'first' if loop.first }} {{ 'total' if r.current and loop.first }}">
 {% if loop.first %}<td rowspan="{{ r.lines|length }}" class="node d{{ r.depth }}{% if r.lvl %} lv-{{ r.lvl }}{% endif %}"><div class="nm">{% if r.href %}<a href="{{ r.href }}" tabindex="-1" title="open {{ r.label }}: what is beneath it becomes the rows">{{ r.label }}&nbsp;<span class="opens" aria-hidden="true">▸</span></a>{% else %}<span>{{ r.label }}</span>{% endif %}<div class="small muted">{{ r.level }}{% if r.built %} · {{ r.built }}{% endif %}</div>{% if r.toggle %}<a class="more small" href="{{ r.toggle.href }}" tabindex="-1">{{ r.toggle.label }}</a>{% endif %}</div></td>{% endif %}
 <td class="small muted">{% if m.group %}<div class="grp">{{ m.group }}</div>{% endif %}{{ m.label }}</td>
 {% for x in r.cells[m.key] %}<td class="n {{ x.cls }}"{% if x.title %} title="{{ x.title }}"{% endif %}>{% set mark %}{% if x.undo %}<button class="one" form="{{ g.id }}-one" formaction="{{ g.undo_action }}" name="figure" value="{{ x.undo }}" tabindex="-1" title="take this figure out — {{ x.title }}" aria-label="take this figure out">↶</button>{% elif x.withdraw %}<a class="one" href="{{ x.withdraw }}" tabindex="-1" title="withdraw this figure — shows what will change first" aria-label="withdraw this figure">↶</a>{% endif %}{% endset %}{% if x.input %}<span class="inp"><input class="cell" name="{{ x.input }}" value="{{ x.value }}" inputmode="decimal" data-live='{{ x.live|tojson }}'>{{ mark }}</span>{% else %}{{ mark }}{{ x.show }}{% endif %}{% if x.moved %}<span class="moved">◆</span>{% endif %}{% if x.src is not none %}<span class="src">{{ x.src }}</span>{% endif %}{% if x.built %}<span class="src">built {{ x.built }}</span>{% endif %}</td>{% endfor %}
 </tr>{% endfor %}</tbody>{% endmacro %}
-{% macro grid_choice(g) %}<form class="toolbar gridpick" method="get">{{ context_fields() }}{% for k in ('measure', 'open') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args.get(k) }}">{% endif %}{% endfor %}
+{% macro grid_choice(g) %}<form class="toolbar gridpick" method="get">{{ context_fields() }}{% for k in ('measure', 'open', 'alerted') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args.get(k) }}">{% endif %}{% endfor %}
 {% if not g.movement %}<span class="seg"><span class="small muted">the rows show</span>{% for m in g.measures %}{% if m.on %}<b>{{ m.label }}</b>{% else %}<a href="{{ m.href }}">{{ m.label }}</a>{% endif %}{% endfor %}</span>{% endif %}
 {% for f in g.filters %}<label class="small">{{ f.label }} <select name="f_{{ f.key }}" onchange="this.form.submit()"><option value="">all</option>{% for v, lab in f.options %}<option value="{{ v }}" {{ 'selected' if v == f.value }}>{{ lab }}</option>{% endfor %}</select></label>{% endfor %}
 <label class="small">find <input name="find" value="{{ g.find }}" size="12" placeholder="part of a name"></label><button class="act">Filter</button>{% if g.n_shown != g.n_all %} <span class="small muted">{{ g.n_shown }} of {{ g.n_all }} rows</span> <a class="small" href="{{ request.path }}?{% for k in ('version', 'location', 'material', 'customer') %}{% if request.args.get(k) %}{{ k }}={{ request.args.get(k)|urlencode }}&amp;{% endif %}{% endfor %}">clear</a>{% endif %}</form>{% endmacro %}

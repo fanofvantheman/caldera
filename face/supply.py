@@ -35,11 +35,11 @@ INVENTORY = """<h1>Inventory<small>{{ version|plan }} · {{ node_name }} · repl
 {{ grid_style() }}<style>.seg{display:flex;gap:.6rem;flex-wrap:wrap;margin:.4rem 0}</style>"""
 
 SUPPLY = """<h1>Supply plan<small>{{ version|plan }} · the production requirement by plant — what the inventory plan asks each plant to make, not sequenced against the lines</small></h1>
-<p class="hint">Each plant's requirement is its replenishment of the DCs it supplies, less its own finished stock, on its own order-up-to target. Whether the lines can make it is the capacity reading's question, not this page's. {% if may and is_open %}You plan supply: type a quantity in a period's cell over the proposal and place it with a reason — the proposal stays beside it, and materials read what stands after the next run.{% else %}Typed over by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}</p>
+<p class="hint">Each plant's requirement is its replenishment of the DCs it supplies, less its own finished stock, on its own order-up-to target. Whether the lines can make it is the capacity reading's question, not this page's. {% if may and is_open %}You plan supply: type a quantity in a period's cell over the proposal and save it with a reason — the proposal stays beside it, and materials read what stands after the next run.{% else %}Typed over by {{ holders|join(', ') or 'nobody yet' }}.{% endif %}</p>
 {{ grid_choice(g) }}
 {% if g.editable %}<form method="post" action="{{ url_for('plan.production_type') }}" id="type">{% for k in ('version', 'location', 'material') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args.get(k) }}">{% endif %}{% endfor %}{% endif %}
 {{ grid_table(g) }}
-{% if g.editable %}<div class="form-row"><label class="small grow">why <input name="reason" placeholder="a campaign run, a line down, a build ahead"></label><button class="primary">Place</button><span class="hint">each figure changed is placed as one act, by {{ who_ }} — in the plan after the next run</span></div></form>{% endif %}
+{% if g.editable %}{% call save_bar(discard='reset', note='each figure changed is one act, by ' ~ who_ ~ ' — in the plan after the next run') %}<label class="small grow">why <input name="reason" placeholder="a campaign run, a line down, a build ahead"></label>{% endcall %}</form>{% endif %}
 <p class="hint">A row is a material at the plant that makes it, in cases: the first row totals them. A row opens to the proposal, what it ships to each DC and its finished stock at period end. The year is its plan periods; the stock its last period's. A typed quantity is boxed with the proposal beneath it.</p>
 {% if typed %}<h2>Typed<span class="count">{{ typed|length }} standing on {{ version|plan }}</span></h2><table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Typed</th><th class="n">Proposed</th><th>Why</th><th>By</th><th></th></tr></thead><tbody>
 {% for t in typed %}<tr><td>{{ t.material_code }}</td><td>{{ t.plant_code }}</td><td>{{ t.period }}</td><td class="n">{{ n0(t.quantity) }}</td><td class="n">{{ n0(t.proposed) }}</td><td class="small">{{ t.reason }}</td><td class="small">{{ t.entered_by }}</td>
@@ -219,7 +219,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             return redirect(url_for("plan.run"))
         if not placed:
             session.say("refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), False)
-        return redirect(url_for("plan.supply_plan", version=version, location=f.get("location") or None, material=f.get("material") or None) + "#type")
+        return redirect(figures.back(url_for("plan.supply_plan", version=version, location=f.get("location") or None, material=f.get("material") or None) + "#type"))
 
     @bp.post("/supply/plan/withdraw")
     def production_withdraw():

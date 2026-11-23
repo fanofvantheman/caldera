@@ -52,13 +52,21 @@ PAGE = """<h1>My plans<small>the purchasing plans you keep · what each reads ·
 <tr><td>Contracted receipts</td><td>Actuals<div class="small muted">on order or under contract</div></td><td>the record</td><td>close of {{ per(chosen.actuals_to) }}</td><td></td></tr>
 </tbody></table>
 {% if may %}<form class="row" style="margin-top:.9rem" method="post" action="{{ url_for('plan.purchasing_refresh') }}"><input type="hidden" name="plan" value="{{ chosen.id }}"><button class="primary">Refresh from the sources</button><span class="hint">takes a new copy from each IBP plan it reads, and of the structures</span></form>{% endif %}
-<p class="hint"><b>Endorsed</b> — taken from an IBP plan: what stands in it has been submitted and accepted, and that is the endorsement, so no one is asked. <b>The record</b> — closed periods, read at the close the plan was made at.</p>
+<p class="hint"><b>Endorsed</b> — taken from an IBP plan's version 0, the Plan: what stands in it has been submitted and accepted, and that is the endorsement, so no one is asked. <b>By request</b> — a copy its owner chose to share when you asked. <b>The record</b> — closed periods, read at the close the plan was made at.</p>
 <p class="hint">One purchasing plan can buy for several plants, and each plant’s consumption has its own source. This plan holds a copy of each thing it reads; a source changing changes nothing here until you refresh.</p>
 {% if change and may %}<h3 id="change" style="margin-top:1.2rem">Change — Consumption, {{ plants.get(change, change) }}</h3>
 <form method="post" action="{{ url_for('plan.purchasing_take') }}"><input type="hidden" name="plan" value="{{ chosen.id }}"><input type="hidden" name="plant" value="{{ change }}"><table><tbody>
-<tr><td>From an IBP plan<div class="small muted">endorsed · take it now</div></td><td>{% if same_close %}<select name="source">{% for v in same_close %}<option value="{{ v.version_id }}">{{ v.version_id|planfull }}{{ ' · closed' if v.status != 'open' }}</option>{% endfor %}</select>{% else %}<span class="muted">no IBP plan has actuals to {{ per(chosen.actuals_to) }}</span>{% endif %}</td><td class="acts">{% if same_close %}<button class="act">Take</button>{% endif %}</td></tr>
+<tr><td>From an IBP plan<div class="small muted">endorsed · take it now</div></td><td>{% if same_close %}<select name="source">{% for v in same_close %}<option value="{{ v.version_id }}">{{ v.version_id|planfull }} · Plan{{ ' · closed' if v.status != 'open' }}</option>{% endfor %}</select>{% else %}<span class="muted">no IBP plan has actuals to {{ per(chosen.actuals_to) }}</span>{% endif %}</td><td class="acts">{% if same_close %}<button class="act">Take</button>{% endif %}</td></tr>
 </tbody></table></form>
-<p class="hint">Only IBP plans with actuals to {{ per(chosen.actuals_to) }} are offered: a plan at another close is a new plan.</p>{% endif %}
+<form method="post" action="{{ url_for('plan.purchasing_ask') }}"><input type="hidden" name="plan" value="{{ chosen.id }}"><input type="hidden" name="plant" value="{{ change }}"><table><tbody>
+<tr><td>By request<div class="small muted">later than, or different from, what an IBP plan holds</div></td><td><label class="small">ask {{ asked.holders|join(', ') or 'nobody yet' }} — {{ asked.stage_name }} <input name="message" size="34" placeholder="what you need, and why"></label></td><td class="acts"><button class="act">Ask</button></td></tr>
+</tbody></table></form>
+<p class="hint">Endorsed is an IBP plan's version 0, the Plan, with actuals to {{ per(chosen.actuals_to) }}: a plan at another close is a new plan. Anything else is asked for: the one asked chooses what is fit to share and shares one copy, or declines; you decide whether to take it.</p>{% endif %}
+{% if mine_asked %}<h3 style="margin-top:1.2rem">Asked for</h3><table><thead><tr><th>Consumption</th><th>Asked</th><th>Answer</th><th></th></tr></thead><tbody>
+{% for r in mine_asked %}<tr><td>{{ plants.get(r.plant, r.plant) }}<div class="small muted">of {{ r.stage_name }}</div></td><td class="small">{{ when(r.asked_at) }}{% if r.message %} — “{{ r.message }}”{% endif %}</td>
+<td class="small">{% if not r.answer %}<span class="muted">waiting</span>{% elif r.answer.shared %}one copy shared by {{ r.answer.by }}, {{ when(r.answer.at) }}, from {{ r.answer.shared|planfull }}{% if r.answer.says %} — “{{ r.answer.says }}”{% endif %}{% else %}declined by {{ r.answer.by }}, {{ when(r.answer.at) }}{% if r.answer.says %} — “{{ r.answer.says }}”{% endif %}{% endif %}</td>
+<td class="acts">{% if r.answer and r.answer.shared %}{% if r.taken %}<span class="small">read now</span>{% elif may %}<form class="inline" method="post" action="{{ url_for('plan.purchasing_take_shared') }}"><input type="hidden" name="plan" value="{{ chosen.id }}"><input type="hidden" name="request" value="{{ r.id }}"><button class="act">Take</button></form>{% endif %}{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% endif %}
 </div>
 
 <div class="card" id="send"><h3>Send a snapshot to the IBP plan</h3>
@@ -68,11 +76,20 @@ PAGE = """<h1>My plans<small>the purchasing plans you keep · what each reads ·
 {% if preview|length > 6 %}<tr><td colspan="6" class="small muted">and {{ preview|length - 6 }} more</td></tr>{% endif %}
 </tbody></table>{% else %}<p class="hint">Nothing typed in this plan: sending it clears what stands for purchasing in the IBP plan.</p>{% endif %}
 <p class="hint">The plan as it stands now: {{ preview|length }} receipt{{ '' if preview|length == 1 else 's' }}, {{ n_new }} of them new or different from {% if there and there.carried %}the copy standing there — “{{ there.source }}”, carried across from {{ there.carried.from|planfull }} — which this one replaces{% elif there %}the copy of {{ when(there.at) }} standing there — “{{ there.source }}” — which this one replaces{% else %}anything standing there: nothing stands there yet{% endif %}. Made against {% for pl, c in cur.reads.consumption.items() if c %}consumption of {{ when(c.taken_at) }} at {{ plants.get(pl, pl) }}{{ ', ' if not loop.last }}{% endfor %} and actuals to {{ per(chosen.actuals_to) }}.{% if left_out %} Periods {{ into|plan }} does not plan are left out: {{ left_out|join(', ') }}.{% endif %}</p>
+{% if since %}<p class="warn small"><b>Typed in the IBP plan since:</b> {{ since|length }} change{{ '' if since|length == 1 else 's' }} typed in {{ into|planfull }} since the copy standing there was placed — sending replaces {{ 'it' if since|length == 1 else 'them' }}. Take {{ 'it' if since|length == 1 else 'them' }} into this plan first by making a plan from what stands there.</p>{% endif %}
 {% if gone %}<p class="warn small"><b>Fewer plants:</b> the copy standing there has receipts at {{ pn(gone, ', ') }}, and this one none — sending leaves nothing standing for {{ 'it' if gone|length == 1 else 'them' }}.</p>{% endif %}
 {% if may %}<form class="row" method="post" action="{{ url_for('plan.purchasing_send') }}"><input type="hidden" name="plan" value="{{ chosen.id }}"><input type="hidden" name="into" value="{{ into or '' }}"><label class="small" style="flex:1">note <input name="note" style="width:100%" placeholder="what changed and why — optional, read with the copy"></label><button class="primary" {{ 'disabled' if not into_open or into_lock }}>Send the snapshot</button>{% if not into_open %}<span class="hint">{{ into|planfull if into else 'no IBP plan' }} is locked: what stands in it is no longer replaced</span>{% elif into_lock %}<span class="hint">{{ into_lock }}</span>{% endif %}</form>
 <form class="row" method="post" enctype="multipart/form-data" action="{{ url_for('plan.purchasing_sheet') }}"><input type="hidden" name="into" value="{{ into or '' }}"><label class="small">or send receipts from a spreadsheet, saved as CSV — {{ sheet_columns|join(', ') }} <input type="file" name="sheet" accept=".csv"></label><label class="small">note <input name="note" placeholder="optional"></label><button class="act" {{ 'disabled' if not into_open or into_lock }}>Send the spreadsheet</button></form>{% endif %}
 </div>
 </div>{% endif %}
+
+{% if asked_of_me %}<h2 id="asked">Asked of you<span class="count">a copy asked for by a planner · share one, or decline</span></h2>
+<table><thead><tr><th>From</th><th>For</th><th>Asked</th><th>Answer</th></tr></thead><tbody>
+{% for r in asked_of_me %}<tr><td>{{ r.by }}<div class="small muted">“{{ r.plan_name }}”</div></td><td>Consumption, {{ plants.get(r.plant, r.plant) }}<div class="small muted">actuals to {{ per(r.actuals_to) }}</div></td><td class="small">{{ when(r.asked_at) }}{% if r.message %} — “{{ r.message }}”{% endif %}</td>
+<td>{% if r.answer %}<span class="small">{{ 'shared from ' ~ (r.answer.shared|planfull) if r.answer.shared else 'declined' }}, {{ when(r.answer.at) }}</span>{% else %}<form class="row" method="post" action="{{ url_for('plan.purchasing_answer') }}"><input type="hidden" name="request" value="{{ r.id }}">
+<select name="source">{% for v in answerable(r) %}<option value="{{ v.version_id }}">{{ pv[v.version_id].plan|planfull }}, version {{ pv[v.version_id].n }} · {{ pv[v.version_id].label }}</option>{% endfor %}</select>
+<input name="says" size="18" placeholder="a word with it — optional"><button class="act" name="do" value="share">Share one copy</button><button class="act" name="do" value="decline">Decline</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table><p class="hint">What you share is one copy, taken when you share it; it does not follow the source. The planner decides whether to take it.</p>{% endif %}
 
 <h2 id="standing">What stands in each IBP plan<span class="count">one purchasing copy each · read-only, yours included</span></h2>
 <table><thead><tr><th>IBP plan</th><th>Version</th><th>Standing there</th><th>Sent</th><th class="n">Receipts</th><th>Supply</th><th>Used after supply</th><th></th></tr></thead><tbody>
@@ -93,7 +110,7 @@ PAGE = """<h1>My plans<small>the purchasing plans you keep · what each reads ·
 <div class="card"><form class="entry" method="post" action="{{ url_for('plan.purchasing_new') }}">
 <label>Name <input name="name" required value="{{ new_name }}"></label>
 <label>Start from <select name="start_from">{% for r in rows %}<option value="{{ r.p.id }}" {{ 'selected' if r.p.id == start }}>{{ r.p.name }} — copy its {{ r.typed }} typed receipt{{ '' if r.typed == 1 else 's' }}</option>{% endfor %}<option value="ibp">What stands in the IBP plan chosen below — purchasing’s receipts there, whoever sent or typed them</option><option value="" {{ 'selected' if not start }}>Nothing typed</option></select></label>
-<label>Consumption from <select name="source"><optgroup label="Endorsed — from an IBP plan">{% for v in all_sources %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == default_source }}>{{ pv[v.version_id].plan|planfull }}, version {{ pv[v.version_id].n }} · {{ pv[v.version_id].label }} — as it stands now · actuals to {{ per(v.from_period) }}</option>{% endfor %}</optgroup></select><span class="hint">a copy is taken now; it does not follow the source</span></label>
+<label>Consumption from <select name="source"><optgroup label="Endorsed — from an IBP plan">{% for v in all_sources %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == default_source }}>{{ pv[v.version_id].plan|planfull }} · Plan — as it stands now · actuals to {{ per(v.from_period) }}</option>{% endfor %}</optgroup></select><span class="hint">a copy is taken now; it does not follow the source</span></label>
 <label>Covers <select name="covers"><option value="ALL">{{ pn(key_plants, ' and ') }} — one plan for {{ 'both plants' if key_plants|length == 2 else 'every plant' }}</option>{% for pl in key_plants %}<option value="{{ pl }}">{{ plants.get(pl, pl) }}</option>{% endfor %}</select><span class="hint">each plant’s consumption can be taken from its own source once the plan is made</span></label>
 <label>Actuals to <input value="as the consumption chosen" disabled><span class="hint">opening stock and contracted receipts are read at this close</span></label>
 <label>Plans through <input value="as far as the consumption chosen runs" disabled></label>
@@ -132,7 +149,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         for g in groups:
             g["versions"].sort(key=lambda x: x["n"])
         locks = {v["version_id"]: W.stage_lock(v["version_id"]) for v in targets}
-        stage_of = {r["version_id"]: r["state"] for r in q("select version_id, state from plan.stage_state where stage = ?", W.STAGE)}
+        stage_of = {r["version_id"]: r["state"] for r in q("select version_id, state from plan.stage_state where stage = ?", W.stage_code())}
         pubs = W.published_all()
 
         def line(p: dict) -> dict:
@@ -161,12 +178,16 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             preview = [{**t, "since": "as last sent" if at_there.get(W._cell(t)) == (t["quantity"], t["price"]) else ("changed" if W._cell(t) in at_there else "new")} for t in typed]
             preview.sort(key=lambda t: (t["since"] == "as last sent", t["input_code"], t["plant_code"], t["period"]))
             into_periods = set(reads.version_periods(into)["plan"]) if into else set()
-            ctx = dict(cur=cur, into=into, into_lock=locks.get(into) if into else None, into_open=bool(into) and (state.get(into) or {}).get("status") == "open", there=there, preview=preview,
+            ctx = dict(cur=cur, into=into, since=W.typed_since(into) if into else [], into_lock=locks.get(into) if into else None, into_open=bool(into) and (state.get(into) or {}).get("status") == "open", there=there, preview=preview,
                        n_new=sum(1 for t in preview if t["since"] != "as last sent"),
                        left_out=sorted({t["period"] for t in typed if t["period"] not in into_periods}),
                        gone=sorted({x["plant_code"] for x in (there or {}).get("receipts", [])} - {t["plant_code"] for t in typed}),
                        change=request.args.get("change") if request.args.get("change") in chosen["plants"] else None,
-                       same_close=W.sources(chosen["actuals_to"]))
+                       same_close=[v for v in W.sources(chosen["actuals_to"]) if pv.get(v["version_id"], {}).get("n") == 0],
+                       mine_asked=[{**r, "taken": (cur["reads"]["consumption"].get(r["plant"]) or {}).get("request") == r["id"]} for r in W.requests_all() if r["plan"] == chosen["id"]])
+        st_asked = W.asked_of("consumption")
+        asked = {**st_asked, "holders": reads.holders(st_asked["verb"])}
+        asked_of_me = [r for r in W.requests_all() if roles.may(who, r["verb"])]
         view = request.args.get("view")
         open_sources = [v for v in targets if v["status"] == "open"]
         start = request.args.get("start") if any(r["p"]["id"] == request.args.get("start") for r in rows) else None
@@ -177,9 +198,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                     standing=standing, n_standing=sum(1 for s in standing.values() if s.get("owner") == who),
                     n_changed=sum(r["changed"] for r in rows), n_changed_plans=sum(1 for r in rows if r["changed"]),
                     view=view if view in standing else None, viewing=standing.get(view) if view else None,
-                    may=roles.may(who, VERB), start=start, new_name=f"{start_name} — copy" if start_name else "",
-                    all_sources=targets, default_source=(open_sources[0]["version_id"] if open_sources else None),
-                    pn=lambda codes, sep: sep.join(plants.get(c, c) for c in codes), key_plants=W.key_plants(), sheet_columns=W.SHEET_COLUMNS, per=per, when=when, **ctx)
+                    may=roles.may(who, W.kind().get("owner_verb") or VERB), start=start, new_name=f"{start_name} — copy" if start_name else "",
+                    all_sources=[v for v in targets if pv[v["version_id"]]["n"] == 0], default_source=(open_sources[0]["version_id"] if open_sources else None),
+                    asked=asked, asked_of_me=asked_of_me, answerable=lambda r: W.sources(r["actuals_to"]),
+                    pn=lambda codes, sep: sep.join(plants.get(c, c) for c in codes), key_plants=W.key_plants(), sheet_columns=W.sheet_columns(), per=per, when=when, **ctx)
 
     @bp.get("/purchasing")
     def purchasing_plans():
@@ -223,6 +245,48 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 raise ValueError(_refused(who) or "no plan of yours is chosen")
             c = W.change(p["id"], plant, source, who)
             session.say(f"{p['name']} reads a copy of {plant}'s consumption from {reads.plan_codes().get(source, (source,) * 2)[1]}, taken {when(c['taken_at'])}", True)
+        except ValueError as e:
+            session.say(f"refused: {e}", False)
+        return redirect(url_for("plan.purchasing_plans") + "#chosen")
+
+    @bp.post("/purchasing/ask")
+    def purchasing_ask():
+        """A copy asked for (by request): a plant's consumption, of the holders of the right of the stage it comes from."""
+        who = who_fn(); p = _mine(who)
+        try:
+            if _refused(who) or not p:
+                raise ValueError(_refused(who) or "no plan of yours is chosen")
+            r = W.ask(p, request.form.get("plant") or "", who, (request.form.get("message") or "").strip())
+            receipts.act("purchasing.ask", who, r["id"], True, f"asked {r['stage_name']} for {r['plant']}'s consumption for {p['name']}")
+            session.say(f"asked — {', '.join(reads.holders(r['verb'])) or 'nobody yet'} will see it on their My plans", True)
+        except ValueError as e:
+            session.say(f"refused: {e}", False)
+        return redirect(url_for("plan.purchasing_plans") + "#chosen")
+
+    @bp.post("/purchasing/answer")
+    def purchasing_answer():
+        """A request answered by one who holds the right it was asked of: one copy shared, or declined."""
+        who = who_fn(); f = request.form
+        r = W.request(f.get("request"))
+        try:
+            if not r or not roles.may(who, r["verb"]):
+                raise ValueError(f"{who} was not asked" if r else "no such request")
+            share = f.get("do") == "share"
+            W.answer(r["id"], who, f.get("source") if share else None, (f.get("says") or "").strip())
+            receipts.act("purchasing.answer", who, r["id"], True, f"{'shared a copy from ' + (f.get('source') or '') if share else 'declined'} for {r['by']}")
+            session.say(f"{'one copy shared with' if share else 'declined for'} {r['by']}", True)
+        except ValueError as e:
+            session.say(f"refused: {e}", False)
+        return redirect(url_for("plan.purchasing_plans") + "#asked")
+
+    @bp.post("/purchasing/take_shared")
+    def purchasing_take_shared():
+        who = who_fn(); p = _mine(who)
+        try:
+            if _refused(who) or not p:
+                raise ValueError(_refused(who) or "no plan of yours is chosen")
+            c = W.take_shared(p["id"], request.form.get("request") or "", who)
+            session.say(f"{p['name']} reads the copy shared by {c['shared_by']} for {c['plant']}", True)
         except ValueError as e:
             session.say(f"refused: {e}", False)
         return redirect(url_for("plan.purchasing_plans") + "#chosen")

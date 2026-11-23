@@ -46,12 +46,11 @@ PAGE = """{% if finance %}<h1>{{ title }}<small>{{ version|plan }} · {{ where }
 {% else %}<h1>{{ p.name }}<small>the material balance · actuals to {{ per(p.actuals_to) }} · through {{ per(p.through) }} · {{ where }} · <a href="{{ url_for('plan.purchasing_plans', purchasing=p.id) }}">My plans</a></small></h1>
 <p class="hint">Each row has one source. The opening is the stock on hand at the close of {{ per(p.actuals_to) }}; after it, the period before's closing. Consumption is copied from the IBP plan each plant reads — the cases it makes × the bill × the plant's usage — and valued at the opening cost basis. Contracted receipts are what is already on order or under contract, at the contract's price. Additional receipts are the ones you plan and nothing else: the balance buys nothing of its own. The closing is calculated, and is the next period's opening; it is marked <b>short</b> below zero and <b>below cover</b> under the cover the material is meant to hold — its cover periods × the average consumption of the next three periods. {% if may %}Type a quantity in an additional-receipts cell — its price is the price in force unless you type one — and save it with the bar at the foot of the window; a note may be written in a cell, as a comment is in a spreadsheet —  It changes this balance at once and nothing in any IBP plan until you send a snapshot from <a href="{{ url_for('plan.purchasing_plans', purchasing=p.id) }}">My plans</a>.{% endif %}</p>
 <div class="card reads"><b>Reads copies, not connections</b> — {% for pl, c in reads.consumption.items() %}consumption at {{ plants.get(pl, pl) }}: {% if c %}{{ c.source|planfull }}, copy of {{ when(c.taken_at) }}{% else %}<b>not received</b>{% endif %}{{ '; ' if not loop.last else '.' }}{% endfor %} A source changing changes nothing here until you refresh.</div>{% endif %}
-<div class="cards">{% for c in cards %}<div class="card stat"><span>{{ c.label }}</span><b>{{ c.show }}</b><div class="small muted">{{ c.says }}</div></div>{% endfor %}</div>
-{% if alerts %}<div class="card alerts"><b>Closing balance alerts</b> — {{ alerts|length }} of {{ n_rows }} materials{% for a in alerts[:8] %}<div class="small"><b class="{{ 'no' if a.short }}">{{ a.label }}</b> · {{ a.plant }} — {{ a.says }}</div>{% endfor %}{% if alerts|length > 8 %}<div class="small muted">and {{ alerts|length - 8 }} more — each is marked on its closing row</div>{% endif %}</div>{% endif %}
+<div class="cards">{% for c in cards %}{% if c.href %}<a class="card stat link{{ ' on' if c.on }}" href="{{ c.href }}">{% else %}<div class="card stat">{% endif %}<span>{{ c.label }}</span><b>{{ c.show }}</b>{% if c.vs %}<div class="small vs">{{ c.vs }}</div>{% endif %}<div class="small muted">{{ c.says }}</div>{{ '</a>'|safe if c.href else '</div>'|safe }}{% endfor %}</div>
 {{ grid_choice(g) }}
 {% if g.editable %}<form method="post" action="{{ url_for('plan.purchase_type') }}" id="type">{% if request.args.get('location') %}<input type="hidden" name="location" value="{{ request.args.get('location') }}">{% endif %}{% endif %}
 {{ grid_table(g) }}
-{% if g.editable %}<div class="form-row savebar"><button class="primary" onclick="this.textContent='Saving…'">Save changes</button><span class="hint grow">saved in this plan by {{ who }} · a quantity typed takes the price in force unless you type one · right-click a cell (or Shift+F2) to write a note in it</span></div></form>{% endif %}
+{% if g.editable %}{{ save_bar(discard='reset', note='saved in this plan by ' ~ who ~ ' · a quantity typed takes the price in force unless you type one · right-click a cell (or Shift+F2) to write a note in it') }}</form>{% endif %}
 <p class="hint">A row is a key raw material at the plant that holds it, its balance beneath it in volume (its own unit), value and cost basis. The volumes of different materials do not add, so the first row totals the value only. A name's line says its unit, how it is bought and its cover; choose a commodity above the table to read one alone. The year is its plan periods: movements summed, the opening its first period's, the closing its last's; a cost basis is not added. A typed additional receipt is boxed, and one with a note has its corner marked; a closing below zero is marked short, one under its cover below cover.</p>
 {% if others %}<p class="hint">Valued at the price in force, with no stock and no purchase line: {{ others|join(', ') }}.</p>{% endif %}
 {% if not finance %}<h2 id="typed">Typed here<span class="count">{{ drafts|length }} receipt{{ '' if drafts|length == 1 else 's' }} in this plan · {{ n_changed }} new or changed since its last snapshot</span></h2>
@@ -66,7 +65,8 @@ PAGE = """{% if finance %}<h1>{{ title }}<small>{{ version|plan }} · {{ where }
 {% if not finance %}<script>window.PUR_NOTES = {{ notes|tojson }};</script>{{ note_script|safe }}{% endif %}
 {{ grid_style() }}<style>table.fin td.noted{background-image:linear-gradient(225deg,var(--ink) 0 7px,transparent 7px)}
 #cellnote{position:absolute;z-index:9;background:var(--panel);border:1px solid var(--ink);padding:.5rem;box-shadow:0 4px 14px rgba(0,0,0,.18);width:17rem}#cellnote textarea{width:100%;height:4.5rem;font:inherit;font-size:.85rem}#cellnote .row{display:flex;gap:.5rem;justify-content:flex-end;margin-top:.3rem}
-.card.reads,.card.alerts{padding:.6rem .9rem;margin:.4rem 0 1rem}.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}.savebar{position:sticky;bottom:0;z-index:3;background:var(--panel);border-top:1px solid var(--ink);padding:.6rem .9rem;margin:0 0 .6rem}</style>"""
+.card.reads{padding:.6rem .9rem;margin:.4rem 0 1rem}.form-row{display:flex;flex-wrap:wrap;gap:.8rem;align-items:end;margin:.6rem 0}.form-row .grow{flex:1;display:flex;flex-direction:column}
+a.card.stat.link{text-decoration:none;color:inherit;cursor:pointer}a.card.stat.link:hover{border-color:var(--ink)}a.card.stat.link.on{box-shadow:inset 0 0 0 1px var(--ink)}a.card.stat.link span::after{content:" ▸";color:var(--muted)}.card.stat .vs{margin-top:.15rem}</style>"""
 
 # A note in a cell, as a comment in a spreadsheet: right-click (or Shift+F2) a typed-in cell, write, and it is saved with
 # the table. The note belongs to the receipt — the quantity and the price of the cell share it.
@@ -109,6 +109,78 @@ def when(x: str | None) -> str:
     except ValueError:
         return x or ""
     return f"{t.day} {t:%b %H:%M}"
+
+
+def _money(x: float) -> str:
+    return f"{'−' if x < 0 else ''}${abs(x) / 1e6:,.2f}M"
+
+
+def _avg_peak(by: dict[str, float]) -> tuple[float, float, str | None]:
+    if not by:
+        return 0.0, 0.0, None
+    pk = max(by, key=lambda p: by[p])
+    return sum(by.values()) / len(by), by[pk], pk
+
+
+def aop() -> str | None:
+    """The annual operating plan: the plan of the business-plan kind, the latest named."""
+    r = q("select version_id from dims.ctl_version where version_kind = 'business_plan' order by from_period desc, version_id desc limit 1")
+    return r[0]["version_id"] if r else None
+
+
+def headlines(shown: list[dict], plan_periods: list[str], names: dict, plants: dict, version: str | None) -> list[dict]:
+    """The balance's headlines over the rows the table shows (DEC-20261124-04; ambiguity #119, #120): storage — pallet
+    positions at each period's peak, by the storage page's conversion; working capital — the closing value, with its
+    variance to the annual operating plan over the periods both plan; turnover of the fresh materials, fastest and
+    slowest. Each an average over the plan periods and a peak with its period."""
+    per_pallet = {r["item_code"]: r["units_per_pallet"] for r in q("select item_code, units_per_pallet from dims.ref_storage_attribute where item_kind = 'input'")}
+    fresh = {r["material_code"] for r in q("select material_code from dims.dim_input_material where is_perishable")}
+    fresh |= {c for c, n in names.items() if str(n.get("is_perishable")).lower() in ("true", "1", "y")}
+    pallets: dict[str, float] = {}; value: dict[str, float] = {}; unstored = set(); turns = []; no_stock = 0
+    for m in shown:
+        i = m["attrs"]["material"]
+        for r in m["rows"]:
+            if r["period"] not in plan_periods:
+                continue
+            value[r["period"]] = value.get(r["period"], 0.0) + (r["closing_value"] or 0.0)
+            if per_pallet.get(i):
+                pallets[r["period"]] = pallets.get(r["period"], 0.0) + ((r["opening_quantity"] or 0.0) + (r["purchase_quantity"] or 0.0)) / per_pallet[i]
+            else:
+                unstored.add(m["label"])
+        if i in fresh:
+            rs = [r for r in m["rows"] if r["period"] in plan_periods]
+            avg = sum(r["closing_quantity"] or 0.0 for r in rs) / len(rs) if rs else 0.0
+            if avg > 1e-9:
+                turns.append((sum(r["consumption_quantity"] or 0.0 for r in rs) * 12 / len(rs) / avg, f"{m['label']} · {plants.get(m['attrs']['plant'], m['attrs']['plant'])}"))
+            else:
+                no_stock += 1
+    sa, sp, spp = _avg_peak(pallets)
+    wa, wp, wpp = _avg_peak(value)
+    vs, says_wc = None, "the key materials' closing value, in stock — what is owed to suppliers is not netted"
+    base = aop()
+    if base and base != version and value:
+        both = sorted(set(value) & {r["period"] for r in q("select distinct period from plan.material_stock where version_id = ?", base)})
+        cells = {(m["attrs"]["material"], m["attrs"]["plant"]) for m in shown}
+        b: dict[str, float] = {}
+        for r in q("select input_code, plant_code, period, closing_value from plan.material_stock where version_id = ?", base):
+            if (r["input_code"], r["plant_code"]) in cells and r["period"] in both:
+                b[r["period"]] = b.get(r["period"], 0.0) + (r["closing_value"] or 0.0)
+        if both:
+            pa, pp_, _ = _avg_peak({p: value[p] for p in both})
+            ba, bp, _ = _avg_peak({p: b.get(p, 0.0) for p in both})
+            vs = f"vs AOP: avg {'+' if pa >= ba else ''}{_money(pa - ba)} · peak {'+' if pp_ >= bp else ''}{_money(pp_ - bp)}"
+            says_wc = f"against the annual operating plan over {per(both[0])}–{per(both[-1])}, the periods both plan · " + says_wc
+        else:
+            vs = "vs AOP: no period in common"
+    turns.sort()
+    return [{"label": "Storage — avg / peak", "show": f"{sa:,.0f} / {sp:,.0f}" if pallets else "—",
+             "says": (f"pallet positions at each period's peak, the peak in {per(spp)}" if pallets else "no pallet positions declared for these materials")
+                     + (f" · not counted: {', '.join(sorted(unstored))}" if unstored else "")},
+            {"label": "Working capital — avg / peak", "show": f"{_money(wa)} / {_money(wp)}" if value else "—", "vs": vs,
+             "says": (f"the peak in {per(wpp)} · " if value else "") + says_wc},
+            {"label": "Turnover, fresh — high / low", "show": f"{turns[-1][0]:,.1f} / {turns[0][0]:,.1f}" if turns else "—",
+             "says": (f"turns a year: fastest {turns[-1][1]}, slowest {turns[0][1]}" if turns else "no fresh material with stock in the rows shown")
+                     + (f" · {no_stock} with no stock on average left out" if no_stock else "")}]
 
 
 def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
@@ -156,6 +228,15 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                                       "short_note": "short" if r["short"] else (f"below cover {r['cover_target']:,.0f}" if r.get("below_cover") else None),
                                       "closing_quantity_cls": "over" if r["short"] else ("near" if r.get("below_cover") else ""), "typed_title": "sent by purchasing, taken as typed" if finance else "typed in this plan — listed under Typed here"}
             row["rows"].append(r)
+        alerts = []                                       # a material at a plant whose closing is short or below cover, and from when
+        for m in rows.values():
+            sh, bc = [r["period"] for r in m["rows"] if r["short"]], [r["period"] for r in m["rows"] if r.get("below_cover")]
+            if sh or bc:
+                alerts.append({"code": m["code"], "short": bool(sh)})
+        n_short = sum(a["short"] for a in alerts)
+        alerted = request.args.get("alerted") == "1"
+        if alerted:                                       # the alerts total, clicked: the table narrowed to the materials alerted
+            rows = {k: m for k, m in rows.items() if m["code"] in {a["code"] for a in alerts}}
         # a category filter matches an input its materials' bill uses: the row carries the chosen category when it is one of its
         chosen_cat = request.args.get("f_category") or ""
         for row in rows.values():
@@ -183,26 +264,15 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             n_changed = len(ch)
         shown_rows = sorted({r["code"] for r in g["rows"] if not r["current"]})           # the rows the table shows: plant, filters, find
         clearable = [d for d in drafts if f"{d['input_code']}~{d['plant_code']}" in shown_rows]
-        alerts = []                                       # a material at a plant whose closing is short or below cover, and from when
-        for m in rows.values():
-            sh, bc = [r["period"] for r in m["rows"] if r["short"]], [r["period"] for r in m["rows"] if r.get("below_cover")]
-            if sh or bc:
-                alerts.append({"label": m["label"], "plant": plants.get(m["attrs"]["plant"], m["attrs"]["plant"]), "short": bool(sh),
-                               "says": " · ".join(x for x in [f"short from {per(sh[0])} ({len(sh)} period{'s' if len(sh) != 1 else ''})" if sh else "",
-                                                               f"below cover from {per(bc[0])} ({len(bc)} period{'s' if len(bc) != 1 else ''})" if bc else ""] if x)})
-        alerts.sort(key=lambda a: (not a["short"], a["label"]))
-        n_short = sum(a["short"] for a in alerts)
-        buy = sum(r["purchase_value"] or 0 for m in rows.values() for r in m["rows"])        # contracted and additional receipts
-        close = [m["rows"][-1]["closing_value"] or 0 for m in rows.values() if m["rows"]]
-        cards = [{"label": "Receipts", "show": f"${buy / 1e6:,.2f}M", "says": f"contracted and additional, {len(rows)} key materials over the plan periods"},
-                 {"label": "Stock at the end", "show": f"${sum(close) / 1e6:,.2f}M", "says": "the key materials' closing value at the last plan period"},
-                 {"label": "Closing alerts", "show": str(len(alerts)), "says": (f"{n_short} short, {len(alerts) - n_short} below cover — listed above the table" if alerts else "no closing is short or below its cover")},
-                 {"label": "Typed", "show": str(len(typed) if finance else len(drafts)),
-                  "says": "additional receipts standing in the Plan, sent by purchasing" if finance else "additional receipts typed in this plan"}]
+        shown = [rows[tuple(c.split("~", 1))] for c in shown_rows if tuple(c.split("~", 1)) in rows]
+        cards = headlines(shown, vp["plan"], names, plants, version) + [
+            {"label": "Closing alerts", "show": str(len(alerts)), "href": figures.here(alerted=None if alerted else "1"), "on": alerted,
+             "says": ((f"{n_short} short, {len(alerts) - n_short} below cover — " + ("the table shows only these; click to show every material" if alerted else "click to show only these in the table"))
+                      if alerts else "no closing is short or below its cover")}]
         where = plants.get(loc, loc) if loc != "ALL" else ("both plants" if finance else ", ".join(plants.get(x, x) for x in p["plants"]))
         return page(figures.MACROS + MACRO + PAGE, title="Material stock" if finance else "Material balance", active="material_stock" if finance else "purchases", width="none",
                     finance=finance, version=version, p=p, where=where, g=g, others=others, typed=typed, cards=cards, source_says=SOURCE_SAYS, may=may,
-                    alerts=alerts, n_rows=len(rows), last=session.last, receipt_acts=("purchase.type", "purchase.clear"), drafts=drafts, clearable=clearable,
+                    n_rows=len(rows), last=session.last, receipt_acts=("purchase.type", "purchase.clear"), drafts=drafts, clearable=clearable,
                     clear_rows=sorted({f"{d['input_code']}~{d['plant_code']}" for d in clearable}), n_changed=n_changed, names=names, plants=plants,
                     reads=purchasing_plan.reads_of(p) if p else None, per=per, when=when, note_script=NOTE_SCRIPT,
                     notes={f"{d['input_code']}~{d['plant_code']}|{d['period']}": d["reason"] for d in drafts if d.get("reason")})
@@ -252,7 +322,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         session.last = receipts.write("purchase.type", who, f"{len(changed)} cells", checks, kept)
         session.say(f"{len(changed)} receipt{'s' if len(changed) != 1 else ''} kept in {p['name']} — send a snapshot from My plans to put {'them' if len(changed) != 1 else 'it'} into an IBP plan" if kept
                     else "refused: " + "; ".join(x["says"] for x in checks if not x["ok"]), kept)
-        return redirect(url_for("plan.material_purchases", location=request.form.get("location") or None) + "#typed")
+        return redirect(figures.back(url_for("plan.material_purchases", location=request.form.get("location") or None) + "#typed"))
 
     @bp.post("/purchasing/balance/type")
     def purchase_type():

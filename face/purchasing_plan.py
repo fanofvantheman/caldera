@@ -70,7 +70,7 @@ CONSUMPTION = {
 # what the structures copy holds — master data, the same whichever IBP plan a plant's consumption comes from
 STRUCTURES = {
     "dims.ref_key_material": "select * from dims.ref_key_material order by input_code, plant_code",
-    "dims.dim_input_material": "select material_code, material_name, material_type, base_uom, campaign_window from dims.dim_input_material order by material_code",
+    "dims.dim_input_material": "select material_code, material_name, material_type, base_uom, campaign_window, is_perishable from dims.dim_input_material order by material_code",
     "dims.dim_period": "select period, fiscal_year, fiscal_period from dims.dim_period order by period",
 }
 COLUMNS = {"plan.material_requirement": ["version_id", "input_code", "plant_code", "period", "quantity"],
@@ -148,11 +148,25 @@ def sources(close: str | None = None) -> list[dict]:
 SEED = "ibp"                                                         # start_from: seeded from the IBP plan the consumption is taken from
 
 
+def typed_since(version: str) -> list[dict]:
+    """What was typed in the IBP plan since the copy standing there was placed (DEC-20261121-03 (a)): it applies over the
+    copy. Read from the run, so a change typed since the last run shows after it."""
+    s = standing(version)
+    if not s:
+        return []
+    return [{**r, "reason": r.get("reason") or ""} for r in
+            q("select act_id, input_code, plant_code, period, quantity, price, reason, entered_by, entered_at from plan.purchase_act "
+              "where version_id = ? and act_id not like 'STD-%' and entered_at > ? order by 2, 3, 4", version, s["at"])]
+
+
 def stands(version: str) -> list[dict]:
-    """Purchasing's receipts as they stand in an IBP plan: the copy standing there, or with none, what is typed on it."""
+    """Purchasing's receipts as they stand in an IBP plan: the copy standing there with what was typed there since over
+    it, or with none, what is typed on it."""
     s = standing(version)
     if s:
-        return list(s.get("receipts", []))
+        cells = {_cell(r): r for r in s.get("receipts", [])}
+        cells.update({_cell(r): r for r in typed_since(version)})
+        return [cells[k] for k in sorted(cells)]
     return [{**r, "reason": r.get("reason") or ""} for r in
             q("select input_code, plant_code, period, quantity, price, reason from plan.purchase_act where version_id = ? order by 1, 2, 3", version)]
 
@@ -262,7 +276,7 @@ def refresh(pid: str, who: str) -> list[dict]:
         raise ValueError("not a plan of yours")
     out = [take_structures(p, who)]
     for pl, c in reads_of(p)["consumption"].items():
-        if c and c.get("source"):
+        if c and c.get("source") and c.get("how") != "by request":     # a copy shared on request changes only by asking again
             out.append(take_consumption(p, pl, c["source"], who))
     _save_plan(p)
     return out
@@ -417,6 +431,7 @@ def send(version: str, rows: list[dict], source: str, who: str, p: dict | None =
     gone = sorted({x["plant_code"] for x in (was or {}).get("receipts", [])} - {t["plant_code"] for t in taken})
     name = reads.plan_codes().get(version, (version, version))[1]
     lock = stage_lock(version)
+    since = typed_since(version) if v else []
     checks = [
         {"check": "the IBP plan is open", "ok": v.get("status") == "open" and v.get("version_kind") != "actual",
          "says": f"{name} is open" if v.get("status") == "open" else f"{name} is {v.get('status', 'unknown')} — what stands in it is no longer replaced"},
@@ -427,6 +442,10 @@ def send(version: str, rows: list[dict], source: str, who: str, p: dict | None =
          "says": ((f"replaces {was['source']}, carried across from {reads.plan_codes().get(was['carried']['from'], (was['carried']['from'],) * 2)[1]}"
                    if was.get("carried") else f"replaces {was['source']} of {was['at'].replace('T', ' ')[:16]}") if was else "nothing stood there")
                  + (f"; nothing now stands for {', '.join(gone)}" if gone else "")},
+        {"check": "changes typed in the IBP plan", "ok": True, "flag": bool(since),
+         "says": (f"replaces {len(since)} change{'s' if len(since) != 1 else ''} typed in {name} since the last copy: "
+                  + "; ".join(f"{r['input_code']} at {r['plant_code']} in {r['period']} by {r['entered_by']}" for r in since[:6])
+                  + (f" and {len(since) - 6} more" if len(since) > 6 else "")) if since else "nothing typed there since the last copy"},
     ]
     placed = receipts.judge(checks)
     now = dt.datetime.now()
@@ -459,12 +478,37 @@ def _place_standing(version: str, copy: dict, who: str, stamp: str) -> None:
 
 # ── supply's sign-offs: what a lock refuses, what publication moves ──────────────────────────────────────────────────────
 
-STAGE, STAGE_NAME = "materials", "Supply"            # the stage purchasing feeds; its unit carries the sign-offs
+STAGE, STAGE_NAME = "materials", "Supply"            # the stage purchasing feeds, as the list of plans declares it (stage_code)
+KIND = "purchasing"                                  # this module's plan kind in the list of plans (dims.ref_plan_kind)
+FIELD = {"quantity": "quantity", "price": "price", "note": "reason"}     # a field the list names → the column a receipt holds it in
+
+
+def kind() -> dict:
+    """This plan kind's row in the list of plans (DEC-20261124-05): its name, the stage it feeds, the right that owns it,
+    by copy or by request — with the build's own values where the list is not yet built."""
+    r = q("select * from dims.ref_plan_kind where plan_kind = ?", KIND)
+    return r[0] if r else {"plan_kind": KIND, "plan_kind_name": "Purchasing plan", "stage": STAGE, "owner_verb": "register.supply_plan.maintain", "taken_by": "copy", "submitter": SUBMITTER}
+
+
+def figures_of(k: str = KIND) -> list[dict]:
+    """The key figures the kind owns and reads, in the list's order."""
+    return q("select * from dims.ref_plan_figure where plan_kind = ? order by ord", k)
+
+
+def stage_code() -> str:
+    return kind().get("stage") or STAGE
+
+
+def sheet_columns() -> list[str]:
+    """What a send carries and a seed takes back: the cell, and the fields of the figure the kind owns."""
+    owned = next((f for f in figures_of() if f["relation"] == "owns"), None)
+    fields = [FIELD.get(x.strip(), x.strip()) for x in (owned or {}).get("fields", "").split(",") if x.strip()] if owned else []
+    return ["input_code", "plant_code", "period"] + (fields or SHEET_COLUMNS[3:])
 
 
 def stage(version: str) -> dict:
     """The state of the stage purchasing feeds, on an IBP plan: open, handed over (signed off once — locked) or published."""
-    return (q("select * from plan.stage_state where version_id = ? and stage = ?", version, STAGE) or [{}])[0]
+    return (q("select * from plan.stage_state where version_id = ? and stage = ?", version, stage_code()) or [{}])[0]
 
 
 def stage_lock(version: str) -> str | None:
@@ -494,7 +538,7 @@ def publish(version: str, who: str, says: str = "", rows: list[dict] | None = No
     """Purchasing's receipts as they stand in an IBP plan (or the rows given) made the copy the stages after supply use —
     the previous one replaced, none kept. The copy says what it was a copy of."""
     s = standing(version)
-    taken = [{k: r.get(k) for k in SHEET_COLUMNS} for r in (stands(version) if rows is None else rows)]
+    taken = [{k: r.get(k) for k in sheet_columns()} for r in (stands(version) if rows is None else rows)]
     now = dt.datetime.now(); stamp = now.strftime("%Y%m%d-%H%M%S-%f"); at = now.isoformat(timespec="seconds")
     copy = {"version": version, "submitter": SUBMITTER, "by": who, "at": at, "says": says, "receipts": taken,
             "of": origin or ({"source": s["source"], "at": s["at"], "by": s["by"], "carried_from": (s.get("carried") or {}).get("from")} if s else None)}
@@ -526,9 +570,10 @@ def carried(base: str, actuals_to: str, plan_periods: list[str]) -> dict | None:
     if not was:
         return None
     ps = set(plan_periods)
-    keep = [r for r in was.get("receipts", []) if r["period"] in ps]
+    held = [{k: r.get(k) for k in SHEET_COLUMNS} for r in stands(base)]     # the copy and what was typed there since (DEC-20261123-01 point 5)
+    keep = [r for r in held if r["period"] in ps]
     left = [{**r, "why": "now the record" if r["period"] <= actuals_to else "past where this plan runs"}
-            for r in was.get("receipts", []) if r["period"] not in ps]
+            for r in held if r["period"] not in ps]
     return {"from": base, "was": was, "receipts": keep, "left_behind": left}
 
 
@@ -566,4 +611,87 @@ def clear(pid: str, rows: set[tuple[str, str]]) -> int:
 
 def read_sheet(text: str) -> list[dict]:
     """A spreadsheet of receipts saved as CSV, in the shape a receipt is sent (SHEET_COLUMNS)."""
-    return [{k: (r.get(k) or "").strip() for k in SHEET_COLUMNS} for r in csv.DictReader(io.StringIO(text))]
+    return [{k: (r.get(k) or "").strip() for k in sheet_columns()} for r in csv.DictReader(io.StringIO(text))]
+
+
+# ── by request (DEC-20261121-01 point 5, DEC-20261123-01): anything later than or different from an IBP plan's version 0 ──
+#
+#   shared/requests/<request>/request.json     the ask — which plan, which plant's consumption, of whom, the message — and
+#                                              the answer once given: one copy shared, or declined with a word
+#   shared/requests/<request>/copy/            the copy shared, taken when the answer was given and never changed
+#
+# Asked of the holders of the right of the stage the figure is read from (the list of plans: consumption from production).
+# The planner takes the shared copy into the plan, or leaves it; one answer is one copy — for a later one, ask again.
+
+def _requests_dir() -> pathlib.Path:
+    return _data() / "shared" / "requests"
+
+
+def asked_of(figure: str = "consumption") -> dict:
+    """The stage a figure is read from and the right whose holders are asked for it."""
+    f = next((x for x in figures_of() if x["key_figure"] == figure), None)
+    st = (f or {}).get("read_from") or "production"
+    r = q("select stage, stage_name, verb from dims.ref_stage where stage = ?", st)
+    return r[0] if r else {"stage": st, "stage_name": st.title(), "verb": "delta.supply.enter"}
+
+
+def request(rid: str | None) -> dict | None:
+    f = _requests_dir() / (rid or "-") / "request.json"
+    return json.loads(f.read_text()) if rid and re.fullmatch(r"[A-Za-z0-9-]+", rid) and f.exists() else None
+
+
+def requests_all() -> list[dict]:
+    d = _requests_dir()
+    out = [json.loads((x / "request.json").read_text()) for x in d.iterdir() if (x / "request.json").exists()] if d.is_dir() else []
+    return sorted(out, key=lambda r: r["asked_at"], reverse=True)
+
+
+def ask(p: dict, plant: str, who: str, message: str) -> dict:
+    if plant not in p["plants"]:
+        raise ValueError(f"this plan does not buy for {plant}")
+    st = asked_of("consumption")
+    rid = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    r = {"id": rid, "plan": p["id"], "plan_name": p["name"], "by": who, "figure": "consumption", "plant": plant, "actuals_to": p["actuals_to"],
+         "stage": st["stage"], "stage_name": st["stage_name"], "verb": st["verb"], "message": message, "asked_at": _now(), "answer": None}
+    (_requests_dir() / rid).mkdir(parents=True, exist_ok=True)
+    (_requests_dir() / rid / "request.json").write_text(json.dumps(r, indent=1))
+    return r
+
+
+def answer(rid: str, who: str, source: str | None, says: str) -> dict:
+    """The one asked answers: shares one copy of the plant's consumption from an IBP plan and version at the plan's close,
+    taken now — or, with no source, declines. Answered once."""
+    from . import reads
+    r = request(rid)
+    if not r:
+        raise ValueError("no such request")
+    if r.get("answer"):
+        raise ValueError("answered already — a later copy is asked for again")
+    if source:
+        v = reads.version(source)
+        if not v or v.get("version_kind") == "actual" or v.get("from_period") != r["actuals_to"]:
+            raise ValueError(f"a copy at actuals to {r['actuals_to']} — the plan's close")
+        d = _requests_dir() / rid / "copy"
+        d.mkdir(parents=True, exist_ok=True)
+        for t, (sql, by_plant) in CONSUMPTION.items():
+            _write_csv(d / f"{t}.csv", q(sql, source, r["plant"]) if by_plant else q(sql, source), COLUMNS[t])
+    r["answer"] = {"by": who, "at": _now(), "shared": source, "says": says}
+    (_requests_dir() / rid / "request.json").write_text(json.dumps(r, indent=1))
+    return r
+
+
+def take_shared(pid: str, rid: str, who: str) -> dict:
+    """The copy shared in answer to a request taken into the plan, as its plant's consumption — read as by request."""
+    p, r = plan(pid), request(rid)
+    if not p or p["owner"] != who or not r or r["plan"] != pid:
+        raise ValueError("not a request of this plan of yours")
+    if not (r.get("answer") or {}).get("shared"):
+        raise ValueError("nothing was shared in answer")
+    c, d = _new_copy(p, "consumption", who, plant=r["plant"], source=r["answer"]["shared"], how="by request", request=rid,
+                     shared_by=r["answer"]["by"], shared_at=r["answer"]["at"])
+    for t in CONSUMPTION:
+        (d / f"{t}.csv").write_bytes((_requests_dir() / rid / "copy" / f"{t}.csv").read_bytes())
+    (d / "copy.json").write_text(json.dumps(c, indent=1))
+    p["reads"]["consumption"][r["plant"]] = c["copy"]
+    _save_plan(p)
+    return c
