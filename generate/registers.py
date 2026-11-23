@@ -88,7 +88,7 @@ ROLE_DEFINITIONS = [
     ("SALES_FINANCE",        "Sales finance",             "Owns the terms register, the price list and the gross-to-net."),
     ("PORTFOLIO_MARKETING",  "Portfolio marketing",       "Owns innovation and lifecycle exit, and the commercial side of the material structure."),
     ("SUPPLY_PLANNER",       "Supply planner",            "Owns the capacity registers, routes, the production policy entry and the supply constraint."),
-    ("MATERIALS_PLANNER",    "Materials and intake planner", "Owns the supply plan by vendor and key material, supplier prices and freight contracts."),
+    ("MATERIALS_PLANNER",    "Procurement manager", "Owns the supply plan by vendor and key material, supplier prices and freight contracts."),
     ("NETWORK_PLANNER",      "Network planner",           "Owns nodes, lanes, sourcing rules and service levels."),
     ("PLANT_MANAGER",        "Plant manager",             "Accepts the production policy and tier steps within site authority; budget holder for the factory cost centres."),
     ("QUALITY",              "Quality and technical",     "Owns yield assumptions, shelf life and specification-driven recipe versions."),

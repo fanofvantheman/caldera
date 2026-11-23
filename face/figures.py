@@ -132,6 +132,10 @@ def table(id: str, rows: list[dict], measures: list[Measure], lead: str, cols: d
                 x["cls"] = "tot" if p.get("total") else "qtr"
                 ps = fy_periods if p.get("total") else p["periods"]
                 x["show"] = show(m, _read(m, [(r["by"].get(per) or {}).get(m.key) for per in ps]))
+                if m.year == "last" and ps:               # a year or quarter read as its last period carries that period's mark
+                    mk = (r["by"].get(ps[-1]) or {}).get(m.key + "_cls")
+                    if mk:
+                        x["cls"] += " " + mk
             else:
                 f = r["by"].get(p["period"]) or {}
                 v = f.get(m.key)
@@ -230,5 +234,5 @@ table.fin td.node .more{display:inline-block;margin-top:.15rem;color:var(--muted
 table.fin .inp{position:relative;display:inline-block}table.fin .one{padding:0;border:0;background:none;color:var(--muted);font-size:.85rem;line-height:1;text-decoration:none;cursor:pointer;margin-right:.3rem}table.fin .inp .one{position:absolute;left:.35rem;top:50%;transform:translateY(-50%);margin:0}table.fin .one:hover,table.fin .one:focus{color:var(--ink)}
 table.fin td.unsaved{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--muted) 14%,transparent) 5px 6px)}table.fin td.unsaved input.cell{font-style:italic}
 table.fin td.actual,table.fin th.actual{color:var(--muted);background:var(--soft)}table.fin td.tot,table.fin th.tot{border-left:1px solid var(--rule);border-right:1px solid var(--rule)}table.fin input.cell{width:5.6rem;text-align:right;font-size:.85rem;padding:.15rem .35rem}
-.moved{font-size:.7rem;margin-left:.15rem}table.fin .grp{color:var(--ink);font-weight:600;margin-top:.3rem}table.fin td.down{color:var(--muted)}table.fin td.over{font-weight:700;color:var(--bad,#a33)}table.fin td.near{font-weight:600}
+.moved{font-size:.7rem;margin-left:.15rem}table.fin .grp{color:var(--ink);font-weight:600;margin-top:.3rem}table.fin td.down{color:var(--muted)}table.fin td.over{font-weight:700;color:var(--bad,#c0392b)}table.fin td.near{font-weight:600;color:var(--warn,#b7791f)}
 .toolbar .seg{display:inline-flex;gap:.6rem;margin-left:auto}.toolbar .seg b{font-weight:600}.gridpick{display:flex;flex-wrap:wrap;gap:.8rem;align-items:center}.gridpick .seg{margin-left:0}</style>{% endmacro %}"""

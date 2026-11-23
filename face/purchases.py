@@ -54,10 +54,10 @@ PAGE = """{% if finance %}<h1>{{ title }}<small>{{ version|plan }} · {{ where }
 <p class="hint">A row is a key raw material at the plant that holds it, its balance beneath it in volume (its own unit), value and cost basis. The volumes of different materials do not add, so the first row totals the value only. A name's line says its unit, how it is bought and its cover; choose a commodity above the table to read one alone. The year is its plan periods: movements summed, the opening its first period's, the closing its last's; a cost basis is not added. A typed additional receipt is boxed, and one with a note has its corner marked; a closing below zero is marked short, one under its cover below cover.</p>
 {% if others %}<p class="hint">Valued at the price in force, with no stock and no purchase line: {{ others|join(', ') }}.</p>{% endif %}
 {% if not finance %}<h2 id="typed">Typed here<span class="count">{{ drafts|length }} receipt{{ '' if drafts|length == 1 else 's' }} in this plan · {{ n_changed }} new or changed since its last snapshot</span></h2>
-{% if may and clearable %}<form class="form-row" method="post" action="{{ url_for('plan.purchase_clear') }}"><input type="hidden" name="rows" value="{{ clear_rows|join(',') }}"><button class="act" onclick="this.textContent='Clearing…'">Clear the {{ clearable|length }} receipt{{ '' if clearable|length == 1 else 's' }} typed in the rows shown</button><span class="hint">each cell is emptied{% if clearable|length != drafts|length %}; {{ drafts|length - clearable|length }} typed in rows not shown stay{% endif %} · nothing in an IBP plan changes until you send a snapshot</span></form>{% endif %}
+{% if may and clearable %}<form class="form-row" method="post" action="{{ url_for('plan.purchase_clear') }}"><input type="hidden" name="back" value="{{ request.full_path|trim('?') }}#typed"><input type="hidden" name="rows" value="{{ clear_rows|join(',') }}"><button class="act" onclick="this.textContent='Clearing…'">Clear the {{ clearable|length }} receipt{{ '' if clearable|length == 1 else 's' }} typed in the rows shown</button><span class="hint">each cell is emptied{% if clearable|length != drafts|length %}; {{ drafts|length - clearable|length }} typed in rows not shown stay{% endif %} · nothing in an IBP plan changes until you send a snapshot</span></form>{% endif %}
 {% if drafts %}<table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Note</th><th>By</th><th>Since sent</th><th></th></tr></thead><tbody>
 {% for t in drafts %}<tr><td>{{ names.get(t.input_code, {}).get('material_name') or t.input_code }}</td><td>{{ plants.get(t.plant_code, t.plant_code) }}</td><td>{{ per(t.period) }}</td><td class="n">{{ q0(t.quantity) }}</td><td class="n">{{ pr(t.price) }}</td><td class="small">{{ t.reason }}</td><td class="small">{{ t.entered_by }}</td><td class="small">{{ t.since }}</td>
-<td class="acts">{% if may %}<form class="inline" method="post" action="{{ url_for('plan.purchase_drop') }}"><input type="hidden" name="cell" value="{{ t.input_code }}|{{ t.plant_code }}|{{ t.period }}"><button class="act">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">Nothing typed in this plan.</p>{% endif %}
+<td class="acts">{% if may %}<form class="inline" method="post" action="{{ url_for('plan.purchase_drop') }}"><input type="hidden" name="back" value="{{ request.full_path|trim('?') }}#typed"><input type="hidden" name="cell" value="{{ t.input_code }}|{{ t.plant_code }}|{{ t.period }}"><button class="act">Remove</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">Nothing typed in this plan.</p>{% endif %}
 {% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>
 {% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else ('!' if c.flag else '✕') }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 {% elif typed %}<h2>Standing in the Plan<span class="count">{{ typed|length }} receipt{{ '' if typed|length == 1 else 's' }} on {{ version|plan }}</span></h2><table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Note</th><th>By</th></tr></thead><tbody>
@@ -394,7 +394,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         session.last = receipts.write("purchase.clear", who, f"{n} receipts", checks, n > 0)
         session.say(f"{n} typed receipt{'s' if n != 1 else ''} cleared from {p['name']} — what stands in an IBP plan changes only when a snapshot is sent" if n
                     else "nothing cleared", bool(n))
-        return redirect(url_for("plan.material_purchases") + "#typed")
+        return redirect(figures.back(url_for("plan.material_purchases") + "#typed"))
 
     @bp.post("/purchasing/balance/drop")
     def purchase_drop():
@@ -404,4 +404,4 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         if p and roles.may(who, VERB) and len(cell) == 3:
             purchasing_plan.drop(p["id"], cell)
             session.say(f"removed from {p['name']} — what stands in an IBP plan changes only when a snapshot is sent", True)
-        return redirect(url_for("plan.material_purchases") + "#typed")
+        return redirect(figures.back(url_for("plan.material_purchases") + "#typed"))
