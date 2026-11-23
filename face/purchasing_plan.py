@@ -185,7 +185,7 @@ def make(who: str, name: str, source: str, plants: list[str], start_from: str | 
     _save_plan(p)
     if start_from == SEED:
         p["made_from"] = f"what stands in {reads.plan_codes().get(source, (source, source))[1]}"
-        _save_receipts(p["id"], [{**r, "reason": r.get("reason") or "as it stood in the IBP plan", "entered_by": who, "entered_at": _now()}
+        _save_receipts(p["id"], [{**r, "reason": r.get("reason") or "", "entered_by": who, "entered_at": _now()}
                                  for r in stands(source) if r["plant_code"] in plants and p["actuals_to"] < r["period"] <= p["through"]])
     elif start_from:
         src = plan(start_from)
@@ -287,14 +287,17 @@ def merged(pid: str, cells: dict) -> dict:
                 "price": d.get("price") if d.get("price") is not None else (have.get(k) or {}).get("price")} for k, d in cells.items()}
 
 
-def type_cells(pid: str, cells: dict, reason: str, who: str) -> None:
-    """Cells typed in the plan; each must come out with a quantity and a price (`merged`) — the caller refuses otherwise."""
+def type_cells(pid: str, cells: dict, reason, who: str) -> None:
+    """Cells typed in the plan; each must come out with a quantity and a price (`merged`) — the caller refuses otherwise.
+    `reason` is the notes written in cells, {cell: note} (or one note for all of them); a cell given none keeps the one it has."""
+    notes = reason if isinstance(reason, dict) else {k: reason for k in cells if reason}
     rows = {(r["input_code"], r["plant_code"], r["period"]): r for r in typed(pid)}
     for (i, pl, per), d in merged(pid, cells).items():
         if d["quantity"] is None or d["price"] is None:
             raise ValueError(f"{i} at {pl} in {per}: a receipt is a quantity and a price together")
         rows[(i, pl, per)] = {"input_code": i, "plant_code": pl, "period": per, "quantity": d["quantity"], "price": d["price"],
-                              "reason": reason, "entered_by": who, "entered_at": _now()}
+                              "reason": notes[(i, pl, per)] if (i, pl, per) in notes else (rows.get((i, pl, per)) or {}).get("reason") or "",
+                              "entered_by": who, "entered_at": _now()}
     _save_receipts(pid, list(rows.values()))
 
 
@@ -385,7 +388,7 @@ def changed(pid: str) -> list[dict]:
     return [r for r in typed(pid) if last.get(_cell(r)) != (r["quantity"], r["price"])]
 
 
-def send(version: str, rows: list[dict], source: str, who: str, p: dict | None = None) -> tuple[list[dict], bool, dict]:
+def send(version: str, rows: list[dict], source: str, who: str, p: dict | None = None, note: str = "") -> tuple[list[dict], bool, dict]:
     """A snapshot into an IBP plan: checked, and if it holds, it replaces whatever stood there for purchasing — a receipt
     standing there and absent from it is gone, and nothing of the copy it replaces is kept. `source` is a plan's name or
     "a spreadsheet". Returns the checks, whether it was placed, and the copy now standing (or what was refused)."""
@@ -419,7 +422,6 @@ def send(version: str, rows: list[dict], source: str, who: str, p: dict | None =
          "says": f"{name} is open" if v.get("status") == "open" else f"{name} is {v.get('status', 'unknown')} — what stands in it is no longer replaced"},
         {"check": "supply is open there", "ok": not lock, "says": lock or f"{STAGE_NAME} is open in {name}"},
         {"check": "a quantity and a price together", "ok": not refused, "says": "; ".join(refused) if refused else f"{len(taken)} receipt{'s' if len(taken) != 1 else ''} from {source}"},
-        {"check": "a reason on each", "ok": all(t["reason"] for t in taken), "says": "each receipt says why" if all(t["reason"] for t in taken) else "a receipt with no reason"},
         {"check": "periods the IBP plan plans", "ok": True, "flag": bool(dropped), "says": ("left out: " + "; ".join(dropped)) if dropped else "every period is planned there"},
         {"check": "what it replaces", "ok": True, "flag": bool(gone),
          "says": ((f"replaces {was['source']}, carried across from {reads.plan_codes().get(was['carried']['from'], (was['carried']['from'],) * 2)[1]}"
@@ -428,7 +430,7 @@ def send(version: str, rows: list[dict], source: str, who: str, p: dict | None =
     ]
     placed = receipts.judge(checks)
     now = dt.datetime.now()
-    copy = {"version": version, "submitter": SUBMITTER, "plan": p["id"] if p else None, "source": source, "owner": p["owner"] if p else None,
+    copy = {"version": version, "submitter": SUBMITTER, "plan": p["id"] if p else None, "source": source, "note": note, "owner": p["owner"] if p else None,
             "by": who, "at": now.isoformat(timespec="seconds"), "receipts": taken, "dropped": dropped,
             "made_against": ({"actuals_to": p["actuals_to"], "copies": [c for c in reads_of(p)["consumption"].values() if c]} if p else None),
             "replaced": {"source": was["source"], "at": was["at"], "carried_from": (was.get("carried") or {}).get("from")} if was else None}
@@ -555,7 +557,7 @@ def carry(base: str, new: str, actuals_to: str, plan_periods: list[str], who: st
 
 def clear(pid: str, rows: set[tuple[str, str]]) -> int:
     """Every receipt typed in the plan for the rows given — a material at a plant — taken out in one act, so each of those
-    cells shows what the plan proposes again (DEC-20261121-02 (d)). Returns how many."""
+    cells is empty again (DEC-20261121-02 (d)). Returns how many."""
     have = typed(pid)
     keep = [r for r in have if (r["input_code"], r["plant_code"]) not in rows]
     _save_receipts(pid, keep)

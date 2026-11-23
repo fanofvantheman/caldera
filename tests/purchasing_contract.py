@@ -83,7 +83,7 @@ def main() -> None:
         for a, b in zip(rows, rows[1:]):
             assert abs(a["closing_quantity"] - b["opening_quantity"]) < 1e-6
         others = [r for r in rows if r["period"] != PER]
-        assert not any(r["quantity_typed"] for r in others) and all(abs(r["additional_quantity"] - r["proposed_quantity"]) < 1e-9 for r in others)
+        assert not any(r["quantity_typed"] for r in others) and all(abs(r["additional_quantity"]) < 1e-9 for r in others)
         html = c.get(f"/costs/material_stock?version={LV}&f_material={INP}").data.decode()
         assert "published into the Plan" in html and "the purchasing plan" in html
         print(f"published       one receipt arrived (made against {arr['made_against']}); after the run the Plan carries {p1['additional_quantity']:,.0f} typed, its other periods proposed again; Material stock shows it")

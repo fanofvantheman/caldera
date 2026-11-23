@@ -2,7 +2,7 @@
 by period — opening, consumption, contracted receipts, additional receipts, closing, in volume, value and cost basis.
 Made by `calc.purchases`, the function the face's pages also call. Python because each period opens on the one before's
 closing (charter, scope default 2). Consumption is valued at the opening cost basis, and the costing reads that and
-nothing else (DEC-20261116-04 point 5). The additional receipts are proposed again on every run; only a typed one is
+nothing else (DEC-20261116-04 point 5). The additional receipts are the typed ones and nothing else (DEC-20261124-02); only a typed one is
 carried (plan.purchase_act, DEC-20261120-02 point 6)."""
 from __future__ import annotations
 

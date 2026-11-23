@@ -9,17 +9,15 @@ Each row has one source (DEC-20261120-02 point 1):
   consumption          the production plan through the bill (plan.material_requirement), valued at the opening cost
                        basis — the opening value ÷ the opening volume
   contracted receipts  the ERP's contracted receipts (a declared stand-in here), at the contract's price
-  additional receipts  procurement's: proposed by the material's buying rule unless a buyer typed a quantity or a price,
-                       which replaces it and is marked; at the price in force unless typed
+  additional receipts  procurement's: what a buyer typed and nothing else (DEC-20261124-02) — the balance buys nothing
+                       of its own; at the price in force unless a price is typed
   closing              calculated: opening − consumption + contracted + additional, volume and value; its cost basis the
                        closing value ÷ the closing volume
 
-The proposal for additional receipts, by how the material is bought:
-  contract, spot  the requirement plus the declared cover (that many periods of the next period's requirement) less the
-                  stock on hand and the contracted receipts
-  campaign        bought in the input's campaign window for what is needed until the next window opens (or the horizon
-                  ends), less the stock at the window's start and what is contracted in it, spread evenly over the
-                  window's periods; never short inside the window
+The balance does not buy; it alerts (DEC-20261124-02). A closing is marked
+  short        below zero
+  below cover  below the declared cover — that many periods of the next period's requirement (a contract or spot
+               material; a campaign material has no cover between its windows)
 No layers, no batches."""
 from __future__ import annotations
 
@@ -46,31 +44,18 @@ def plan(periods: list[str], requirement: dict[str, float], price: dict[str, flo
          contracted: dict[str, dict] | None = None) -> list[dict]:
     """One key material at one plant on one version: a row per period, in order. `requirement` and `price` (the price in
     force, for additional receipts) by period; `contracted` by period — {"quantity": x, "price": y}; `typed` by period —
-    {"quantity": x?, "price": y?, "act_id": ...} — replaces the proposed additional receipt where given."""
+    {"quantity": x?, "price": y?, "act_id": ...} — the additional receipt; with none, nothing is received."""
     typed, contracted = typed or {}, contracted or {}
     window = set(window)
     req = {p: float(requirement.get(p) or 0.0) for p in periods}
     con = {p: (float((contracted.get(p) or {}).get("quantity") or 0.0), (contracted.get(p) or {}).get("price")) for p in periods}
-    starts: dict[str, tuple[list[str], float]] = {}      # a window's first period → (its periods, what is needed until the next opens less what is contracted in it)
-    if source == "campaign":
-        bs = blocks(periods, window)
-        for i, b in enumerate(bs):
-            until = periods.index(bs[i + 1][0]) if i + 1 < len(bs) else len(periods)
-            starts[b[0]] = (b, sum(req[p] for p in periods[periods.index(b[0]):until]) - sum(con[p][0] for p in b))
     rows, oq, ov = [], float(opening_quantity or 0.0), float(opening_quantity or 0.0) * float(opening_cost or 0.0)
-    rate = 0.0
     for i, p in enumerate(periods):
         nxt = req[periods[i + 1]] if i + 1 < len(periods) else req[p]
         cq, cp = con[p]
         cp = None if cp is None else float(cp)
-        if source == "campaign":
-            if p in starts:                                 # less the stock at the window's start, spread over the window
-                b, need = starts[p]
-                rate = max(0.0, need - oq) / len(b)
-            q = max(rate, req[p] - oq - cq) if p in window else 0.0       # never short inside the window
-        else:
-            q = max(0.0, req[p] + cover * nxt - oq - cq)
-        proposed = q
+        q = 0.0
+        target = 0.0 if source == "campaign" else cover * nxt        # the cover a closing is held against
         pr = price.get(p)
         t = typed.get(p) or {}
         q_typed, pr_typed = t.get("quantity") is not None, t.get("price") is not None
@@ -88,21 +73,22 @@ def plan(periods: list[str], requirement: dict[str, float], price: dict[str, flo
         rows.append({"period": p, "requirement": req[p], "opening_quantity": oq, "opening_value": ov, "opening_cost": basis,
                      "consumption_quantity": uq, "consumption_value": uv, "average_cost": basis,
                      "contracted_quantity": cq, "contracted_price": cp, "contracted_value": cv,
-                     "additional_quantity": q, "additional_price": pr, "additional_value": av, "proposed_quantity": proposed,
+                     "additional_quantity": q, "additional_price": pr, "additional_value": av, "cover_target": target,
                      "purchase_quantity": cq + q, "purchase_value": cv + av, "purchase_price": (cv + av) / (cq + q) if cq + q > 1e-9 else pr,
                      "closing_quantity": clq, "closing_value": clv, "closing_cost": clv / clq if clq > 1e-9 else None,
-                     "quantity_typed": q_typed, "price_typed": pr_typed, "typed_act": t.get("act_id"), "short": clq < -1e-9})
+                     "quantity_typed": q_typed, "price_typed": pr_typed, "typed_act": t.get("act_id"), "short": clq < -1e-9,
+                     "below_cover": -1e-9 <= clq < target - 1e-9})
         oq, ov = clq, clv
     return rows
 
 
 COLUMNS = ["version_id", "input_code", "plant_code", "period", "fiscal_year", "source", "requirement", "opening_quantity", "opening_value",
            "opening_cost", "consumption_quantity", "consumption_value", "average_cost", "contracted_quantity", "contracted_price",
-           "contracted_value", "additional_quantity", "additional_price", "additional_value", "proposed_quantity",
+           "contracted_value", "additional_quantity", "additional_price", "additional_value", "cover_target",
            "purchase_quantity", "purchase_price", "purchase_value", "closing_quantity", "closing_value", "closing_cost",
-           "quantity_typed", "price_typed", "typed_act", "short"]
+           "quantity_typed", "price_typed", "typed_act", "short", "below_cover"]
 TYPES = {c: "DOUBLE" for c in COLUMNS} | {"version_id": "TEXT", "input_code": "TEXT", "plant_code": "TEXT", "period": "TEXT", "fiscal_year": "INT",
-                                          "source": "TEXT", "quantity_typed": "BOOLEAN", "price_typed": "BOOLEAN", "typed_act": "TEXT", "short": "BOOLEAN"}
+                                          "source": "TEXT", "quantity_typed": "BOOLEAN", "price_typed": "BOOLEAN", "typed_act": "TEXT", "short": "BOOLEAN", "below_cover": "BOOLEAN"}
 OPENING_MARGIN = 0.05        # a campaign material opens with what it needs until its window, and this much over
 MONTHS = {"Jul": 1, "Aug": 2, "Sep": 3, "Oct": 4, "Nov": 5, "Dec": 6, "Jan": 7, "Feb": 8, "Mar": 9, "Apr": 10, "May": 11, "Jun": 12}
 
