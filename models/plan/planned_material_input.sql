@@ -9,7 +9,10 @@ MODEL (name plan.planned_material_input, kind FULL, grain (version_id, material_
 WITH mats AS (SELECT version_id, material_code, period, plant_code FROM plan.planned_labour),
 avg AS (                                              -- a key raw material: what its consumption is valued at in the period (DEC-20261120-02 point 7)
   SELECT version_id, input_code, plant_code, period, COALESCE(consumption_value / NULLIF(consumption_quantity, 0), average_cost) AS avg_cost
-  FROM plan.material_stock
+  FROM plan.material_stock WHERE version_id NOT IN (SELECT version_id FROM plan.purchase_published_version)
+  UNION ALL                                           -- where supply has published, the balance over what it published (DEC-20261123-01 point 13)
+  SELECT version_id, input_code, plant_code, period, COALESCE(consumption_value / NULLIF(consumption_quantity, 0), average_cost) AS avg_cost
+  FROM plan.material_stock_published
 )
 SELECT m.version_id, m.material_code, m.period, m.plant_code, b.component_material AS input_code, pl.pool_code,
        SUM(b.quantity_per_case) * ANY_VALUE(COALESCE(u.value, 100)) / 100 AS quantity,

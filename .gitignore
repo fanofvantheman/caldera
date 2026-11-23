@@ -16,3 +16,5 @@ rill/tmp/
 rill/.rill/
 __pycache__/
 .cache/
+data/shared/
+data/workspaces/

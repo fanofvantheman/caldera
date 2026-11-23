@@ -141,7 +141,7 @@ READ_BY = {
     "reg_entitlement_proposal": ("dims.reg_entitlement", "plan.worklist_entitlement_queue"),
     "reg_capex": ("plan.capex_item",),
     "reg_cost_pool_rule": ("plan.cost_pool_map",),
-    "reg_purchase_act": ("plan.purchase_act",),
+    "reg_purchase_act": ("plan.purchase_act", "plan.purchase_published", "plan.purchase_published_version"),
     "reg_unit_cost_act": ("plan.unit_cost_act",),
     "reg_sourcing": ("plan.sourcing_rule",),
     "reg_production_act": ("plan.production_act",),

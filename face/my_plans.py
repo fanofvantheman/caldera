@@ -62,35 +62,38 @@ PAGE = """<h1>My plans<small>the purchasing plans you keep · what each reads ·
 </div>
 
 <div class="card" id="send"><h3>Send a snapshot to the IBP plan</h3>
-<form class="row" method="get" action="{{ url_for('plan.purchasing_plans') }}#send"><input type="hidden" name="purchasing" value="{{ chosen.id }}"><label>into <select name="into" onchange="this.form.submit()">{% for v in targets %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == into }} {{ 'disabled' if v.status != 'open' }}>{{ v.version_id|planfull }}{{ ' · closed' if v.status != 'open' }}</option>{% endfor %}</select></label></form>
+<form class="row" method="get" action="{{ url_for('plan.purchasing_plans') }}#send"><input type="hidden" name="purchasing" value="{{ chosen.id }}"><label>into the plan and version <select name="into" onchange="this.form.submit()">{% for g in groups %}<optgroup label="{{ g.plan|planfull }}">{% for v in g.versions %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == into }} {{ 'disabled' if v.status != 'open' }}>version {{ v.n }} · {{ v.label }}{{ ' · locked' if v.status != 'open' else (' · supply signed off' if locks.get(v.version_id) else '') }}</option>{% endfor %}</optgroup>{% endfor %}</select></label></form>
 {% if preview %}<table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Why</th></tr></thead><tbody>
 {% for t in preview[:6] %}<tr><td>{% if t.since != 'as last sent' %}<b>{{ names.get(t.input_code, t.input_code) }}</b>{% else %}{{ names.get(t.input_code, t.input_code) }}{% endif %}</td><td>{{ plants.get(t.plant_code, t.plant_code) }}</td><td>{{ per(t.period) }}</td><td class="n">{{ '{:,.0f}'.format(t.quantity) }}</td><td class="n">{{ '{:,.2f}'.format(t.price) }}</td><td class="small">{{ t.reason }} · {% if t.since != 'as last sent' %}<b>{{ t.since }}</b>{% else %}{{ t.since }}{% endif %}</td></tr>{% endfor %}
 {% if preview|length > 6 %}<tr><td colspan="6" class="small muted">and {{ preview|length - 6 }} more</td></tr>{% endif %}
 </tbody></table>{% else %}<p class="hint">Nothing typed in this plan: sending it clears what stands for purchasing in the IBP plan.</p>{% endif %}
 <p class="hint">The plan as it stands now: {{ preview|length }} receipt{{ '' if preview|length == 1 else 's' }}, {{ n_new }} of them new or different from {% if there and there.carried %}the copy standing there — “{{ there.source }}”, carried across from {{ there.carried.from|planfull }} — which this one replaces{% elif there %}the copy of {{ when(there.at) }} standing there — “{{ there.source }}” — which this one replaces{% else %}anything standing there: nothing stands there yet{% endif %}. Made against {% for pl, c in cur.reads.consumption.items() if c %}consumption of {{ when(c.taken_at) }} at {{ plants.get(pl, pl) }}{{ ', ' if not loop.last }}{% endfor %} and actuals to {{ per(chosen.actuals_to) }}.{% if left_out %} Periods {{ into|plan }} does not plan are left out: {{ left_out|join(', ') }}.{% endif %}</p>
 {% if gone %}<p class="warn small"><b>Fewer plants:</b> the copy standing there has receipts at {{ pn(gone, ', ') }}, and this one none — sending leaves nothing standing for {{ 'it' if gone|length == 1 else 'them' }}.</p>{% endif %}
-{% if may %}<form class="row" method="post" action="{{ url_for('plan.purchasing_send') }}"><input type="hidden" name="plan" value="{{ chosen.id }}"><input type="hidden" name="into" value="{{ into or '' }}"><button class="primary" {{ 'disabled' if not into_open }}>Send the snapshot</button>{% if not into_open %}<span class="hint">{{ into|planfull if into else 'no IBP plan' }} is closed: what stands in it is no longer replaced</span>{% endif %}</form>
-<form class="row" method="post" enctype="multipart/form-data" action="{{ url_for('plan.purchasing_sheet') }}"><input type="hidden" name="into" value="{{ into or '' }}"><label class="small">or send receipts from a spreadsheet, saved as CSV — {{ sheet_columns|join(', ') }} <input type="file" name="sheet" accept=".csv"></label><button class="act" {{ 'disabled' if not into_open }}>Send the spreadsheet</button></form>{% endif %}
+{% if may %}<form class="row" method="post" action="{{ url_for('plan.purchasing_send') }}"><input type="hidden" name="plan" value="{{ chosen.id }}"><input type="hidden" name="into" value="{{ into or '' }}"><button class="primary" {{ 'disabled' if not into_open or into_lock }}>Send the snapshot</button>{% if not into_open %}<span class="hint">{{ into|planfull if into else 'no IBP plan' }} is locked: what stands in it is no longer replaced</span>{% elif into_lock %}<span class="hint">{{ into_lock }}</span>{% endif %}</form>
+<form class="row" method="post" enctype="multipart/form-data" action="{{ url_for('plan.purchasing_sheet') }}"><input type="hidden" name="into" value="{{ into or '' }}"><label class="small">or send receipts from a spreadsheet, saved as CSV — {{ sheet_columns|join(', ') }} <input type="file" name="sheet" accept=".csv"></label><button class="act" {{ 'disabled' if not into_open or into_lock }}>Send the spreadsheet</button></form>{% endif %}
 </div>
 </div>{% endif %}
 
 <h2 id="standing">What stands in each IBP plan<span class="count">one purchasing copy each · read-only, yours included</span></h2>
-<table><thead><tr><th>IBP plan</th><th>Standing there</th><th>Sent</th><th class="n">Receipts</th><th></th></tr></thead><tbody>
-{% for v in targets %}{% set s = standing.get(v.version_id) %}<tr><td class="{{ 'muted' if v.status != 'open' }}">{{ v.version_id|planfull }}{% if v.status != 'open' %}<div class="small">closed</div>{% endif %}</td>
+<table><thead><tr><th>IBP plan</th><th>Version</th><th>Standing there</th><th>Sent</th><th class="n">Receipts</th><th>Supply</th><th>Used after supply</th><th></th></tr></thead><tbody>
+{% for v in targets %}{% set s = standing.get(v.version_id) %}<tr><td class="{{ 'muted' if v.status != 'open' }}">{{ pv[v.version_id].plan|planfull }}{% if v.status != 'open' %}<div class="small">locked</div>{% endif %}</td><td class="small">{{ pv[v.version_id].n }} · {{ pv[v.version_id].label }}</td>
 <td class="{{ 'muted' if v.status != 'open' }}">{% if s and s.carried %}<span class="muted">carried across from {{ s.carried.from|planfull }}</span><div class="small muted">“{{ s.source }}”, sent {{ when(s.carried.at) }} by {{ s.carried.by }}{% if s.carried.left_behind %} · {{ s.carried.left_behind|length }} left behind{% endif %} · replaced by the first send to this plan{% if v.status != 'open' %} · closed with it — no longer replaced{% endif %}</div>{% elif s %}{{ s.source }}<div class="small muted">by {{ s.by }}{% if s.replaced %} · replaced “{{ s.replaced.source }}”{% if s.replaced.carried_from %}, carried across from {{ s.replaced.carried_from|plan }}{% else %}, sent {{ when(s.replaced.at) }}{% endif %}{% endif %}{% if v.status != 'open' %} · closed with it — no longer replaced{% endif %}</div>{% else %}<span class="muted">nothing sent</span>{% endif %}</td>
-<td class="small">{{ (when(s.at) ~ (' — carried' if s.carried else '')) if s else '' }}</td><td class="n">{{ s.receipts|length if s else '' }}</td><td class="acts">{% if s %}<a class="button act" href="{{ url_for('plan.purchasing_plans', purchasing=chosen.id if chosen else None, view=v.version_id) }}#standing">View</a>{% endif %}</td></tr>{% endfor %}
+<td class="small">{{ (when(s.at) ~ (' — carried' if s.carried else '')) if s else '' }}</td><td class="n">{{ s.receipts|length if s else '' }}</td>
+<td class="small">{{ stage_said.get(stage_of.get(v.version_id), 'open') }}</td>
+<td class="small">{% set pb = pubs.get(v.version_id) %}{% if pb %}{{ pb.receipts|length }} receipt{{ '' if pb.receipts|length == 1 else 's' }}, {{ pb.says or 'published' }}<div class="muted">{{ when(pb.at) }}{% if waits.get(v.version_id) %} · <b>{{ waits[v.version_id] }} sent since, not yet published</b>{% endif %}</div>{% else %}<span class="muted">as it stands — never published</span>{% endif %}</td>
+<td class="acts">{% if s %}<a class="button act" href="{{ url_for('plan.purchasing_plans', purchasing=chosen.id if chosen else None, view=v.version_id) }}#standing">View</a>{% endif %}</td></tr>{% endfor %}
 </tbody></table>
 {% if viewing %}<h3>Standing in {{ view|planfull }} <span class="small muted" style="font-weight:400">— “{{ viewing.source }}”, {% if viewing.carried %}carried across from {{ viewing.carried.from|planfull }}, sent {{ when(viewing.carried.at) }} by {{ viewing.carried.by }}{% else %}sent {{ when(viewing.at) }} by {{ viewing.by }}{% endif %} · read-only</span></h3>
 <table><thead><tr><th>Material</th><th>Plant</th><th>Period</th><th class="n">Quantity</th><th class="n">Price</th><th>Why</th></tr></thead><tbody>
 {% for t in viewing.receipts %}<tr><td>{{ names.get(t.input_code, t.input_code) }}</td><td>{{ plants.get(t.plant_code, t.plant_code) }}</td><td>{{ per(t.period) }}</td><td class="n">{{ '{:,.0f}'.format(t.quantity) }}</td><td class="n">{{ '{:,.2f}'.format(t.price) }}</td><td class="small">{{ t.reason }}</td></tr>{% else %}<tr><td colspan="6" class="muted">no receipts — the copy stands empty</td></tr>{% endfor %}
 </tbody></table>{% if viewing.carried and viewing.carried.left_behind %}<p class="hint">Left behind when it was carried across: {% for t in viewing.carried.left_behind %}{{ names.get(t.input_code, t.input_code) }}, {{ plants.get(t.plant_code, t.plant_code) }}, {{ per(t.period) }} — {{ t.why }}{{ '; ' if not loop.last else '.' }}{% endfor %}</p>{% endif %}{% endif %}
-<p class="hint">Sending makes a read-only copy of the plan’s receipts, held against that IBP plan. Sending again to the same IBP plan replaces the copy — only one ever stands there, and earlier ones are not kept. A new IBP plan begins with the copy that stood in the plan it was started from, carried across, less what was planned for periods that have since closed; your first send to it replaces that. Your plan here stays yours to go on working.</p>
+<p class="hint">Sending makes a read-only copy of the plan’s receipts, held against that IBP plan. Sending again to the same IBP plan replaces the copy — only one ever stands there, and earlier ones are not kept. A new IBP plan begins with the copy that stood in the plan it was started from, carried across, less what was planned for periods that have since closed; your first send to it replaces that. Your plan here stays yours to go on working. What you send is seen at once by the other plans working in supply. The stages after supply — the costing, and Finance — go on using what was last published until supply is signed off twice: its owner’s sign-off locks it, and nothing more is taken from you; the IBP process’s publishes it.</p>
 
 {% if may %}<h2 id="new">New plan</h2>
 <div class="card"><form class="entry" method="post" action="{{ url_for('plan.purchasing_new') }}">
 <label>Name <input name="name" required value="{{ new_name }}"></label>
-<label>Start from <select name="start_from">{% for r in rows %}<option value="{{ r.p.id }}" {{ 'selected' if r.p.id == start }}>{{ r.p.name }} — copy its {{ r.typed }} typed receipt{{ '' if r.typed == 1 else 's' }}</option>{% endfor %}<option value="" {{ 'selected' if not start }}>Nothing typed</option></select></label>
-<label>Consumption from <select name="source"><optgroup label="Endorsed — from an IBP plan">{% for v in all_sources %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == default_source }}>{{ v.version_id|planfull }} — as it stands now · actuals to {{ per(v.from_period) }}</option>{% endfor %}</optgroup></select><span class="hint">a copy is taken now; it does not follow the source</span></label>
+<label>Start from <select name="start_from">{% for r in rows %}<option value="{{ r.p.id }}" {{ 'selected' if r.p.id == start }}>{{ r.p.name }} — copy its {{ r.typed }} typed receipt{{ '' if r.typed == 1 else 's' }}</option>{% endfor %}<option value="ibp">What stands in the IBP plan chosen below — purchasing’s receipts there, whoever sent or typed them</option><option value="" {{ 'selected' if not start }}>Nothing typed</option></select></label>
+<label>Consumption from <select name="source"><optgroup label="Endorsed — from an IBP plan">{% for v in all_sources %}<option value="{{ v.version_id }}" {{ 'selected' if v.version_id == default_source }}>{{ pv[v.version_id].plan|planfull }}, version {{ pv[v.version_id].n }} · {{ pv[v.version_id].label }} — as it stands now · actuals to {{ per(v.from_period) }}</option>{% endfor %}</optgroup></select><span class="hint">a copy is taken now; it does not follow the source</span></label>
 <label>Covers <select name="covers"><option value="ALL">{{ pn(key_plants, ' and ') }} — one plan for {{ 'both plants' if key_plants|length == 2 else 'every plant' }}</option>{% for pl in key_plants %}<option value="{{ pl }}">{{ plants.get(pl, pl) }}</option>{% endfor %}</select><span class="hint">each plant’s consumption can be taken from its own source once the plan is made</span></label>
 <label>Actuals to <input value="as the consumption chosen" disabled><span class="hint">opening stock and contracted receipts are read at this close</span></label>
 <label>Plans through <input value="as far as the consumption chosen runs" disabled></label>
@@ -119,6 +122,18 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         targets = W.sources()
         state = {v["version_id"]: v for v in targets}
         standing = W.standing_all()
+        pv = W.plan_versions(targets)
+        groups: list[dict] = []
+        for v in targets:
+            g = next((x for x in groups if x["plan"] == pv[v["version_id"]]["plan"]), None)
+            if not g:
+                groups.append(g := {"plan": pv[v["version_id"]]["plan"], "versions": []})
+            g["versions"].append({**v, **pv[v["version_id"]]})
+        for g in groups:
+            g["versions"].sort(key=lambda x: x["n"])
+        locks = {v["version_id"]: W.stage_lock(v["version_id"]) for v in targets}
+        stage_of = {r["version_id"]: r["state"] for r in q("select version_id, state from plan.stage_state where stage = ?", W.STAGE)}
+        pubs = W.published_all()
 
         def line(p: dict) -> dict:
             rd = W.reads_of(p)
@@ -146,7 +161,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
             preview = [{**t, "since": "as last sent" if at_there.get(W._cell(t)) == (t["quantity"], t["price"]) else ("changed" if W._cell(t) in at_there else "new")} for t in typed]
             preview.sort(key=lambda t: (t["since"] == "as last sent", t["input_code"], t["plant_code"], t["period"]))
             into_periods = set(reads.version_periods(into)["plan"]) if into else set()
-            ctx = dict(cur=cur, into=into, into_open=bool(into) and (state.get(into) or {}).get("status") == "open", there=there, preview=preview,
+            ctx = dict(cur=cur, into=into, into_lock=locks.get(into) if into else None, into_open=bool(into) and (state.get(into) or {}).get("status") == "open", there=there, preview=preview,
                        n_new=sum(1 for t in preview if t["since"] != "as last sent"),
                        left_out=sorted({t["period"] for t in typed if t["period"] not in into_periods}),
                        gone=sorted({x["plant_code"] for x in (there or {}).get("receipts", [])} - {t["plant_code"] for t in typed}),
@@ -157,6 +172,8 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         start = request.args.get("start") if any(r["p"]["id"] == request.args.get("start") for r in rows) else None
         start_name = next((r["p"]["name"] for r in rows if r["p"]["id"] == start), None)
         return page(PAGE, title="My plans", active="my_plans", width="1240px", rows=rows, chosen=chosen, plants=plants, names=names, targets=targets,
+                    pv=pv, groups=groups, locks=locks, stage_of=stage_of, pubs=pubs, waits={k: W.unpublished(k) for k in pubs},
+                    stage_said={"open": "open", "handed over": "signed off — locked", "published": "published"},
                     standing=standing, n_standing=sum(1 for s in standing.values() if s.get("owner") == who),
                     n_changed=sum(r["changed"] for r in rows), n_changed_plans=sum(1 for r in rows if r["changed"]),
                     view=view if view in standing else None, viewing=standing.get(view) if view else None,
@@ -193,7 +210,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
         except ValueError as e:
             session.say(f"refused: {e}", False)
             return redirect(url_for("plan.purchasing_plans") + "#new")
-        receipts.act("purchasing.plan.make", who, p["name"], True, f"made {p['name']}: actuals to {p['actuals_to']}, through {p['through']}, for {', '.join(plants)}")
+        receipts.act("purchasing.plan.make", who, p["name"], True, f"made {p['name']}{' from ' + p['made_from'] if p.get('made_from') else ''}: actuals to {p['actuals_to']}, through {p['through']}, for {', '.join(plants)}")
         session.say(f"{p['name']} made — consumption copied from {reads.plan_codes().get(f.get('source'), (f.get('source'),) * 2)[1]}", True)
         return redirect(url_for("plan.material_purchases", purchasing=p["id"]))
 

@@ -3,7 +3,10 @@
    the Plan; it does not gate what the next stage reads: a Plan has one number for each figure, and every stage reads the
    stage before it as it stands. A run of stages whose handovers are compressed is one unit, handed over by its last stage.
      open          never handed over, or reopened since
-     handed over   its latest act is a handover
+     handed over   its latest act is a handover — the first sign-off, its owner's: locked, and it takes no more
+     published     its latest act is a publication — the second sign-off, the IBP process's: the stages after it use it
+                   (DEC-20261123-01 points 12–13; what a lock refuses and what publication moves is built for
+                   purchasing's receipts alone)
    A closed Plan reads every stage handed over. Whether a stage is behind — not yet recalculated since an override or a
    port upstream of it, under manual recalculation — is not a state of the stage's owner and is read on the Stages page
    from what waits for a run (face/overrides.py). */
@@ -28,6 +31,7 @@ last AS (
 SELECT v.version_id, u.ord, u.stage, u.stage_name, u.handover_kept, u.unit_from, u.unit_to,
        CASE WHEN v.plan_state = 'closed' THEN 'handed over'
             WHEN l.action IS NULL OR l.action = 'reopen' THEN 'open'
+            WHEN l.action = 'publish' THEN 'published'
             ELSE 'handed over' END AS state,
        l.action AS last_action, l.entered_at AS last_at, l.entered_by AS last_by, l.reason AS last_reason
 FROM versions v CROSS JOIN unit u

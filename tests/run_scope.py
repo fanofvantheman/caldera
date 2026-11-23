@@ -63,13 +63,13 @@ def main() -> None:
             if len(made) == 1:
                 assert S.waiting(BUILD, holds) == ["reg_purchase_act"]
                 cmds = S.commands(BUILD, holds)
-                assert cmds[0][-2:] == ["--only", "reg_purchase_act"] and "plan.purchase_act+" in cmds[1] and cmds[1].count("--restate-model") == 1, cmds
+                assert cmds[0][-2:] == ["--only", "reg_purchase_act"] and "plan.purchase_act+" in cmds[1] and cmds[1].count("--restate-model") == 3, cmds
                 assert S.waiting(BUILD, holds, files=True) == [f]
         cmds = S.commands(BUILD, holds)
         assert sorted(S.waiting(BUILD, holds)) == ["reg_assumption_amend", "reg_purchase_act"]
         assert set(cmds[0][cmds[0].index("--only") + 1:]) == {"reg_purchase_act", "reg_assumption_amend"}
-        assert {cmds[1][i + 1] for i, x in enumerate(cmds[1]) if x == "--restate-model"} == {"plan.purchase_act+", "plan.assumption_in_force+", "dims.reg_assumption+", "plan.change_record+"}
-        print("waiting         nothing → the evaluation alone; a purchase act placed → its register loaded alone and plan.purchase_act+ restated; "
+        assert {cmds[1][i + 1] for i, x in enumerate(cmds[1]) if x == "--restate-model"} == {"plan.purchase_act+", "plan.purchase_published+", "plan.purchase_published_version+", "plan.assumption_in_force+", "dims.reg_assumption+", "plan.change_record+"}
+        print("waiting         nothing → the evaluation alone; a purchase act placed → its register loaded alone and its three readers restated; "
               "an amendment beside it → the union of the two")
     finally:
         for f in made:

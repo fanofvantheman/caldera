@@ -21,6 +21,16 @@ Where things are — folders under the build's data, the cheapest form (DEC-2026
                                                       with one, plan.purchase_act takes that copy's receipts and nothing
                                                       else of the register
 
+  shared/published/purchasing/<IBP plan>.json         purchasing's receipts as last published in an IBP plan — the copy the
+                                                      stages after supply use (DEC-20261123-01 points 12–13): made when
+                                                      supply's second sign-off is given, or carried across when the plan
+                                                      was started; a send never moves it
+  landing/plan/reg_purchase_act/published-purchasing-<IBP plan>-<moment>.csv
+                                                      the same copy in the register, read by plan.purchase_published and
+                                                      never by plan.purchase_act; the previous file removed
+
+A send is refused while supply is signed off in the IBP plan it is sent to: the first sign-off locks the stage.
+
 What a plan reads: a consumption copy per plant — the plant's material requirement in one IBP plan, with the prices in
 force of the key materials and the contract indices there; and a copy of the structures — the key material master (its
 stock on hand and contracted receipts are the record at the plan's close), the materials' campaign windows, the calendar.
@@ -135,10 +145,36 @@ def sources(close: str | None = None) -> list[dict]:
             and (close is None or v["from_period"] == close)]
 
 
+SEED = "ibp"                                                         # start_from: seeded from the IBP plan the consumption is taken from
+
+
+def stands(version: str) -> list[dict]:
+    """Purchasing's receipts as they stand in an IBP plan: the copy standing there, or with none, what is typed on it."""
+    s = standing(version)
+    if s:
+        return list(s.get("receipts", []))
+    return [{**r, "reason": r.get("reason") or ""} for r in
+            q("select input_code, plant_code, period, quantity, price, reason from plan.purchase_act where version_id = ? order by 1, 2, 3", version)]
+
+
+def plan_versions(versions: list[dict]) -> dict[str, dict]:
+    """An IBP plan and a version are two keys (DEC-20261123-01 points 1–4), read here from the one code the build keeps for
+    their intersection: the code without a what-if's letter is the plan; no letter is version 0, called Plan — the plan's
+    number — and a letter is version 1, 2, … in order, labelled with what was said when it was made."""
+    why = {r["version_id"]: r["reason"] for r in q("select version_id, reason from plan.version_act where act = 'name'")}
+    out = {}
+    for v in versions:
+        m = re.fullmatch(r"(.+)-([A-Z])", v["version_id"])
+        out[v["version_id"]] = {"plan": m.group(1) if m else v["version_id"], "n": ord(m.group(2)) - 64 if m else 0,
+                                "label": (why.get(v["version_id"]) or "a copy") if m else "Plan"}
+    return out
+
+
 def make(who: str, name: str, source: str, plants: list[str], start_from: str | None) -> dict:
     """A new plan: its close and last period are the IBP plan its consumption is first taken from; a copy of that
     consumption for each plant and a copy of the structures are taken now; from another plan, its typed receipts and
-    nothing else are copied."""
+    nothing else are copied; seeded (`SEED`), its typed receipts are purchasing's receipts standing in that IBP plan,
+    whoever sent or typed them (DEC-20261121-03 point 4) — a copy, like every other."""
     from . import reads
     v = reads.version(source)
     if not v or v.get("version_kind") == "actual" or not v.get("from_period"):
@@ -147,7 +183,11 @@ def make(who: str, name: str, source: str, plants: list[str], start_from: str | 
     p = {"id": f"{stamp}-{re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:32] or 'plan'}", "name": name, "owner": who, "made_at": _now(),
          "made_from": None, "actuals_to": v["from_period"], "through": v["plan_through"], "plants": plants, "reads": {"consumption": {}, "structures": None}}
     _save_plan(p)
-    if start_from:
+    if start_from == SEED:
+        p["made_from"] = f"what stands in {reads.plan_codes().get(source, (source, source))[1]}"
+        _save_receipts(p["id"], [{**r, "reason": r.get("reason") or "as it stood in the IBP plan", "entered_by": who, "entered_at": _now()}
+                                 for r in stands(source) if r["plant_code"] in plants and p["actuals_to"] < r["period"] <= p["through"]])
+    elif start_from:
         src = plan(start_from)
         if src and src["owner"] == who:
             p["made_from"] = src["name"]
@@ -373,9 +413,11 @@ def send(version: str, rows: list[dict], source: str, who: str, p: dict | None =
     was = standing(version)
     gone = sorted({x["plant_code"] for x in (was or {}).get("receipts", [])} - {t["plant_code"] for t in taken})
     name = reads.plan_codes().get(version, (version, version))[1]
+    lock = stage_lock(version)
     checks = [
         {"check": "the IBP plan is open", "ok": v.get("status") == "open" and v.get("version_kind") != "actual",
          "says": f"{name} is open" if v.get("status") == "open" else f"{name} is {v.get('status', 'unknown')} — what stands in it is no longer replaced"},
+        {"check": "supply is open there", "ok": not lock, "says": lock or f"{STAGE_NAME} is open in {name}"},
         {"check": "a quantity and a price together", "ok": not refused, "says": "; ".join(refused) if refused else f"{len(taken)} receipt{'s' if len(taken) != 1 else ''} from {source}"},
         {"check": "a reason on each", "ok": all(t["reason"] for t in taken), "says": "each receipt says why" if all(t["reason"] for t in taken) else "a receipt with no reason"},
         {"check": "periods the IBP plan plans", "ok": True, "flag": bool(dropped), "says": ("left out: " + "; ".join(dropped)) if dropped else "every period is planned there"},
@@ -391,6 +433,8 @@ def send(version: str, rows: list[dict], source: str, who: str, p: dict | None =
             "made_against": ({"actuals_to": p["actuals_to"], "copies": [c for c in reads_of(p)["consumption"].values() if c]} if p else None),
             "replaced": {"source": was["source"], "at": was["at"], "carried_from": (was.get("carried") or {}).get("from")} if was else None}
     if placed:
+        if not published(version):          # the stages after supply keep what stood until supply is published (point 13)
+            publish(version, who, "as it stood before the first send")
         _place_standing(version, copy, who, now.strftime("%Y%m%d-%H%M%S-%f"))
         if p:
             (_plans_dir() / p["id"] / "sent.json").write_text(json.dumps({"version": version, "at": copy["at"], "receipts": taken}, indent=1))
@@ -409,6 +453,67 @@ def _place_standing(version: str, copy: dict, who: str, stamp: str) -> None:
                            for i, t in enumerate(copy["receipts"], start=1)], ACT_COLUMNS)
     _standing_dir().mkdir(parents=True, exist_ok=True)
     (_standing_dir() / f"{version}.json").write_text(json.dumps(copy, indent=1))
+
+
+# ── supply's sign-offs: what a lock refuses, what publication moves ──────────────────────────────────────────────────────
+
+STAGE, STAGE_NAME = "materials", "Supply"            # the stage purchasing feeds; its unit carries the sign-offs
+
+
+def stage(version: str) -> dict:
+    """The state of the stage purchasing feeds, on an IBP plan: open, handed over (signed off once — locked) or published."""
+    return (q("select * from plan.stage_state where version_id = ? and stage = ?", version, STAGE) or [{}])[0]
+
+
+def stage_lock(version: str) -> str | None:
+    """Why nothing more is taken from purchasing on this IBP plan, or None: its stage is signed off."""
+    st = stage(version)
+    if st.get("state") in ("handed over", "published"):
+        by = f" by {st['last_by']}, {str(st.get('last_at') or '')[:16].replace('T', ' ')}" if st.get("last_by") else ""
+        return f"{STAGE_NAME} is {'published' if st['state'] == 'published' else 'signed off'} there{by} — it takes no more until it is reopened"
+    return None
+
+
+def _published_dir() -> pathlib.Path:
+    return _data() / "shared" / "published" / SUBMITTER
+
+
+def published(version: str) -> dict | None:
+    f = _published_dir() / f"{version}.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+def published_all() -> dict[str, dict]:
+    d = _published_dir()
+    return {f.stem: json.loads(f.read_text()) for f in sorted(d.glob("*.json"))} if d.is_dir() else {}
+
+
+def publish(version: str, who: str, says: str = "", rows: list[dict] | None = None, origin: dict | None = None) -> dict:
+    """Purchasing's receipts as they stand in an IBP plan (or the rows given) made the copy the stages after supply use —
+    the previous one replaced, none kept. The copy says what it was a copy of."""
+    s = standing(version)
+    taken = [{k: r.get(k) for k in SHEET_COLUMNS} for r in (stands(version) if rows is None else rows)]
+    now = dt.datetime.now(); stamp = now.strftime("%Y%m%d-%H%M%S-%f"); at = now.isoformat(timespec="seconds")
+    copy = {"version": version, "submitter": SUBMITTER, "by": who, "at": at, "says": says, "receipts": taken,
+            "of": origin or ({"source": s["source"], "at": s["at"], "by": s["by"], "carried_from": (s.get("carried") or {}).get("from")} if s else None)}
+    for old in ACTS.folder.glob(f"published-{SUBMITTER}-{version}-*.csv") if ACTS.folder.is_dir() else []:
+        old.unlink()
+    ACTS.folder.mkdir(parents=True, exist_ok=True)
+    marker = {"act_id": f"PUB-{stamp}-000", "action": "publish", "version_id": version, "reason": says, "entered_by": who, "entered_at": at}
+    _write_csv(ACTS.folder / f"published-{SUBMITTER}-{version}-{stamp}.csv",
+               [marker] + [{"act_id": f"PUB-{stamp}-{i:03d}", "action": "set", "version_id": version, **t, "entered_by": who, "entered_at": at}
+                           for i, t in enumerate(taken, start=1)], ACT_COLUMNS)
+    _published_dir().mkdir(parents=True, exist_ok=True)
+    (_published_dir() / f"{version}.json").write_text(json.dumps(copy, indent=1))
+    return copy
+
+
+def unpublished(version: str) -> int:
+    """How many of purchasing's receipts standing in an IBP plan are new or different from what was last published there
+    (every one, with nothing published) — plus those published and no longer standing."""
+    pub = {_cell(r): (_num(r["quantity"]), _num(r["price"])) for r in (published(version) or {}).get("receipts", [])}
+    now = {_cell(r): (_num(r["quantity"]), _num(r["price"])) for r in stands(version)}
+    return sum(1 for k, x in now.items() if pub.get(k) != x) + sum(1 for k in pub if k not in now)
 
 
 def carried(base: str, actuals_to: str, plan_periods: list[str]) -> dict | None:
@@ -442,6 +547,9 @@ def carry(base: str, new: str, actuals_to: str, plan_periods: list[str], who: st
                         "plan": origin.get("plan") or was.get("plan"), "owner": was.get("owner"),
                         "left_behind": [{k: r[k] for k in ("input_code", "plant_code", "period", "quantity", "price", "why")} for r in c["left_behind"]]}}
     _place_standing(new, copy, who, now.strftime("%Y%m%d-%H%M%S-%f"))
+    # a plan is whole from its first moment: what was carried is what the stages after supply use until supply is published
+    publish(new, who, f"carried across from {base}", rows=c["receipts"],
+            origin={"source": was["source"], "at": copy["at"], "by": who, "carried_from": base})
     return copy
 
 
