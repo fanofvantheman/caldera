@@ -8,3 +8,4 @@ UNION ALL                                  -- the client's own roles: the rights
 SELECT DISTINCT r.role_code::TEXT, r.action::TEXT FROM bronze.reg_role r
 WHERE (CASE WHEN r.source_file LIKE '20%' THEN r.source_file ELSE '0' END) = (SELECT MAX(CASE WHEN x.source_file LIKE '20%' THEN x.source_file ELSE '0' END) FROM bronze.reg_role x WHERE x.role_code = r.role_code)
   AND r.role_code::TEXT NOT IN (SELECT role_code::TEXT FROM bronze.ctl_role_definition)
+  AND COALESCE(r.action::TEXT, '') <> ''          -- a role created with a name and no rights grants none

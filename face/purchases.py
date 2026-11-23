@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from chassis import receipts
 from chassis.warehouse import Busy, q
+from dataclasses import replace
+
 from flask import redirect, request, url_for
 
 from . import figures, purchasing_plan
@@ -37,6 +39,7 @@ MEASURES = [Measure("opening_quantity", "opening", year="first", total=False, gr
             Measure("contracted_price", "contracted receipts", shown="price", year=None, total=False, group="cost basis"),
             Measure("additional_price", "additional receipts", shown="price", year=None, typed="price_typed", input=True, total=False, group="cost basis"),
             Measure("closing_cost", "projected closing", shown="price", year=None, total=False, group="cost basis")]
+FACTS = {"additional_quantity": "purchasing_quantities", "additional_price": "purchase_prices"}   # the planning fact each typed row is
 SOURCE_SAYS = {"contract": "contract — the contract's price fixed, or tied to an index, for its term",
                "spot": "spot — bought at the price in force with its index",
                "campaign": "campaign intake — bought in the input's window for what is needed until the next"}
@@ -47,6 +50,7 @@ PAGE = """{% if finance %}<h1>{{ title }}<small>{{ version|plan }} · {{ where }
 <p class="hint">Each row has one source. The opening is the stock on hand at the close of {{ per(p.actuals_to) }}; after it, the period before's closing. Consumption is copied from the IBP plan each plant reads — the cases it makes × the bill × the plant's usage — and valued at the opening cost basis. Contracted receipts are what is already on order or under contract, at the contract's price. Additional receipts are the ones you plan and nothing else: the balance buys nothing of its own. The closing is calculated, and is the next period's opening; it is marked <b>short</b> below zero and <b>below cover</b> under the cover the material is meant to hold — its cover periods × the average consumption of the next three periods. {% if may %}Type a quantity in an additional-receipts cell — its price is the price in force unless you type one — and save it with the bar at the foot of the window; a note may be written in a cell, as a comment is in a spreadsheet —  It changes this balance at once and nothing in any IBP plan until you send a snapshot from <a href="{{ url_for('plan.purchasing_plans', purchasing=p.id) }}">My plans</a>.{% endif %}</p>
 <div class="card reads"><b>Reads copies, not connections</b> — {% for pl, c in reads.consumption.items() %}consumption at {{ plants.get(pl, pl) }}: {% if c %}{{ c.source|planfull }}, copy of {{ when(c.taken_at) }}{% else %}<b>not received</b>{% endif %}{{ '; ' if not loop.last else '.' }}{% endfor %} A source changing changes nothing here until you refresh.</div>{% endif %}
 <div class="cards">{% for c in cards %}{% if c.href %}<a class="card stat link{{ ' on' if c.on }}" href="{{ c.href }}">{% else %}<div class="card stat">{% endif %}<span>{{ c.label }}</span><b>{{ c.show }}</b>{% if c.vs %}<div class="small vs">{{ c.vs }}</div>{% endif %}<div class="small muted">{{ c.says }}</div>{{ '</a>'|safe if c.href else '</div>'|safe }}{% endfor %}</div>
+{% if not finance and may %}<p class="hint">Who owns what here: the <b>quantity</b> of an additional receipt is {{ owners.additional_quantity.role_name or 'nobody' }}'s{{ ' — yours to type' if mine.additional_quantity else ', read only for you' }}; its <b>price</b> is {{ owners.additional_price.role_name or 'nobody' }}'s{{ ' — yours to type' if mine.additional_price else ', read only for you' }}. Set on the ownership table.</p>{% endif %}
 {{ grid_choice(g) }}
 {% if g.editable %}<form method="post" action="{{ url_for('plan.purchase_type') }}" id="type">{% if request.args.get('location') %}<input type="hidden" name="location" value="{{ request.args.get('location') }}">{% endif %}{% endif %}
 {{ grid_table(g) }}
@@ -248,7 +252,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                    Filter("type", "type", tuple((t, t.replace("_", " ")) for t in sorted({r["attrs"]["type"] for r in rows.values() if r["attrs"]["type"]}))),
                    Filter("source", "bought", tuple((x, x) for x in sorted({r["attrs"]["source"] for r in rows.values() if r["attrs"]["source"]})))]
         may = roles.may(who, VERB)
-        g = figures.table("pur", list(rows.values()), MEASURES, "closing_quantity",
+        mine = {k: reads.owns(who, fact) for k, fact in FACTS.items()}        # each fact typed only by its owner (DEC-20261124-06)
+        owners = {k: reads.fact_owner(fact) for k, fact in FACTS.items()}
+        measures = [replace(m, input=m.input and mine.get(m.key, False)) for m in MEASURES]
+        g = figures.table("pur", list(rows.values()), measures, "closing_quantity",
                           figures.columns(vp, actuals=False, quarters=False), row_head="Key raw materials", filters=filters, total="Key raw materials",
                           editable=not finance and may, plan_periods=set(vp["plan"]),
                           year_says="plan periods", empty=f"No key raw material at {plants.get(loc, loc) if loc != 'ALL' else 'the plants this plan buys for'}.", movement=True)
@@ -271,7 +278,7 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                       if alerts else "no closing is short or below its cover")}]
         where = plants.get(loc, loc) if loc != "ALL" else ("both plants" if finance else ", ".join(plants.get(x, x) for x in p["plants"]))
         return page(figures.MACROS + MACRO + PAGE, title="Material stock" if finance else "Material balance", active="material_stock" if finance else "purchases", width="none",
-                    finance=finance, version=version, p=p, where=where, g=g, others=others, typed=typed, cards=cards, source_says=SOURCE_SAYS, may=may,
+                    finance=finance, version=version, p=p, where=where, g=g, others=others, typed=typed, cards=cards, source_says=SOURCE_SAYS, may=may, mine=mine, owners=owners,
                     n_rows=len(rows), last=session.last, receipt_acts=("purchase.type", "purchase.clear"), drafts=drafts, clearable=clearable,
                     clear_rows=sorted({f"{d['input_code']}~{d['plant_code']}" for d in clearable}), n_changed=n_changed, names=names, plants=plants,
                     reads=purchasing_plan.reads_of(p) if p else None, per=per, when=when, note_script=NOTE_SCRIPT,
@@ -358,6 +365,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 continue                                   # left as drawn, or emptied: nothing typed
             x = _num(raw)
             field = "quantity" if k == "additional_quantity" else "price"
+            if not reads.owns(who, FACTS[k]):
+                o = reads.fact_owner(FACTS[k])
+                bad.append(f"the {field} for {inp} at {plant} in {period}: {by[k].label} {field} is owned by {o['role_name'] or 'nobody'}")
+                continue
             if x == "bad" or x is None or x < 0 or (field == "price" and x <= 0) or r is None or period not in plan_periods:
                 bad.append(f"{field} {raw!r} for {inp} at {plant} in {period}")
                 continue

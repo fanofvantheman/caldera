@@ -23,6 +23,7 @@ from chassis.warehouse import Busy, q
 from . import ENTRY_COLUMNS, HEALTH, MAP_FLOWS, MAP_NODES, FINANCE_COLUMNS, PRICE_LIST_COLUMNS, SHELL, SUBMISSION_COLUMNS, TERMS_COLUMNS, roles, session
 from . import reads
 from . import my_plans
+from . import ownership
 from . import plan_list
 from . import exposure
 from . import dashboard
@@ -2855,6 +2856,7 @@ assumptions.register(plan, _page, _who, _ctx, _busy, session, roles)
 versions_page.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
 withdrawals.register(plan, _page, _who, _busy, session, roles, _run_plan, ENTRIES, FINANCE)
 rights.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
+ownership.register(plan, _page, _who, _busy, session, roles, _run_plan, SCOPED)
 entitlements.register(plan, _page, _who, _busy, roles)
 agreements.register(plan, _who, session, roles, _run_plan, SCOPED)
 reports.register(plan, _page, _who, _busy, session, roles)

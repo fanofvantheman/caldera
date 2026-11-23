@@ -1019,3 +1019,17 @@ def for_kind(roles, who: str, verb: str, v: dict, scope: str | None = None, dime
     kinds = [r["version_kind"] for r in q("""select distinct version_kind from dims.effective_entitlements where principal = ? and action = ?
                                            and version_kind is not null order by 1""", who, verb)]
     return f" for {(v.get('version_kind') or '').replace('_', ' ')} — held for {', '.join(k.replace('_', ' ') for k in kinds) or 'another kind of plan'} only"
+
+
+def fact_owner(fact: str) -> dict:
+    """The role that owns a planning fact (dims.fact_role) and who holds it — one owner a fact (DEC-20261124-06)."""
+    r = one("""select fr.role_code, d.role_name from dims.fact_role fr join dims.ctl_role_definition d using (role_code)
+               where fr.fact = ? and fr.cell = 'owns'""", fact) or {}
+    held = [x["principal"] for x in q("""select distinct principal from dims.ctl_role_assignment
+                                         where role_code = ? and (valid_to is null or valid_to >= current_date) order by 1""", r.get("role_code"))] if r else []
+    return {"role_code": r.get("role_code"), "role_name": r.get("role_name"), "holders": held}
+
+
+def owns(who: str, fact: str) -> bool:
+    """Whether the person holds the role that owns the fact."""
+    return who in fact_owner(fact)["holders"]

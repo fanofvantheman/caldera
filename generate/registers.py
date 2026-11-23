@@ -213,6 +213,30 @@ def composed_roles() -> list[dict]:
             for code, (name, d, acts) in COMPOSED_ROLES.items() for a in acts]
 
 
+# The table of facts against roles as the organisation set it up (dims.fact_role): one owner a fact, and who receives it
+# beyond those whose own facts use it. The example CH gave, on the demo's roles.
+FACT_ROLES = [
+    ("demand_forecast", "HEAD_OF_DEMAND", "owns"), ("demand_forecast", "COMMERCIAL_FINANCE", "receives"),
+    ("production_quantities", "PLANT_MANAGER", "owns"), ("production_quantities", "MATERIALS_PLANNER", "receives"),
+    ("raw_material_requirements", "SUPPLY_PLANNER", "owns"), ("raw_material_requirements", "COMMERCIAL_FINANCE", "receives"),
+    ("inventory_targets", "SUPPLY_PLANNER", "owns"), ("inventory_targets", "COMMERCIAL_FINANCE", "receives"),
+    ("purchasing_quantities", "MATERIALS_PLANNER", "owns"), ("purchasing_quantities", "PLANT_MANAGER", "receives"),
+    ("purchase_prices", "MATERIALS_PLANNER", "owns"), ("purchase_prices", "SUPPLY_PLANNER", "receives"),
+    ("storage_capacity", "SUPPLY_PLANNER", "owns"), ("storage_capacity", "COMMERCIAL_FINANCE", "receives"),
+    ("shrinkage_volume", "SUPPLY_PLANNER", "owns"), ("shrinkage_volume", "PLANT_MANAGER", "receives"),
+    ("shrinkage_expense", "COMMERCIAL_FINANCE", "owns"), ("shrinkage_expense", "PLANT_MANAGER", "receives"),
+    ("factory_headcount", "PLANT_MANAGER", "owns"), ("factory_headcount", "PEOPLE", "receives"),
+    ("labour_rates", "PEOPLE", "owns"), ("labour_rates", "PLANT_MANAGER", "receives"),
+    ("labour_productivity", "PLANT_MANAGER", "owns"), ("labour_productivity", "PEOPLE", "receives"),
+    ("manufacturing_overhead", "COMMERCIAL_FINANCE", "owns"), ("manufacturing_overhead", "PEOPLE", "receives"),
+    ("inventory_valuation", "COMMERCIAL_FINANCE", "owns"), ("inventory_valuation", "MATERIALS_PLANNER", "receives"),
+]
+
+
+def fact_roles() -> list[dict]:
+    return [{"fact": f, "role_code": r, "cell": c, "set_by": "gm@caldera", "set_on": "2026-06-29T09:00:00"} for f, r, c in FACT_ROLES]
+
+
 def roles() -> tuple[list[dict], list[dict], list[dict]]:
     defs = [{"role_code": c, "role_name": n, "built_in": "Y", "description": d} for c, n, d in ROLE_DEFINITIONS]
     acts = [{"role_code": r, "action": a} for r, al in ROLE_ACTIONS.items() for a in al]

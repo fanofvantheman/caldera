@@ -234,7 +234,8 @@ PROCESSES = [
             Section("roles", "Roles", "plan.roles", verbs=["register.roles.maintain", "read.proof"], tabs=[
                 Tab("roles_rights", "Rights", "plan.roles", verbs=["register.roles.maintain", "read.proof"]),
                 Tab("roles_roles", "Roles", "plan.roles_list", verbs=["register.roles.maintain", "read.proof"]),
-                Tab("roles_compose", "Compose a role", "plan.role_compose", verbs=["register.roles.maintain"])]),
+                Tab("roles_compose", "Compose a role", "plan.role_compose", verbs=["register.roles.maintain"]),
+                Tab("ownership", "Ownership", "plan.ownership", verbs=["register.roles.maintain", "read.proof", "read.plan"])]),
         ]),
         Area("structures", "Structures", [
             Section("structures", "Structures as loaded", "plan.structures", verbs=["read.plan", "read.health", "structure.material.maintain",

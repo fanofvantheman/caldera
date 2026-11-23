@@ -142,7 +142,7 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
             {"check": "a name", "ok": bool(code), "says": f"{name} ({code})" if code else "a role is named"},
             {"check": "not one we ship", "ok": code not in shipped, "says": "your own" if code not in shipped else f"{code} is a role we ship — compose your own beside it, under another name"},
             {"check": "a name not taken", "ok": named.get(name.lower(), code) == code, "says": "no other role is called that" if named.get(name.lower(), code) == code else f"{named.get(name.lower())} is already called {name}"},
-            {"check": "at least one right", "ok": bool(chosen), "says": f"{len(chosen)} right{'s' if len(chosen) != 1 else ''}" if chosen else "a role is a set of one right or more"},
+            {"check": "its rights", "ok": True, "says": f"{len(chosen)} right{'s' if len(chosen) != 1 else ''}" if chosen else "none — a role with a name; it can own planning facts on the ownership table"},
             {"check": "rights the plan has", "ok": not unknown, "says": "every one on the list" if not unknown else f"{', '.join(unknown)} — not a right the plan has"},
         ]
         if any(re.fullmatch(r"layer\.[1-9]\.enter", v) for v in chosen) and "delta.supply.enter" in chosen:
@@ -151,7 +151,7 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
         placed = receipts.judge(checks)
         if placed:
             now = dt.datetime.now().isoformat(timespec="seconds")
-            LANDING.place([{"role_code": code, "role_name": name, "description": desc, "action": v, "composed_by": who, "composed_on": now} for v in chosen], who)
+            LANDING.place([{"role_code": code, "role_name": name, "description": desc, "action": v, "composed_by": who, "composed_on": now} for v in (chosen or [""])], who)
         session.last = receipts.write("role.compose", who, code or name, checks, placed)
         if not placed:
             session.say("role not composed: " + "; ".join(c["says"] for c in checks if not c["ok"] and not c.get("flag")), False)

@@ -1,6 +1,6 @@
 /* The derived (principal, action, dimension, node, kind of plan) surface: every assignment expanded through its role's
-   actions and down its hierarchy; version_kind null means held for every kind of plan. Nothing is enforced here; faces and
-   platforms read it. */
+   actions and down its hierarchy; version_kind null means held for every kind of plan. A right a planning fact names (dims.ref_fact)
+   comes from the table of facts against roles, not from a role's own rights. Nothing is enforced here; faces and platforms read it. */
 MODEL (name dims.effective_entitlements, kind FULL, grain (principal, action, scope_dimension, node, version_kind), audits (signal_segregation));
 WITH bridges AS (
   SELECT 'material' AS scope_dimension, ancestor_code, descendant_code FROM dims.dim_material_hierarchy
@@ -11,5 +11,14 @@ WITH bridges AS (
 SELECT DISTINCT a.principal, ra.action, a.scope_dimension, b.descendant_code AS node, a.role_code, a.version_kind
 FROM dims.ctl_role_assignment a
 JOIN dims.ctl_role_action ra ON ra.role_code = a.role_code
+JOIN bridges b ON b.scope_dimension = a.scope_dimension AND b.ancestor_code = a.scope_node
+WHERE (a.valid_to IS NULL OR a.valid_to >= CURRENT_DATE)
+  AND ra.action NOT IN (SELECT right_verb FROM dims.ref_fact WHERE right_verb IS NOT NULL)
+UNION
+-- a right a fact names is held through the table and nowhere else (DEC-20261124-06): by whoever holds the owning role
+SELECT DISTINCT a.principal, f.right_verb, a.scope_dimension, b.descendant_code, a.role_code, a.version_kind
+FROM dims.ctl_role_assignment a
+JOIN dims.fact_role fr ON fr.role_code = a.role_code AND fr.cell = 'owns'
+JOIN dims.ref_fact f ON f.fact = fr.fact AND f.right_verb IS NOT NULL
 JOIN bridges b ON b.scope_dimension = a.scope_dimension AND b.ancestor_code = a.scope_node
 WHERE a.valid_to IS NULL OR a.valid_to >= CURRENT_DATE
