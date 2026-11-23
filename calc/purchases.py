@@ -16,14 +16,16 @@ Each row has one source (DEC-20261120-02 point 1):
 
 The balance does not buy; it alerts (DEC-20261124-02). A closing is marked
   short        below zero
-  below cover  below the declared cover — that many periods of the next period's requirement (a contract or spot
-               material; a campaign material has no cover between its windows)
+  below cover  below the declared cover — that many periods of the average requirement ahead, over the next
+               COVER_AHEAD periods, always forward (a contract or spot material; a campaign material has no cover
+               between its windows)
 No layers, no batches."""
 from __future__ import annotations
 
 from typing import Iterable
 
 SOURCES = ("contract", "spot", "campaign")
+COVER_AHEAD = 3              # the periods ahead whose average requirement a cover is counted in
 
 
 def blocks(periods: list[str], window: set[str]) -> list[list[str]]:
@@ -55,7 +57,8 @@ def plan(periods: list[str], requirement: dict[str, float], price: dict[str, flo
         cq, cp = con[p]
         cp = None if cp is None else float(cp)
         q = 0.0
-        target = 0.0 if source == "campaign" else cover * nxt        # the cover a closing is held against
+        ahead = [req[x] for x in periods[i + 1:i + 1 + COVER_AHEAD]] or [req[p]]
+        target = 0.0 if source == "campaign" else cover * sum(ahead) / len(ahead)      # the cover a closing is held against
         pr = price.get(p)
         t = typed.get(p) or {}
         q_typed, pr_typed = t.get("quantity") is not None, t.get("price") is not None
