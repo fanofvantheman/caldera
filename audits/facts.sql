@@ -11,11 +11,18 @@ WITH RECURSIVE reach (fact, other_fact, depth) AS (
 )
 SELECT DISTINCT fact FROM reach WHERE fact = other_fact;
 
-AUDIT (name fact_one_owner);
-/* blocking: a fact has exactly one owner (DEC-20261124-06 point 2) — with two it has two numbers, with none nobody answers for it */
-SELECT f.fact, COUNT(m.role_code) AS owners FROM dims.ref_fact f LEFT JOIN @this_model m ON m.fact = f.fact AND m.cell = 'owns'
-GROUP BY f.fact HAVING COUNT(m.role_code) <> 1;
+AUDIT (name planning_one_preparer);
+/* blocking: exactly one role type prepares a fact (DEC-20261124-07 point 2) — with two it has two owners, with none nobody answers for it */
+SELECT f.fact, COUNT(m.type_code) AS preparers FROM dims.ref_fact f LEFT JOIN @this_model m ON m.fact = f.fact AND m.level = 'prepare'
+GROUP BY f.fact HAVING COUNT(m.type_code) <> 1;
 
-AUDIT (name fact_role_known);
-/* blocking: a cell for a fact or a role the plan does not have */
-SELECT fact, role_code FROM @this_model WHERE NOT fact_known OR NOT role_known;
+AUDIT (name planning_entitlement_known);
+/* blocking: an entitlement for a fact or a role type the plan does not have */
+SELECT fact, type_code FROM @this_model WHERE NOT fact_known OR NOT type_known;
+
+AUDIT (name planning_role_fits_type);
+/* blocking: a role of a type the plan does not have; a second live role of a Single type; or two live roles of a type at the same place */
+SELECT role_no FROM @this_model r WHERE live AND (
+      NOT type_known
+   OR (SELECT COUNT(*) FROM @this_model x WHERE x.live AND x.type_code = r.type_code
+         AND COALESCE(x.site, '') = COALESCE(r.site, '') AND COALESCE(x.customer, '') = COALESCE(r.customer, '') AND COALESCE(x.cost_centre, '') = COALESCE(r.cost_centre, '')) > 1);

@@ -213,28 +213,63 @@ def composed_roles() -> list[dict]:
             for code, (name, d, acts) in COMPOSED_ROLES.items() for a in acts]
 
 
-# The table of facts against roles as the organisation set it up (dims.fact_role): one owner a fact, and who receives it
-# beyond those whose own facts use it. The example CH gave, on the demo's roles.
-FACT_ROLES = [
-    ("demand_forecast", "HEAD_OF_DEMAND", "owns"), ("demand_forecast", "COMMERCIAL_FINANCE", "receives"),
-    ("production_quantities", "PLANT_MANAGER", "owns"), ("production_quantities", "MATERIALS_PLANNER", "receives"),
-    ("raw_material_requirements", "SUPPLY_PLANNER", "owns"), ("raw_material_requirements", "COMMERCIAL_FINANCE", "receives"),
-    ("inventory_targets", "SUPPLY_PLANNER", "owns"), ("inventory_targets", "COMMERCIAL_FINANCE", "receives"),
-    ("purchasing_quantities", "MATERIALS_PLANNER", "owns"), ("purchasing_quantities", "PLANT_MANAGER", "receives"),
-    ("purchase_prices", "MATERIALS_PLANNER", "owns"), ("purchase_prices", "SUPPLY_PLANNER", "receives"),
-    ("storage_capacity", "SUPPLY_PLANNER", "owns"), ("storage_capacity", "COMMERCIAL_FINANCE", "receives"),
-    ("shrinkage_volume", "SUPPLY_PLANNER", "owns"), ("shrinkage_volume", "PLANT_MANAGER", "receives"),
-    ("shrinkage_expense", "COMMERCIAL_FINANCE", "owns"), ("shrinkage_expense", "PLANT_MANAGER", "receives"),
-    ("factory_headcount", "PLANT_MANAGER", "owns"), ("factory_headcount", "PEOPLE", "receives"),
-    ("labour_rates", "PEOPLE", "owns"), ("labour_rates", "PLANT_MANAGER", "receives"),
-    ("labour_productivity", "PLANT_MANAGER", "owns"), ("labour_productivity", "PEOPLE", "receives"),
-    ("manufacturing_overhead", "COMMERCIAL_FINANCE", "owns"), ("manufacturing_overhead", "PEOPLE", "receives"),
-    ("inventory_valuation", "COMMERCIAL_FINANCE", "owns"), ("inventory_valuation", "MATERIALS_PLANNER", "receives"),
+# The planning role architecture as the organisation set it up (DEC-20261124-07): role types, their entitlements over the
+# planning facts, the roles — each a type in one place — and who is assigned each. On the demo's people.
+SET = {"set_by": "gm@caldera", "set_on": "2026-06-29T09:00:00"}
+ROLE_TYPES = [  # code, name, purpose, cardinality, site level, customer level, cost centre level
+    ("HEAD_OF_DEMAND", "Head of demand planning", "Leads the demand plan and its review.", "single", "", "", ""),
+    ("DEMAND_PLANNER", "Demand planner", "Plans demand for the customers of one planning unit.", "multiple", "", "planning_unit", ""),
+    ("SUPPLY_PLANNER", "Supply planner", "Plans what the network needs and holds.", "single", "", "", ""),
+    ("PROCUREMENT_MANAGER", "Procurement manager", "Negotiates what materials cost.", "single", "", "", ""),
+    ("PURCHASING_MANAGER", "Purchasing manager", "Plans what is bought for a plant.", "multiple", "plant", "", ""),
+    ("PLANT_MANAGER", "Plant manager", "Plans what a plant makes and who makes it.", "multiple", "plant", "", ""),
+    ("COMMERCIAL_FINANCE", "Commercial finance", "Values the plan.", "single", "", "", ""),
+    ("PEOPLE", "People and culture", "Keeps what labour costs.", "single", "", "", ""),
 ]
+PLANNING_ROLES = [  # number, type, name, site, customer, cost centre
+    ("1000", "HEAD_OF_DEMAND", "Head of demand planning", "", "", ""),
+    ("1001", "DEMAND_PLANNER", "Demand planner, Carters", "", "PU_CAR", ""), ("1002", "DEMAND_PLANNER", "Demand planner, Horeca", "", "PU_HOR", ""),
+    ("1003", "DEMAND_PLANNER", "Demand planner, Other independents", "", "PU_IND", ""), ("1004", "DEMAND_PLANNER", "Demand planner, Merritt", "", "PU_MER", ""),
+    ("1005", "DEMAND_PLANNER", "Demand planner, Westbrook", "", "PU_WES", ""),
+    ("1010", "SUPPLY_PLANNER", "Supply planner", "", "", ""), ("1015", "PROCUREMENT_MANAGER", "Procurement manager", "", "", ""),
+    ("1020", "PURCHASING_MANAGER", "Purchasing manager, Echuca", "ECH", "", ""), ("1021", "PURCHASING_MANAGER", "Purchasing manager, Loxton", "LOX", "", ""),
+    ("1030", "PLANT_MANAGER", "Plant manager, Echuca", "ECH", "", ""), ("1031", "PLANT_MANAGER", "Plant manager, Loxton", "LOX", "", ""),
+    ("1040", "COMMERCIAL_FINANCE", "Commercial finance", "", "", ""), ("1050", "PEOPLE", "People and culture", "", "", ""),
+]
+PLANNING_ASSIGNMENTS = [
+    ("head.demand@caldera", "1000"), ("planner.carters@caldera", "1001"), ("planner.horeca@caldera", "1002"), ("planner.independents@caldera", "1003"),
+    ("planner.merritt@caldera", "1004"), ("planner.westbrook@caldera", "1005"),
+    ("supply.planner@caldera", "1010"), ("supply.planner@caldera", "1015"), ("supply.planner@caldera", "1020"), ("supply.planner@caldera", "1021"),
+    ("plant.manager@caldera", "1030"), ("plant.manager@caldera", "1031"), ("finance.manager@caldera", "1040"), ("finance.manager@caldera", "1050"),
+]
+PLANNING_ENTITLEMENTS = {  # fact: {role type: level}; exactly one prepares
+    "demand_forecast": {"DEMAND_PLANNER": "prepare", "HEAD_OF_DEMAND": "review", "COMMERCIAL_FINANCE": "read"},
+    "production_quantities": {"PLANT_MANAGER": "prepare", "SUPPLY_PLANNER": "review", "PURCHASING_MANAGER": "review"},
+    "raw_material_requirements": {"SUPPLY_PLANNER": "prepare", "PLANT_MANAGER": "review", "COMMERCIAL_FINANCE": "read"},
+    "inventory_targets": {"SUPPLY_PLANNER": "prepare", "COMMERCIAL_FINANCE": "read"},
+    "purchasing_quantities": {"PURCHASING_MANAGER": "prepare", "SUPPLY_PLANNER": "review", "PROCUREMENT_MANAGER": "review", "PLANT_MANAGER": "read"},
+    "purchase_prices": {"PROCUREMENT_MANAGER": "prepare", "PURCHASING_MANAGER": "review"},
+    "storage_capacity": {"SUPPLY_PLANNER": "prepare", "COMMERCIAL_FINANCE": "read"},
+    "shrinkage_volume": {"SUPPLY_PLANNER": "prepare", "PLANT_MANAGER": "read"},
+    "shrinkage_expense": {"COMMERCIAL_FINANCE": "prepare", "PLANT_MANAGER": "read"},
+    "factory_headcount": {"PLANT_MANAGER": "prepare", "PEOPLE": "review"},
+    "labour_rates": {"PEOPLE": "prepare", "PLANT_MANAGER": "read"},
+    "labour_productivity": {"PLANT_MANAGER": "prepare", "PEOPLE": "read"},
+    "manufacturing_overhead": {"COMMERCIAL_FINANCE": "prepare", "PEOPLE": "read"},
+    "inventory_valuation": {"COMMERCIAL_FINANCE": "prepare", "PROCUREMENT_MANAGER": "read"},
+}
 
 
-def fact_roles() -> list[dict]:
-    return [{"fact": f, "role_code": r, "cell": c, "set_by": "gm@caldera", "set_on": "2026-06-29T09:00:00"} for f, r, c in FACT_ROLES]
+def planning_roles() -> dict[str, list[dict]]:
+    """The four registers of the role architecture, as set up."""
+    return {
+        "reg_role_type": [{"type_code": c, "type_name": n, "purpose": p, "cardinality": k, "site_level": s, "customer_level": cu, "cost_centre_level": cc, **SET}
+                          for c, n, p, k, s, cu, cc in ROLE_TYPES],
+        "reg_planning_entitlement": [{"fact": f, "type_code": t, "level": lv, **SET} for f, m in PLANNING_ENTITLEMENTS.items() for t, lv in m.items()],
+        "reg_planning_role": [{"role_no": no, "type_code": t, "role_name": n, "purpose": "", "site": s, "customer": cu, "cost_centre": cc, "status": "live", **SET}
+                              for no, t, n, s, cu, cc in PLANNING_ROLES],
+        "reg_planning_assignment": [{"person": p, "role_no": no, "valid_from": "2026-06-29", "valid_to": "", **SET} for p, no in PLANNING_ASSIGNMENTS],
+    }
 
 
 def roles() -> tuple[list[dict], list[dict], list[dict]]:

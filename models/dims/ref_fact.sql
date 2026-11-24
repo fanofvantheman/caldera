@@ -1,7 +1,7 @@
 /* The planning facts an organisation assigns (DEC-20261124-06 point 2): a row per fact — its name, its grain, whether it
    is *calculated* in the cycle or *standing* (set on its own, when its own event happens, and dated — point 4), and the
    right the app asks for to enter it, where a page already reads the table (`right_verb`; blank: the page still reads its
-   right from the roles). Who owns and who receives each is not here: that is the table, dims.fact_role. The list is the
+   right from the roles). Who prepares, reviews and reads each is not here: that is the entitlements, dims.planning_entitlement. The list is the
    example CH gave, a storage capacity beside it. */
 MODEL (name dims.ref_fact, kind FULL, grain (fact));
 SELECT * FROM (VALUES

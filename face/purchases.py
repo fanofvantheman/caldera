@@ -50,7 +50,7 @@ PAGE = """{% if finance %}<h1>{{ title }}<small>{{ version|plan }} · {{ where }
 <p class="hint">Each row has one source. The opening is the stock on hand at the close of {{ per(p.actuals_to) }}; after it, the period before's closing. Consumption is copied from the IBP plan each plant reads — the cases it makes × the bill × the plant's usage — and valued at the opening cost basis. Contracted receipts are what is already on order or under contract, at the contract's price. Additional receipts are the ones you plan and nothing else: the balance buys nothing of its own. The closing is calculated, and is the next period's opening; it is marked <b>short</b> below zero and <b>below cover</b> under the cover the material is meant to hold — its cover periods × the average consumption of the next three periods. {% if may %}Type a quantity in an additional-receipts cell — its price is the price in force unless you type one — and save it with the bar at the foot of the window; a note may be written in a cell, as a comment is in a spreadsheet —  It changes this balance at once and nothing in any IBP plan until you send a snapshot from <a href="{{ url_for('plan.purchasing_plans', purchasing=p.id) }}">My plans</a>.{% endif %}</p>
 <div class="card reads"><b>Reads copies, not connections</b> — {% for pl, c in reads.consumption.items() %}consumption at {{ plants.get(pl, pl) }}: {% if c %}{{ c.source|planfull }}, copy of {{ when(c.taken_at) }}{% else %}<b>not received</b>{% endif %}{{ '; ' if not loop.last else '.' }}{% endfor %} A source changing changes nothing here until you refresh.</div>{% endif %}
 <div class="cards">{% for c in cards %}{% if c.href %}<a class="card stat link{{ ' on' if c.on }}" href="{{ c.href }}">{% else %}<div class="card stat">{% endif %}<span>{{ c.label }}</span><b>{{ c.show }}</b>{% if c.vs %}<div class="small vs">{{ c.vs }}</div>{% endif %}<div class="small muted">{{ c.says }}</div>{{ '</a>'|safe if c.href else '</div>'|safe }}{% endfor %}</div>
-{% if not finance and may %}<p class="hint">Who owns what here: the <b>quantity</b> of an additional receipt is {{ owners.additional_quantity.role_name or 'nobody' }}'s{{ ' — yours to type' if mine.additional_quantity else ', read only for you' }}; its <b>price</b> is {{ owners.additional_price.role_name or 'nobody' }}'s{{ ' — yours to type' if mine.additional_price else ', read only for you' }}. Set on the ownership table.</p>{% endif %}
+{% if not finance and may %}<p class="hint">Who prepares what here: the <b>quantity</b> of an additional receipt is prepared by {{ owners.additional_quantity.type_name or 'nobody' }}{{ ' — yours to type, at the plants your roles cover' if mine.additional_quantity else ', read only for you' }}; its <b>price</b> by {{ owners.additional_price.type_name or 'nobody' }}{{ ' — yours to type' if mine.additional_price else ', read only for you' }}. Set under Admin → Planning roles.</p>{% endif %}
 {{ grid_choice(g) }}
 {% if g.editable %}<form method="post" action="{{ url_for('plan.purchase_type') }}" id="type">{% if request.args.get('location') %}<input type="hidden" name="location" value="{{ request.args.get('location') }}">{% endif %}{% endif %}
 {{ grid_table(g) }}
@@ -252,9 +252,13 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                    Filter("type", "type", tuple((t, t.replace("_", " ")) for t in sorted({r["attrs"]["type"] for r in rows.values() if r["attrs"]["type"]}))),
                    Filter("source", "bought", tuple((x, x) for x in sorted({r["attrs"]["source"] for r in rows.values() if r["attrs"]["source"]})))]
         may = roles.may(who, VERB)
-        mine = {k: reads.owns(who, fact) for k, fact in FACTS.items()}        # each fact typed only by its owner (DEC-20261124-06)
-        owners = {k: reads.fact_owner(fact) for k, fact in FACTS.items()}
+        scope = {k: reads.prepares(who, fact) for k, fact in FACTS.items()}    # each fact typed only where the person's roles prepare it (DEC-20261124-07)
+        mine = {k: bool(v) for k, v in scope.items()}
+        owners = {k: reads.fact_preparer(fact) for k, fact in FACTS.items()}
         measures = [replace(m, input=m.input and mine.get(m.key, False)) for m in MEASURES]
+        places = set().union(*[v for v in scope.values() if v])
+        for row in rows.values():                          # a row is typed in only at a plant one of the person's roles covers
+            row["typed_here"] = "ALL" in places or row["attrs"]["plant"] in places
         g = figures.table("pur", list(rows.values()), measures, "closing_quantity",
                           figures.columns(vp, actuals=False, quarters=False), row_head="Key raw materials", filters=filters, total="Key raw materials",
                           editable=not finance and may, plan_periods=set(vp["plan"]),
@@ -365,9 +369,10 @@ def register(bp, page, who_fn, ctx_fn, busy, session, roles) -> None:
                 continue                                   # left as drawn, or emptied: nothing typed
             x = _num(raw)
             field = "quantity" if k == "additional_quantity" else "price"
-            if not reads.owns(who, FACTS[k]):
-                o = reads.fact_owner(FACTS[k])
-                bad.append(f"the {field} for {inp} at {plant} in {period}: {by[k].label} {field} is owned by {o['role_name'] or 'nobody'}")
+            sc = reads.prepares(who, FACTS[k])
+            if not sc or ("ALL" not in sc and plant not in sc):
+                o = reads.fact_preparer(FACTS[k])
+                bad.append(f"the {field} for {inp} at {plant} in {period}: prepared by {o['type_name'] or 'nobody'}" + (" — none of your roles covers that plant" if sc else ""))
                 continue
             if x == "bad" or x is None or x < 0 or (field == "price" and x <= 0) or r is None or period not in plan_periods:
                 bad.append(f"{field} {raw!r} for {inp} at {plant} in {period}")

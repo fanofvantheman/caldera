@@ -1021,15 +1021,18 @@ def for_kind(roles, who: str, verb: str, v: dict, scope: str | None = None, dime
     return f" for {(v.get('version_kind') or '').replace('_', ' ')} — held for {', '.join(k.replace('_', ' ') for k in kinds) or 'another kind of plan'} only"
 
 
-def fact_owner(fact: str) -> dict:
-    """The role that owns a planning fact (dims.fact_role) and who holds it — one owner a fact (DEC-20261124-06)."""
-    r = one("""select fr.role_code, d.role_name from dims.fact_role fr join dims.ctl_role_definition d using (role_code)
-               where fr.fact = ? and fr.cell = 'owns'""", fact) or {}
-    held = [x["principal"] for x in q("""select distinct principal from dims.ctl_role_assignment
-                                         where role_code = ? and (valid_to is null or valid_to >= current_date) order by 1""", r.get("role_code"))] if r else []
-    return {"role_code": r.get("role_code"), "role_name": r.get("role_name"), "holders": held}
+
+def fact_preparer(fact: str) -> dict:
+    """The role type that prepares a planning fact — its owner (DEC-20261124-07) — and the roles of the type."""
+    r = one("""select e.type_code, t.type_name from dims.planning_entitlement e join dims.planning_role_type t using (type_code)
+               where e.fact = ? and e.level = 'prepare'""", fact) or {}
+    return {"type_code": r.get("type_code"), "type_name": r.get("type_name")}
 
 
-def owns(who: str, fact: str) -> bool:
-    """Whether the person holds the role that owns the fact."""
-    return who in fact_owner(fact)["holders"]
+def prepares(who: str, fact: str) -> set[str] | None:
+    """Where the person prepares the fact, through the roles they are assigned: None — nowhere; {"ALL"} — everywhere (a
+    role naming no site); else the sites of their roles."""
+    rows = q("select site from dims.planning_authority where person = ? and fact = ? and level = 'prepare'", who, fact)
+    if not rows:
+        return None
+    return {"ALL"} if any(r["site"] is None for r in rows) else {r["site"] for r in rows}
