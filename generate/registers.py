@@ -216,7 +216,7 @@ def composed_roles() -> list[dict]:
 # The planning role architecture as the organisation set it up (DEC-20261124-07): role types, their entitlements over the
 # planning facts, the roles — each a type in one place — and who is assigned each. On the demo's people.
 SET = {"set_by": "gm@caldera", "set_on": "2026-06-29T09:00:00"}
-ROLE_TYPES = [  # code, name, purpose, cardinality, site level, customer level, cost centre level
+ROLE_TYPES = [  # code, name, purpose, cardinality, site level, customer level, cost centre level[, process — integrated business planning unless said]
     ("HEAD_OF_DEMAND", "Head of demand planning", "Leads the demand plan and its review.", "single", "", "", ""),
     ("DEMAND_PLANNER", "Demand planner", "Plans demand for the customers of one planning unit.", "multiple", "", "planning_unit", ""),
     ("SUPPLY_PLANNER", "Supply planner", "Plans what the network needs and holds.", "single", "", "", ""),
@@ -225,6 +225,8 @@ ROLE_TYPES = [  # code, name, purpose, cardinality, site level, customer level, 
     ("PLANT_MANAGER", "Plant manager", "Plans what a plant makes and who makes it.", "multiple", "plant", "", ""),
     ("COMMERCIAL_FINANCE", "Commercial finance", "Values the plan.", "single", "", "", ""),
     ("PEOPLE", "People and culture", "Keeps what labour costs.", "single", "", "", ""),
+    # financial planning (DEC-20261124-08): its own types, not reconciled with those above
+    ("FINANCIAL_PLANNER", "Financial planner", "Values the plan: stock, overhead and shrinkage.", "single", "", "", "", "financial"),
 ]
 PLANNING_ROLES = [  # number, type, name, site, customer, cost centre
     ("1000", "HEAD_OF_DEMAND", "Head of demand planning", "", "", ""),
@@ -235,14 +237,16 @@ PLANNING_ROLES = [  # number, type, name, site, customer, cost centre
     ("1020", "PURCHASING_MANAGER", "Purchasing manager, Echuca", "ECH", "", ""), ("1021", "PURCHASING_MANAGER", "Purchasing manager, Loxton", "LOX", "", ""),
     ("1030", "PLANT_MANAGER", "Plant manager, Echuca", "ECH", "", ""), ("1031", "PLANT_MANAGER", "Plant manager, Loxton", "LOX", "", ""),
     ("1040", "COMMERCIAL_FINANCE", "Commercial finance", "", "", ""), ("1050", "PEOPLE", "People and culture", "", "", ""),
+    ("1060", "FINANCIAL_PLANNER", "Financial planner", "", "", ""),
 ]
 PLANNING_ASSIGNMENTS = [
     ("head.demand@caldera", "1000"), ("planner.carters@caldera", "1001"), ("planner.horeca@caldera", "1002"), ("planner.independents@caldera", "1003"),
     ("planner.merritt@caldera", "1004"), ("planner.westbrook@caldera", "1005"),
     ("supply.planner@caldera", "1010"), ("supply.planner@caldera", "1015"), ("supply.planner@caldera", "1020"), ("supply.planner@caldera", "1021"),
     ("plant.manager@caldera", "1030"), ("plant.manager@caldera", "1031"), ("finance.manager@caldera", "1040"), ("finance.manager@caldera", "1050"),
+    ("finance.manager@caldera", "1060"),
 ]
-PLANNING_ENTITLEMENTS = {  # fact: {role type: level}; exactly one prepares
+PLANNING_ENTITLEMENTS = {  # fact: {role type: level}; exactly one prepares; fact and type of one process
     "demand_forecast": {"DEMAND_PLANNER": "prepare", "HEAD_OF_DEMAND": "review", "COMMERCIAL_FINANCE": "read"},
     "production_quantities": {"PLANT_MANAGER": "prepare", "SUPPLY_PLANNER": "review", "PURCHASING_MANAGER": "review"},
     "raw_material_requirements": {"SUPPLY_PLANNER": "prepare", "PLANT_MANAGER": "review", "COMMERCIAL_FINANCE": "read"},
@@ -251,20 +255,20 @@ PLANNING_ENTITLEMENTS = {  # fact: {role type: level}; exactly one prepares
     "purchase_prices": {"PROCUREMENT_MANAGER": "prepare", "PURCHASING_MANAGER": "review"},
     "storage_capacity": {"SUPPLY_PLANNER": "prepare", "COMMERCIAL_FINANCE": "read"},
     "shrinkage_volume": {"SUPPLY_PLANNER": "prepare", "PLANT_MANAGER": "read"},
-    "shrinkage_expense": {"COMMERCIAL_FINANCE": "prepare", "PLANT_MANAGER": "read"},
+    "shrinkage_expense": {"FINANCIAL_PLANNER": "prepare"},
     "factory_headcount": {"PLANT_MANAGER": "prepare", "PEOPLE": "review"},
     "labour_rates": {"PEOPLE": "prepare", "PLANT_MANAGER": "read"},
     "labour_productivity": {"PLANT_MANAGER": "prepare", "PEOPLE": "read"},
-    "manufacturing_overhead": {"COMMERCIAL_FINANCE": "prepare", "PEOPLE": "read"},
-    "inventory_valuation": {"COMMERCIAL_FINANCE": "prepare", "PROCUREMENT_MANAGER": "read"},
+    "manufacturing_overhead": {"FINANCIAL_PLANNER": "prepare"},
+    "inventory_valuation": {"FINANCIAL_PLANNER": "prepare"},
 }
 
 
 def planning_roles() -> dict[str, list[dict]]:
     """The four registers of the role architecture, as set up."""
     return {
-        "reg_role_type": [{"type_code": c, "type_name": n, "purpose": p, "cardinality": k, "site_level": s, "customer_level": cu, "cost_centre_level": cc, **SET}
-                          for c, n, p, k, s, cu, cc in ROLE_TYPES],
+        "reg_role_type": [{"type_code": c, "type_name": n, "purpose": p, "cardinality": k, "site_level": s, "customer_level": cu, "cost_centre_level": cc,
+                           "process": (pr or ["ibp"])[0], **SET} for c, n, p, k, s, cu, cc, *pr in ROLE_TYPES],
         "reg_planning_entitlement": [{"fact": f, "type_code": t, "level": lv, **SET} for f, m in PLANNING_ENTITLEMENTS.items() for t, lv in m.items()],
         "reg_planning_role": [{"role_no": no, "type_code": t, "role_name": n, "purpose": "", "site": s, "customer": cu, "cost_centre": cc, "status": "live", **SET}
                               for no, t, n, s, cu, cc in PLANNING_ROLES],

@@ -9,5 +9,6 @@ WITH acts AS (
 ),
 latest AS (SELECT * FROM acts QUALIFY ROW_NUMBER() OVER (PARTITION BY role_no ORDER BY set_on DESC, source_file DESC, file_row_number DESC) = 1)
 SELECT l.role_no, l.type_code, l.role_name, l.purpose, l.site, l.customer, l.cost_centre, l.status = 'live' AS live, l.set_by, l.set_on,
-       l.type_code IN (SELECT type_code FROM dims.planning_role_type) AS type_known
+       l.type_code IN (SELECT type_code FROM dims.planning_role_type) AS type_known,
+       (SELECT t.process FROM dims.planning_role_type t WHERE t.type_code = l.type_code) AS process   -- its type's (DEC-20261124-08)
 FROM latest l

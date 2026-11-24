@@ -26,3 +26,15 @@ SELECT role_no FROM @this_model r WHERE live AND (
       NOT type_known
    OR (SELECT COUNT(*) FROM @this_model x WHERE x.live AND x.type_code = r.type_code
          AND COALESCE(x.site, '') = COALESCE(r.site, '') AND COALESCE(x.customer, '') = COALESCE(r.customer, '') AND COALESCE(x.cost_centre, '') = COALESCE(r.cost_centre, '')) > 1);
+
+AUDIT (name planning_entitlement_one_process);
+/* blocking: an entitlement across a process boundary — a fact of one planning process and a role type of another (DEC-20261124-08 point 5) */
+SELECT fact, type_code, process, type_process FROM @this_model WHERE fact_known AND type_known AND process IS DISTINCT FROM type_process;
+
+AUDIT (name fact_process_known);
+/* blocking: a planning fact of no process, or of one the list does not have */
+SELECT fact, process FROM @this_model WHERE process IS NULL OR NOT process_known;
+
+AUDIT (name planning_type_process_known);
+/* blocking: a role type of a process the list does not have */
+SELECT type_code, process FROM @this_model WHERE NOT process_known;
