@@ -55,20 +55,26 @@ FLOW = """{% macro flow(on) %}<div class="procs"><span class="small muted">Plann
 .tick{display:grid;grid-template-columns:1.4rem 9rem 1fr;gap:.2rem .4rem;align-items:baseline;margin:.3rem 0}.two{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:1.4rem;align-items:start}
 .actions{display:flex;gap:.8rem;align-items:center;margin-top:.8rem}tr.type td{background:var(--soft);font-weight:600}tr.type td .small{font-weight:400}td.in{padding-left:1.6rem}td.no{font-variant-numeric:tabular-nums;white-space:nowrap}
 .indent{margin:.4rem 0 0 1.8rem;padding-left:.9rem;border-left:2px solid var(--ink)}
+.make{display:grid;grid-template-columns:minmax(20rem,28rem) minmax(0,1fr);gap:1.8rem;align-items:start}.make>div>.card:first-child{margin-top:0}.make .scroll{overflow-x:auto}.make h2{margin-top:0}@media (max-width:900px){.make{grid-template-columns:1fr}}
+.ctx{background:var(--soft);border-radius:.5rem;padding:.6rem .7rem;margin:0 0 1rem}.ctx .cap{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.ctxrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.6rem;margin-top:.4rem}
+.ctx label{display:flex;flex-direction:column;gap:.15rem;background:var(--panel);border:1px solid var(--line,#ccc);border-radius:.4rem;padding:.4rem .6rem;font-size:.8rem;color:var(--muted)}.ctx select{font:inherit;font-size:.95rem;border:0;background:transparent;color:var(--ink);padding:0;width:100%}.pn{display:none}.allproc .pn{display:inline}
 table.own th{vertical-align:bottom;position:sticky;top:0;z-index:2;background:var(--soft);min-width:5.5rem;white-space:normal}table.own td:first-child{min-width:13rem;position:sticky;left:0;z-index:1;background:var(--panel)}table.own th:first-child{left:0;z-index:3}.ownwrap{overflow:auto;max-height:75vh}table.own td.prepare{box-shadow:inset 0 0 0 1px var(--ink)}table.own select.cell{font:inherit;font-size:.85rem;background:transparent;color:inherit;border:0}table.own td.prepare select.cell{font-weight:700}</style>{% endmacro %}
+{% macro ctx() %}<div class="ctx"><span class="cap">Context / hierarchy</span><div class="ctxrow">
+<label>Planning process<select data-f="proc"><option value="">All</option>{% for p in processes %}<option value="{{ p.process }}" {{ 'selected' if p.process == process }}>{{ p.process_name }}</option>{% endfor %}</select></label>
+<label>Business scope<select data-f="scope"><option value="">All</option><option value="whole">Whole business</option>{% for d, dn in dims %}<option value="{{ d }}">{{ dn }}</option>{% endfor %}</select></label>
+<label>Responsibility<select data-f="level"><option value="">All</option>{% for d, dn in dims %}{% for lv, (ln, _) in levels[d].items() %}<option value="{{ d }}:{{ lv }}">{{ ln }}{{ ' (site)' if d == 'site' and lv == 'site' }}</option>{% endfor %}{% endfor %}</select></label></div></div>
+<script>document.addEventListener('DOMContentLoaded',function(){var box=document.querySelector('.ctx');if(!box)return;var side=box.parentNode;function v(k){return box.querySelector('[data-f="'+k+'"]').value;}
+function go(){var p=v('proc'),s=v('scope'),l=v('level');[].forEach.call(side.querySelectorAll('[data-proc]'),function(e){e.hidden=!((!p||e.dataset.proc===p)&&(!s||e.dataset.scope.split(' ').indexOf(s)>=0)&&(!l||e.dataset.level.split(' ').indexOf(l)>=0));});
+side.classList.toggle('allproc',!p);[].forEach.call(side.querySelectorAll('[data-n]'),function(c){c.textContent=[].filter.call(side.querySelectorAll('[data-row="'+c.dataset.n+'"]'),function(e){return !e.hidden;}).length;});}
+box.addEventListener('change',go);go();});</script>{% endmacro %}
+{% macro at(x, row='') %}data-proc="{{ x.process }}" data-scope="{{ x.scope }}" data-level="{{ x.levels }}"{% if row %} data-row="{{ row }}"{% endif %}{% endmacro %}
+{% macro pn(x) %}<span class="pn small muted"> · {{ x.process_name }}</span>{% endmacro %}
 {% macro receipt(last) %}{% if last %}<h2>Receipt</h2><table><thead><tr><th>Check</th><th></th><th>Says</th></tr></thead><tbody>{% for c in last.checks %}<tr><td>{{ c.check }}</td><td class="{{ 'ok' if c.ok else 'no' }}">{{ '✓' if c.ok else '✕' }}</td><td>{{ c.says }}</td></tr>{% endfor %}</tbody></table>{% endif %}{% endmacro %}"""
 
-P_TYPES = FLOW + """{{ flow('types') }}<h1>Role types<small>step 1 — the kinds of job {{ process_name|lower }} works with</small></h1>
-<p class="hint">A <b>role type</b> is the kind of job: demand planner, purchasing manager. It says its cardinality: <b>Single</b> — one role for the whole business — or <b>Multiple</b>, and then the dimensions that tell its roles apart and the level of each at which responsibility is held. What a type may do is step 2; its roles, each in one place, are step 3; who fills them is step 4.</p>
-<h2>Role types<span class="count">{{ types|length }}</span></h2>
-<table><thead><tr><th>Role type</th><th>Cardinality</th><th>Dimension</th><th>Responsibility level</th><th>Prepares <span class="small muted">— step 2</span></th><th class="n">Roles <span class="small muted">— step 3</span></th><th>Not covered</th></tr></thead><tbody>
-{% for t in types %}<tr><td><b>{{ t.type_name }}</b><div class="small muted">{{ t.purpose }}</div></td><td class="small">{{ 'Multiple' if t.cardinality == 'multiple' else 'Single' }}</td>
-<td class="small{{ ' muted' if not t.dims }}">{{ t.dims|map(attribute='dim_name')|join(' × ') or '—' }}</td><td class="small{{ ' muted' if not t.dims }}">{{ t.dims|map(attribute='level_name')|join(' × ') or '—' }}</td>
-<td class="small{{ ' muted' if not t.prepares }}">{{ t.prepares|join('; ') or 'nothing' }}</td><td class="n">{{ t.n_roles }}</td><td class="small{{ ' muted' if not t.gaps }}">{{ t.gaps|join('; ') or '—' }}</td></tr>{% endfor %}
-</tbody></table>
-<p class="hint">Prepares, roles and not covered are read from the steps after this one, so a type added here shows what it still lacks.</p>
-{% if may %}<form class="card" style="max-width:40rem;margin-top:1.2rem" method="post" action="{{ url_for('plan.planning_type_add') }}"><input type="hidden" name="process" value="{{ process }}"><h3 style="margin-top:0">New role type <span class="small muted">in {{ process_name|lower }}</span></h3>
-<label class="field small">Name <input name="type_name" required placeholder="Category buyer"></label>
+P_TYPES = FLOW + """{{ flow('types') }}<div class="make"><div>
+{% if may %}<form class="card" method="post" action="{{ url_for('plan.planning_type_add') }}"><input type="hidden" name="process" value="{{ process }}"><h3 style="margin-top:0">New role type <span class="small muted">in {{ process_name|lower }}</span></h3>
+<p class="hint">The kind of job: demand planner, purchasing manager. What it may do is step 2; its roles, each in one place, step 3; who fills them, step 4.</p>
+<label class="field small">Name <input name="type_name" required placeholder="Category buyer" autofocus></label>
 <label class="field small">What it is for <textarea name="purpose" rows="2"></textarea></label>
 <h3 style="margin-top:1rem">Cardinality</h3><p class="hint">Is there one role of this type, or several?</p>
 <div class="tick"><input type="radio" name="cardinality" value="single" checked id="c-single"><label for="c-single">Single</label><span class="small muted">one role, for the whole business</span></div>
@@ -77,7 +83,14 @@ P_TYPES = FLOW + """{{ flow('types') }}<h1>Role types<small>step 1 — the kinds
 {% for d, dn in dims %}<div class="tick"><input type="checkbox" name="dim" value="{{ d }}" id="d-{{ d }}"><label for="d-{{ d }}">{{ dn }}</label><label class="small">level <select name="level_{{ d }}">{% for lv, (ln, _) in levels[d].items() %}<option value="{{ lv }}">{{ ln }}</option>{% endfor %}</select></label></div>{% endfor %}</div>
 <div class="actions"><button class="primary" onclick="this.textContent='Adding…'">Add the role type</button><span class="hint">next: its entitlements</span></div></form>
 <script>(function(){var f=document.querySelector('form[action$="/planning/types/add"]');if(!f)return;function show(){document.getElementById('dims').hidden=!f.querySelector('#c-multiple').checked;}f.addEventListener('change',show);show();})();</script>
-{% else %}<p class="hint">Role types are set up by {{ holders|join(', ') or 'nobody yet' }}.</p>{% endif %}{{ receipt(last) }}"""
+{% else %}<p class="hint">Role types are set up by {{ holders|join(', ') or 'nobody yet' }}.</p>{% endif %}{{ receipt(last) }}
+</div><div>{{ ctx() }}<h2>Role types<span class="count" data-n="type">{{ types|length }}</span></h2>
+<div class="scroll"><table><thead><tr><th>Role type</th><th>Cardinality</th><th>Dimension</th><th>Responsibility level</th><th>Prepares <span class="small muted">— step 2</span></th><th class="n">Roles <span class="small muted">— step 3</span></th><th>Not covered</th></tr></thead><tbody>
+{% for t in types %}<tr {{ at(t, 'type') }}><td><b>{{ t.type_name }}</b>{{ pn(t) }}<div class="small muted">{{ t.purpose }}</div></td><td class="small">{{ 'Multiple' if t.cardinality == 'multiple' else 'Single' }}</td>
+<td class="small{{ ' muted' if not t.dims }}">{{ t.dims|map(attribute='dim_name')|join(' × ') or '—' }}</td><td class="small{{ ' muted' if not t.dims }}">{{ t.dims|map(attribute='level_name')|join(' × ') or '—' }}</td>
+<td class="small{{ ' muted' if not t.prepares }}">{{ t.prepares|join('; ') or 'nothing' }}</td><td class="n">{{ t.n_roles }}</td><td class="small{{ ' muted' if not t.gaps }}">{{ t.gaps|join('; ') or '—' }}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="hint">Prepares, roles and not covered are read from the steps after this one, so a type added here shows what it still lacks.</p></div></div>"""
 
 P_ENT = FLOW + figures.SAVE_BAR + """{{ flow('entitlements') }}<h1>Entitlements<small>step 2 — the authority each role type has over each planning fact</small></h1>
 <p class="hint">Authority over a fact is one of three levels, each including the one before. <b>Read</b>: uses the figure once it is published. <b>Review</b>: also sees it once it is sent, before it is final. <b>Prepare</b>: also enters it and sends it. Exactly <b>one role type prepares</b> a fact — its owner — and each of its roles prepares it in its own place. Entitlements are set on the type, never on a role.</p>
@@ -102,47 +115,45 @@ function say(){var n=0;[].forEach.call(f.querySelectorAll('select.cell'),functio
 f.addEventListener('change',function(e){var s=e.target;if(!s.matches('select.cell'))return;if(s.value==='prepare'){[].forEach.call(s.closest('tr').querySelectorAll('select.cell'),function(o){if(o!==s&&o.value==='prepare')o.value='review';});}say();});
 f.addEventListener('click',function(e){if(e.target.closest('[data-discard="reset"]')){[].forEach.call(f.querySelectorAll('select.cell'),function(s){s.value=s.getAttribute('data-was');});say();}});setTimeout(say,0);})();</script>"""
 
-P_ROLES = FLOW + """{{ flow('roles') }}<h1>Roles<small>step 3 — each role is a role type in one business context</small></h1>
-<p class="hint">A <b>role</b> is a role type at one member of its level, with its own number: demand planner for one planning unit, for another — several roles of one type. It has its type's authority there, and nothing of its own. Every role of a type sits at the type's level, one member each, so two never cover the same ground.</p>
-<div class="two"><div>
-<h2>Role types and their roles<span class="count">{{ types|length }} types · {{ n_roles }} roles</span></h2>
-<table><thead><tr><th>No.</th><th>Role</th><th>Business context</th><th>Held by</th></tr></thead><tbody>
-{% for t in types %}<tr class="type"><td colspan="2">{{ t.type_name }} <span class="small muted">· role type · {{ 'Multiple, by ' ~ (t.dims|map(attribute='says')|join(' × ')) if t.cardinality == 'multiple' else 'Single' }}</span></td><td></td>
-<td class="acts">{% if may and t.can_add %}<a class="button act" href="{{ url_for('plan.planning_roles', type=t.type_code, process=process) }}#new">Add a role</a>{% endif %}</td></tr>
-{% for r in t.roles %}<tr><td class="no in">{{ r.role_no }}</td><td>{{ r.role_name }}</td><td class="small{{ ' muted' if not r.context }}">{{ r.context or 'whole business' }}</td><td class="small{{ ' muted' if not r.held }}">{{ r.held|join(', ') or 'nobody yet' }}</td></tr>{% endfor %}
-{% if t.gaps %}<tr><td class="in"></td><td class="small muted" colspan="3"><i>no {{ t.type_name|lower }} covers: {{ t.gaps|join('; ') }}</i></td></tr>{% endif %}{% endfor %}
-</tbody></table>
-<p class="hint">The number is the role's identity and never changes. A place no role of the type covers is listed beneath it.</p>
-</div><div id="new">
-{% if may %}<div class="card"><h3 style="margin-top:0">New planning role</h3>
-<form method="get" action="{{ url_for('plan.planning_roles') }}#new"><input type="hidden" name="process" value="{{ process }}"><label class="field small">Role type <select name="type" onchange="this.form.submit()">{% for t in types %}<option value="{{ t.type_code }}" {{ 'selected' if chosen and t.type_code == chosen.type_code }} {{ 'disabled' if not t.can_add }}>{{ t.type_name }}{{ '' if t.can_add else ' — its one role exists' }}</option>{% endfor %}</select>
+P_ROLES = FLOW + """{{ flow('roles') }}<div class="make"><div id="new">
+{% if may %}<div class="card"><h3 style="margin-top:0">New planning role <span class="small muted">in {{ process_name|lower }}</span></h3>
+<p class="hint">A role type at one member of its level, with its own number. It has its type's authority there, and nothing of its own.</p>
+<form method="get" action="{{ url_for('plan.planning_roles') }}#new"><input type="hidden" name="process" value="{{ process }}"><label class="field small">Role type <select name="type" onchange="this.form.submit()">{% for t in own %}<option value="{{ t.type_code }}" {{ 'selected' if chosen and t.type_code == chosen.type_code }} {{ 'disabled' if not t.can_add }}>{{ t.type_name }}{{ '' if t.can_add else ' — its one role exists' }}</option>{% endfor %}</select>
 <span class="muted">{% if chosen %}{{ 'Multiple, by ' ~ (chosen.dims|map(attribute='says')|join(' × ')) if chosen.cardinality == 'multiple' else 'Single — one role, whole business' }} · what it may do is set on the type{% endif %}</span></label></form>
 {% if chosen and chosen.can_add %}<form method="post" action="{{ url_for('plan.planning_role_add') }}"><input type="hidden" name="process" value="{{ process }}"><input type="hidden" name="type_code" value="{{ chosen.type_code }}">
 {% if chosen.dims %}<h3 style="margin-top:1rem">Business context</h3><p class="hint">Where this role is held. The type says which dimension and level, so only the members at that level are offered.</p>
 {% for d in chosen.dims %}<label class="field small">{{ d.dim_name }} — {{ d.level_name|lower }} <select name="{{ d.dim }}">{% for m in d.members %}<option value="{{ m.code }}">{{ m.name }}</option>{% endfor %}</select></label>{% endfor %}
 {% if chosen.taken %}<p class="small muted">Already covered: {{ chosen.taken|join('; ') }}.</p>{% endif %}{% endif %}
-<div class="fields" style="margin-top:.6rem"><label class="field small">Role number <input name="role_no" value="{{ next_no }}" required><span class="muted">next free · unique across every process · never reused</span></label>
+<div class="fields" style="margin-top:.6rem"><label class="field small">Role number <input name="role_no" value="{{ next_no }}" required><span class="muted">next free · never reused</span></label>
 <label class="field small">Name <input name="role_name" placeholder="{{ chosen.type_name }}{{ ', its place' if chosen.dims }}"><span class="muted">left empty: the type{{ ' and the place' if chosen.dims }}</span></label></div>
 <label class="field small">What it is for <textarea name="purpose" rows="2"></textarea></label>
 <div class="actions"><button class="primary" onclick="this.textContent='Defining…'">Define the role</button><span class="hint">nobody holds it until it is assigned</span></div></form>{% endif %}</div>
-{% else %}<p class="hint">Roles are defined by {{ holders|join(', ') or 'nobody yet' }}.</p>{% endif %}
-</div></div>{{ receipt(last) }}"""
+{% else %}<p class="hint">Roles are defined by {{ holders|join(', ') or 'nobody yet' }}.</p>{% endif %}{{ receipt(last) }}
+</div><div>{{ ctx() }}<h2>Role types and their roles<span class="count"><span data-n="type">{{ types|length }}</span> types · <span data-n="role">{{ n_roles }}</span> roles</span></h2>
+<div class="scroll"><table><thead><tr><th>No.</th><th>Role</th><th>Business context</th><th>Held by</th></tr></thead><tbody>
+{% for t in types %}<tr class="type" {{ at(t, 'type') }}><td colspan="2">{{ t.type_name }} <span class="small muted">· role type · {{ 'Multiple, by ' ~ (t.dims|map(attribute='says')|join(' × ')) if t.cardinality == 'multiple' else 'Single' }}</span>{{ pn(t) }}</td><td></td>
+<td class="acts">{% if may and t.can_add %}<a class="button act" href="{{ url_for('plan.planning_roles', type=t.type_code, process=t.process) }}#new">Add a role</a>{% endif %}</td></tr>
+{% for r in t.roles %}<tr {{ at(t, 'role') }}><td class="no in">{{ r.role_no }}</td><td>{{ r.role_name }}</td><td class="small{{ ' muted' if not r.context }}">{{ r.context or 'whole business' }}</td><td class="small{{ ' muted' if not r.held }}">{{ r.held|join(', ') or 'nobody yet' }}</td></tr>{% endfor %}
+{% if t.gaps %}<tr {{ at(t) }}><td class="in"></td><td class="small muted" colspan="3"><i>no {{ t.type_name|lower }} covers: {{ t.gaps|join('; ') }}</i></td></tr>{% endif %}{% endfor %}
+</tbody></table></div>
+<p class="hint">The number is the role's identity and never changes. A place no role of the type covers is listed beneath it.</p></div></div>"""
 
-P_ASG = FLOW + """{{ flow('assignments') }}<h1>Assignments<small>step 4 — who fills each role</small></h1>
-<p class="hint">A person is assigned a role. The role already says where: its business context is part of it. People change; the role does not — cover and handover are another assignment to the same role, so a role may be given to more than one person and a person may hold several. The role is the owner; whoever fills it acts as it.</p>
-<table><thead><tr><th>Person</th><th>Role</th><th>From</th><th>To</th><th>So prepares</th><th></th></tr></thead><tbody>
-{% for a in rows %}<tr class="{{ 'muted' if not a.live }}"><td>{{ a.person }}</td><td><span class="small muted">{{ a.role_no }}</span> {{ a.role_name }}</td><td class="small">{{ a.valid_from or '' }}</td><td class="small{{ ' muted' if not a.valid_to }}">{{ a.valid_to or 'open' }}</td><td class="small{{ ' muted' if not a.prepares }}">{{ a.prepares|join('; ') or '—' }}</td>
-<td class="acts">{% if may and a.live %}<form class="inline" method="post" action="{{ url_for('plan.planning_assignment_end') }}"><input type="hidden" name="process" value="{{ process }}"><input type="hidden" name="person" value="{{ a.person }}"><input type="hidden" name="role_no" value="{{ a.role_no }}"><button class="act">End</button></form>{% endif %}</td></tr>{% endfor %}
-</tbody></table>
-{% if may %}<form class="card" style="margin-top:1rem" method="post" action="{{ url_for('plan.planning_assignment_give') }}"><input type="hidden" name="process" value="{{ process }}"><h3 style="margin-top:0">Assign a role</h3>
-<div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:end"><label class="field small">Person <select name="person">{% for p in people %}<option>{{ p }}</option>{% endfor %}</select></label>
+P_ASG = FLOW + """{{ flow('assignments') }}<div class="make"><div>
+{% if may %}<form class="card" method="post" action="{{ url_for('plan.planning_assignment_give') }}"><input type="hidden" name="process" value="{{ process }}"><h3 style="margin-top:0">Assign a role <span class="small muted">in {{ process_name|lower }}</span></h3>
+<p class="hint">The role already says where. Cover and handover are another assignment to the same role; a person may hold several.</p>
+<label class="field small">Person <select name="person">{% for p in people %}<option>{{ p }}</option>{% endfor %}</select></label>
 <label class="field small">Role <select name="role_no">{% for r in roles %}<option value="{{ r.role_no }}">{{ r.role_no }} · {{ r.role_name }}</option>{% endfor %}</select></label>
-<label class="field small">From <input type="date" name="valid_from" value="{{ today }}"></label><label class="field small">To <input type="date" name="valid_to"><span class="muted">empty: open</span></label>
-<button class="primary" style="margin-bottom:.5rem" onclick="this.textContent='Assigning…'">Assign</button></div></form>{% else %}<p class="hint">Roles are assigned by {{ holders|join(', ') or 'nobody yet' }}.</p>{% endif %}
+<div class="fields" style="grid-template-columns:1fr 1fr"><label class="field small">From <input type="date" name="valid_from" value="{{ today }}"></label><label class="field small">To <input type="date" name="valid_to"><span class="muted">empty: open</span></label></div>
+<div class="actions"><button class="primary" onclick="this.textContent='Assigning…'">Assign</button></div></form>{% else %}<p class="hint">Roles are assigned by {{ holders|join(', ') or 'nobody yet' }}.</p>{% endif %}{{ receipt(last) }}
+</div><div>{{ ctx() }}<h2>Assignments<span class="count" data-n="asg">{{ rows|length }}</span></h2>
+<div class="scroll"><table><thead><tr><th>Person</th><th>Role</th><th>From</th><th>To</th><th>So prepares</th><th></th></tr></thead><tbody>
+{% for a in rows %}<tr class="{{ 'muted' if not a.live }}" {{ at(a, 'asg') }}><td>{{ a.person }}</td><td><span class="small muted">{{ a.role_no }}</span> {{ a.role_name }}{{ pn(a) }}</td><td class="small">{{ a.valid_from or '' }}</td><td class="small{{ ' muted' if not a.valid_to }}">{{ a.valid_to or 'open' }}</td><td class="small{{ ' muted' if not a.prepares }}">{{ a.prepares|join('; ') or '—' }}</td>
+<td class="acts">{% if may and a.live %}<form class="inline" method="post" action="{{ url_for('plan.planning_assignment_end') }}"><input type="hidden" name="process" value="{{ a.process }}"><input type="hidden" name="person" value="{{ a.person }}"><input type="hidden" name="role_no" value="{{ a.role_no }}"><button class="act">End</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
 <div class="two" style="margin-top:1.2rem"><div class="card"><h3 style="margin-top:0">Roles nobody holds</h3>{% if empty %}<table><thead><tr><th>Role</th><th>Left with no one to prepare</th></tr></thead><tbody>
-{% for r in empty %}<tr><td><span class="small muted">{{ r.role_no }}</span> {{ r.role_name }}</td><td class="small{{ ' muted' if not r.prepares }}">{{ r.prepares|join('; ') or '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">Every role is held.</p>{% endif %}</div>
+{% for r in empty %}<tr {{ at(r) }}><td><span class="small muted">{{ r.role_no }}</span> {{ r.role_name }}</td><td class="small{{ ' muted' if not r.prepares }}">{{ r.prepares|join('; ') or '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">Every role is held.</p>{% endif %}</div>
 <div class="card"><h3 style="margin-top:0">Roles with cover</h3>{% if cover %}<table><thead><tr><th>Role</th><th>Held by</th></tr></thead><tbody>
-{% for r in cover %}<tr><td><span class="small muted">{{ r.role_no }}</span> {{ r.role_name }}</td><td class="small">{{ r.held|join(', ') }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">No role is held by more than one person.</p>{% endif %}</div></div>{{ receipt(last) }}"""
+{% for r in cover %}<tr {{ at(r) }}><td><span class="small muted">{{ r.role_no }}</span> {{ r.role_name }}</td><td class="small">{{ r.held|join(', ') }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="hint">No role is held by more than one person.</p>{% endif %}</div></div></div></div>"""
 
 
 def members(dim: str, level: str) -> list[dict]:
@@ -182,7 +193,14 @@ def state(process: str) -> dict:
     for a in asg:
         if a["live"]:
             held.setdefault(a["role_no"], []).append(a["person"].split("@")[0])
+    pname = {p["process"]: p["process_name"] for p in processes()}
+    for t in types:
+        t["process_name"] = pname.get(t["process"], t["process"])
+        t["scope"] = " ".join(x["dim"] for x in t["dims"]) or "whole"
+        t["levels"] = " ".join(f"{x['dim']}:{x['level']}" for x in t["dims"])
+    of = {t["type_code"]: t for t in types}
     for r in roles:
+        r.update({k: of[r["type_code"]][k] for k in ("process", "process_name", "scope", "levels")})
         r["context"] = " × ".join(label.get((d, r[d]), r[d]) for d, _ in DIMS if r.get(d))
         r["held"] = held.get(r["role_no"], [])
     for t in types:
@@ -198,6 +216,12 @@ def state(process: str) -> dict:
     return {"types": types, "roles": roles, "asg": asg, "facts": facts, "cells": cells, "names": names}
 
 
+def everything() -> tuple[dict, dict]:
+    """The process a new entry is created in, and what stands in every process — the filters above it narrow that."""
+    ss = {p["process"]: state(p["process"]) for p in processes()}
+    return ss[current_process()], {k: [x for s in ss.values() for x in s[k]] for k in ("types", "roles", "asg")}
+
+
 def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> None:
     from . import reads
     scoped["planning"] = {"what": "planning roles", "says": "run completed — the planning roles stand as set"}
@@ -205,7 +229,7 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
     def show(tpl: str, title: str, active: str, **kw):
         who = who_fn(); ps = processes(); pr = current_process()
         return page(tpl, title=title, active=active, width="none", steps=STEPS, may=roles.may(who, VERB), holders=reads.holders(VERB), last=session.last,
-                    receipt_acts=("planning.",), processes=ps, process=pr, process_name=next((p["process_name"] for p in ps if p["process"] == pr), pr), **kw)
+                    receipt_acts=("planning.",), dims=DIMS, levels=LEVELS, processes=ps, process=pr, process_name=next((p["process_name"] for p in ps if p["process"] == pr), pr), **kw)
 
     def who_may(who: str) -> dict:
         may = roles.may(who, VERB)
@@ -231,7 +255,7 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
     @bp.get("/planning/types")
     def planning_types():
         try:
-            return show(P_TYPES, "Role types", "planning_types", types=state(current_process())["types"], dims=DIMS, levels=LEVELS)
+            return show(P_TYPES, "Role types", "planning_types", types=everything()[1]["types"])
         except Busy as e:
             return busy("Role types", e)
 
@@ -347,9 +371,9 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
     @bp.get("/planning/roles")
     def planning_roles():
         try:
-            s = state(current_process())
+            s, every = everything()
             chosen = next((t for t in s["types"] if t["type_code"] == request.args.get("type")), None) or next((t for t in s["types"] if t["can_add"]), None)
-            return show(P_ROLES, "Roles", "planning_roles", types=s["types"], n_roles=len(s["roles"]), chosen=chosen, next_no=next_no())
+            return show(P_ROLES, "Roles", "planning_roles", own=s["types"], types=every["types"], n_roles=len(every["roles"]), chosen=chosen, next_no=next_no())
         except Busy as e:
             return busy("Roles", e)
 
@@ -379,15 +403,16 @@ def register(bp, page, who_fn, busy, session, roles, run_plan, scoped: dict) -> 
     @bp.get("/planning/assignments")
     def planning_assignments():
         try:
-            s = state(current_process())
-            by_no = {r["role_no"]: r for r in s["roles"]}
-            tprep = {t["type_code"]: t["prepares"] for t in s["types"]}
+            s, every = everything()
+            by_no = {r["role_no"]: r for r in every["roles"]}
+            tprep = {t["type_code"]: t["prepares"] for t in every["types"]}
             def prepares(r: dict) -> list[str]:
                 return [f"{x}{' at ' + r['context'] if r['context'] else ''}" for x in tprep.get(r["type_code"], [])]
-            rows = [{**a, "role_name": by_no[a["role_no"]]["role_name"], "prepares": prepares(by_no[a["role_no"]]) if a["live"] else []} for a in s["asg"] if a["role_no"] in by_no]
+            rows = [{**a, **{k: by_no[a["role_no"]][k] for k in ("role_name", "process", "process_name", "scope", "levels")},
+                     "prepares": prepares(by_no[a["role_no"]]) if a["live"] else []} for a in every["asg"] if a["role_no"] in by_no]
             people = [r["principal"] for r in q("select distinct principal from dims.ctl_role_assignment order by 1")]
             return show(P_ASG, "Assignments", "planning_assignments", rows=rows, roles=s["roles"], people=people, today=dt.date.today().isoformat(),
-                        empty=[{**r, "prepares": prepares(r)} for r in s["roles"] if not r["held"]], cover=[r for r in s["roles"] if len(r["held"]) > 1])
+                        empty=[{**r, "prepares": prepares(r)} for r in every["roles"] if not r["held"]], cover=[r for r in every["roles"] if len(r["held"]) > 1])
         except Busy as e:
             return busy("Assignments", e)
 
