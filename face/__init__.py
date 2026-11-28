@@ -235,11 +235,8 @@ PROCESSES = [
                 Tab("roles_rights", "Rights", "plan.roles", verbs=["register.roles.maintain", "read.proof"]),
                 Tab("roles_roles", "Roles", "plan.roles_list", verbs=["register.roles.maintain", "read.proof"]),
                 Tab("roles_compose", "Compose a role", "plan.role_compose", verbs=["register.roles.maintain"])]),
-            Section("planning_roles", "Planning roles", "plan.planning_types", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",), tabs=[
-                Tab("planning_types", "1 · Role types", "plan.planning_types", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",)),
-                Tab("planning_entitlements", "2 · Entitlements", "plan.planning_entitlements", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",)),
-                Tab("planning_roles", "3 · Roles", "plan.planning_roles", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",)),
-                Tab("planning_assignments", "4 · Assignments", "plan.planning_assignments", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",))]),
+            # the four steps are the screens' own cards, so the section lists no tabs (ambiguity #143)
+            Section("planning_roles", "Planning roles", "plan.planning_types", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",)),
         ]),
         Area("structures", "Structures", [
             Section("structures", "Structures as loaded", "plan.structures", verbs=["read.plan", "read.health", "structure.material.maintain",
