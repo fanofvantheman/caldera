@@ -235,11 +235,11 @@ PROCESSES = [
                 Tab("roles_rights", "Rights", "plan.roles", verbs=["register.roles.maintain", "read.proof"]),
                 Tab("roles_roles", "Roles", "plan.roles_list", verbs=["register.roles.maintain", "read.proof"]),
                 Tab("roles_compose", "Compose a role", "plan.role_compose", verbs=["register.roles.maintain"])]),
-            Section("planning_roles", "Planning roles", "plan.planning_types", verbs=["register.roles.maintain", "read.proof", "read.plan"], tabs=[
-                Tab("planning_types", "1 · Role types", "plan.planning_types", verbs=["register.roles.maintain", "read.proof", "read.plan"]),
-                Tab("planning_entitlements", "2 · Entitlements", "plan.planning_entitlements", verbs=["register.roles.maintain", "read.proof", "read.plan"]),
-                Tab("planning_roles", "3 · Roles", "plan.planning_roles", verbs=["register.roles.maintain", "read.proof", "read.plan"]),
-                Tab("planning_assignments", "4 · Assignments", "plan.planning_assignments", verbs=["register.roles.maintain", "read.proof", "read.plan"])]),
+            Section("planning_roles", "Planning roles", "plan.planning_types", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",), tabs=[
+                Tab("planning_types", "1 · Role types", "plan.planning_types", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",)),
+                Tab("planning_entitlements", "2 · Entitlements", "plan.planning_entitlements", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",)),
+                Tab("planning_roles", "3 · Roles", "plan.planning_roles", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",)),
+                Tab("planning_assignments", "4 · Assignments", "plan.planning_assignments", verbs=["register.roles.maintain", "read.proof", "read.plan"], uses=("process",))]),
         ]),
         Area("structures", "Structures", [
             Section("structures", "Structures as loaded", "plan.structures", verbs=["read.plan", "read.health", "structure.material.maintain",
@@ -435,6 +435,8 @@ CONTEXT = [
            note=lambda who, opts: None if "CAL" in (_scope(who, "organisation") or {"CAL"}) else "the cost centres your assignments reach"),
     Choice("location", "Location", _locations, strict=True),
     Choice("purchasing", "Purchasing plan", _purchasing_plans, strict=True),
+    # the planning process the planning roles are set up in: one at a time, never both side by side (ambiguity #141)
+    Choice("process", "Planning process", lambda who, chosen: [{"value": r["process"], "label": r["process_name"]} for r in q("select process, process_name from dims.ref_process order by ord")], strict=True),
 ]
 
 SHELL = Shell(brand="Caldera", strapline="integrated business planning", home="plan.home", who="select", processes=PROCESSES, links=[("Map", "plan.map"), ("Reports", "plan.reports")],

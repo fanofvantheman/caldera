@@ -228,6 +228,11 @@ ROLE_TYPES = [  # code, name, purpose, cardinality, site level, customer level, 
     # financial planning (DEC-20261124-08): its own types, not reconciled with those above
     ("FINANCIAL_PLANNER", "Financial planner", "Values the plan: stock, overhead and shrinkage.", "single", "", "", "", "financial"),
 ]
+TYPE_DOMAIN = {  # the domain of its process each type plans in (dims.ref_domain)
+    "HEAD_OF_DEMAND": "demand", "DEMAND_PLANNER": "demand", "SUPPLY_PLANNER": "supply", "PLANT_MANAGER": "manufacturing",
+    "PROCUREMENT_MANAGER": "procurement", "PURCHASING_MANAGER": "procurement", "PEOPLE": "people", "COMMERCIAL_FINANCE": "finance",
+    "FINANCIAL_PLANNER": "fpa",
+}
 PLANNING_ROLES = [  # number, type, name, site, customer, cost centre
     ("1000", "HEAD_OF_DEMAND", "Head of demand planning", "", "", ""),
     ("1001", "DEMAND_PLANNER", "Demand planner, Carters", "", "PU_CAR", ""), ("1002", "DEMAND_PLANNER", "Demand planner, Horeca", "", "PU_HOR", ""),
@@ -268,7 +273,7 @@ def planning_roles() -> dict[str, list[dict]]:
     """The four registers of the role architecture, as set up."""
     return {
         "reg_role_type": [{"type_code": c, "type_name": n, "purpose": p, "cardinality": k, "site_level": s, "customer_level": cu, "cost_centre_level": cc,
-                           "process": (pr or ["ibp"])[0], **SET} for c, n, p, k, s, cu, cc, *pr in ROLE_TYPES],
+                           "process": (pr or ["ibp"])[0], "domain": TYPE_DOMAIN.get(c, ""), **SET} for c, n, p, k, s, cu, cc, *pr in ROLE_TYPES],
         "reg_planning_entitlement": [{"fact": f, "type_code": t, "level": lv, **SET} for f, m in PLANNING_ENTITLEMENTS.items() for t, lv in m.items()],
         "reg_planning_role": [{"role_no": no, "type_code": t, "role_name": n, "purpose": "", "site": s, "customer": cu, "cost_centre": cc, "status": "live", **SET}
                               for no, t, n, s, cu, cc in PLANNING_ROLES],

@@ -38,3 +38,7 @@ SELECT fact, process FROM @this_model WHERE process IS NULL OR NOT process_known
 AUDIT (name planning_type_process_known);
 /* blocking: a role type of a process the list does not have */
 SELECT type_code, process FROM @this_model WHERE NOT process_known;
+
+AUDIT (name planning_type_domain_known);
+/* blocking: a role type of a domain its planning process does not list */
+SELECT type_code, process, domain FROM @this_model WHERE NOT domain_known;
